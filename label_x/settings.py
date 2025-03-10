@@ -42,12 +42,15 @@ ALLOWED_HOSTS = []
 # Application definition
 
 INSTALLED_APPS = [
+    'account',
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    "rest_framework",
+    'drf_spectacular',
 ]
 
 MIDDLEWARE = [
@@ -138,6 +141,9 @@ MEDIA_ROOT = BASE_DIR / 'media'
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
+# custom user model for authentication
+AUTH_USER_MODEL = 'account.CustomUser'
+
 # setting for logging of errors
 LOGGING = {
     "version": 1,
@@ -169,3 +175,20 @@ LOGGING = {
     },
 }
 
+# settings for django restAPI
+REST_FRAMEWORK = {
+    "REST_FRAMEWORK_THROTTLE_CLASSES": [
+        "rest_framework.throttling.AnonRateThrottle",
+        "rest_framework.throttling.UserRateThrottle",
+    ],
+    "DEFAULT_THROTTLE_RATES": {
+        "anon": "15/min",
+        "user": "30/min",
+    },
+    "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
+
+    "DEFAULT_PERMISSION_CLASSES": [
+        "rest_framework.permissions.IsAuthenticated",
+        # "rest_framework.permissions.AllowAny"
+    ],
+}
