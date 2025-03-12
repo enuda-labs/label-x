@@ -20,3 +20,22 @@ celery_app.conf.broker_connection_retry_on_startup = True
 celery_app.conf.broker_connection_max_retries = 3
 celery_app.conf.task_acks_late = True
 celery_app.conf.task_reject_on_worker_lost = True
+
+
+# Configure task queues with priorities
+celery_app.conf.task_routes = {
+    'moderation.tasks.process_task': {'queue': 'default'},
+    'moderation.tasks.process_with_ai_model': {
+        'queue': lambda task_request: {
+            'urgent': 'urgent_queue',
+            'normal': 'normal_queue',
+            'low': 'low_queue',
+        }.get(task_request.kwargs.get('priority', 'normal'))
+    }
+}
+
+# Configure queue priorities
+celery_app.conf.broker_transport_options = {
+    'priority_steps': list(range(10)),
+    'queue_order_strategy': 'priority',
+}
