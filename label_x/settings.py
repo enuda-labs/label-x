@@ -19,7 +19,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 
 env_file = BASE_DIR / ".env"
-if env_file.exists():
+if env_file.exists(): 
     load_dotenv(env_file, override=True)
 else:
     print("No env file detected.")
@@ -51,6 +51,7 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "rest_framework",
     'drf_spectacular',
+    'task',
 ]
 
 MIDDLEWARE = [
@@ -192,3 +193,7 @@ REST_FRAMEWORK = {
         # "rest_framework.permissions.AllowAny"
     ],
 }
+
+# celery settings
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_ACCEPT_CONTENT = ['json']
