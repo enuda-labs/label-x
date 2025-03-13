@@ -10,7 +10,8 @@ def process_task(task_id):
     Logic is losely build and will be revisted
     """
     try:
-        task = Task.objects.get(id=task_id)        
+         # Optimized query using select_related to avoid multiple DB hits
+        task = Task.objects.select_related('user').get(id=task_id)       
         # Update status to processing
         task.status = 'PROCESSING'
         task.save()
@@ -65,7 +66,7 @@ def process_with_ai_model(task_id):
     """
         
     # I just update status for now since no actual model implementation.
-    task = Task.objects.get(id=task_id)
+    task = Task.objects.select_related('user').get(id=task_id)
     task.status = 'AI_REVIEWED'
     task.save()
     
