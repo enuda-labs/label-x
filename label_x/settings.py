@@ -30,13 +30,13 @@ else:
 
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = os.getenv("SECRET_KEY_VALUE", default="default")
-# SECRET_KEY = "django-insecure-+cn=smq7#xy3raty%9ba7@&8priukw!5*!3-vk4e@wf7)y#77#"
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv("DEBUG_VALUE", "true").lower() == "true"
 # DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS_VALUE", "127.0.0.1").split(",") # Use commas to seperate muliple host values
+CSRF_TRUSTED_ORIGINS = os.getenv("CSRF_TRUSTED_ORIGINS_VALUE", "http://127.0.0.1").split(",") # Same comma-value-seperation as above
 
 
 # Application definition
