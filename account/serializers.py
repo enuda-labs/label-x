@@ -1,3 +1,4 @@
+import re
 from rest_framework import serializers
 from django.contrib.auth import authenticate
 
@@ -27,16 +28,60 @@ class LoginSerializer(serializers.Serializer):
 class RegisterSerializer(serializers.ModelSerializer):
     """Serializer for user registration"""
 
-    password = serializers.CharField(write_only=True, min_length=6)
+    password = serializers.CharField(
+        write_only=True, 
+        min_length=8,
+       
+    )
 
     class Meta:
         model = CustomUser
         fields = ['id', 'username', 'email', 'password']
+        extra_kwargs = {
+            'username': {
+                'error_messages': {
+                    'unique': 'Username already exists'
+                }
+            },
+            'email': {
+                'error_messages': {
+                    'unique': 'Email already exists'
+                }
+            }
+        }
 
-    def create(self, validated_data):
-        user = CustomUser.objects.create_user(
-            username=validated_data['username'],
-            email=validated_data['email'],
-            password=validated_data['password']
-        )
-        return user
+    def validate_email(self, value):
+        if CustomUser.objects.filter(email=value).exists():
+            raise serializers.ValidationError("Email already exists")
+        return value
+
+    def validate_username(self, value):
+        if CustomUser.objects.filter(username=value).exists():
+            raise serializers.ValidationError("Username already exists")
+        return value
+    
+    def validate_password(self, value):
+        """
+        Validate password with detailed error messages for specific requirements
+        """
+        if len(value) < 8:
+            raise serializers.ValidationError(
+                "Password must be at least 8 characters long"
+            )
+        if not re.search(r'[A-Z]', value):
+            raise serializers.ValidationError(
+                "Password must contain at least one uppercase letter"
+            )
+        if not re.search(r'[a-z]', value):
+            raise serializers.ValidationError(
+                "Password must contain at least one lowercase letter"
+            )
+        if not re.search(r'\d', value):
+            raise serializers.ValidationError(
+                "Password must contain at least one number"
+            )
+        if not re.search(r'[@$!%*?&]', value):
+            raise serializers.ValidationError(
+                "Password must contain at least one special character (@$!%*?&)"
+            )
+        return value
