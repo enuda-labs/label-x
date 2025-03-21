@@ -18,6 +18,7 @@ class LoginSerializer(serializers.Serializer):
 
     def validate(self, data):
         user = authenticate(username=data['username'], password=data['password'])
+        print(user)
         if not user:
             raise serializers.ValidationError("Invalid credentials")
         if not user.is_active:
@@ -31,7 +32,6 @@ class RegisterSerializer(serializers.ModelSerializer):
     password = serializers.CharField(
         write_only=True, 
         min_length=8,
-       
     )
 
     class Meta:
@@ -49,6 +49,19 @@ class RegisterSerializer(serializers.ModelSerializer):
                 }
             }
         }
+
+    def create(self, validated_data):
+        # Pop the password from validated_data
+        password = validated_data.pop('password')
+        
+        # Create user instance
+        user = CustomUser.objects.create(**validated_data)
+        
+        # Set the password (this will hash it)
+        user.set_password(password)
+        user.save()
+        
+        return user
 
     def validate_email(self, value):
         if CustomUser.objects.filter(email=value).exists():
