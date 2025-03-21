@@ -25,14 +25,17 @@ celery_app.conf.task_reject_on_worker_lost = True
 # Configure task queues with priorities
 celery_app.conf.task_routes = {
     'moderation.tasks.process_task': {'queue': 'default'},
-    'moderation.tasks.process_with_ai_model': {
-        'queue': lambda task_request: {
-            'urgent': 'urgent_queue',
-            'normal': 'normal_queue',
-            'low': 'low_queue',
-        }.get(task_request.kwargs.get('priority', 'normal'))
-    }
+    'moderation.tasks.process_with_ai_model': {'queue': 'ai_queue'}
 }
+
+CELERY_TASK_QUEUES = {
+    'default': {'routing_key': 'default', 'priority': 5},
+    'ai_queue': {'routing_key': 'ai', 'priority': 5},
+    'urgent_queue': {'routing_key': 'urgent', 'priority': 9},
+    'normal_queue': {'routing_key': 'normal', 'priority': 5},
+    'low_queue': {'routing_key': 'low', 'priority': 1},
+}
+celery_app.conf.task_queues = CELERY_TASK_QUEUES
 
 # Configure queue priorities
 celery_app.conf.broker_transport_options = {
