@@ -147,35 +147,60 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 AUTH_USER_MODEL = 'account.CustomUser'
 
 # setting for logging of errors
-LOGGING = {
-    "version": 1,
-    "disable_existing_loggers": False,
-    "formatters": {
-        "verbose": {
-            "format": "{levelname} {asctime} {module} {message}",
-            "style": "{",
-        },
-        "simple": {
-            "format": "{levelname} {message}",
-            "style": "{",
-        },
-    },
-    "handlers": {
-        "file": {
-            "level": "ERROR",
-            "class": "logging.FileHandler",
-            "filename": "logs/errors.log", 
-            "formatter": "verbose",
-        },
-    },
-    "loggers": {
-        "django": {
-            "handlers": ["file"],
-            "level": "ERROR",
-            "propagate": True,
-        },
-    },
-}
+# LOGGING = {
+#     "version": 1,
+#     "disable_existing_loggers": False,
+#     "formatters": {
+#         "verbose": {
+#             "format": "{levelname} {asctime} {module} {message}",
+#             "style": "{",
+#         },
+#         "simple": {
+#             "format": "{levelname} {message}",
+#             "style": "{",
+#         },
+#     },
+#     "handlers": {
+#         "file": {
+#             "level": "ERROR",
+#             "class": "logging.FileHandler",
+#             "filename": "logs/errors.log", 
+#             "formatter": "verbose",
+#         },
+#         "console": {
+#             "level": "INFO",
+#             "class": "logging.StreamHandler",
+#             "formatter": "verbose",
+#         },
+#     },
+#     "loggers": {
+#         "django": {
+#             "handlers": ["file"],
+#             "level": "ERROR",
+#             "propagate": True,
+#         },
+#         "task": {
+#             "handlers": ["console", "file"],
+#             "level": "INFO",
+#             "propagate": True,
+#         },
+#         "celery": {
+#             "handlers": ["console", "file"],
+#             "level": "INFO",
+#             "propagate": True,
+#         },
+#         "task.apis": {
+#             "handlers": ["console", "file"],
+#             "level": "INFO",
+#             "propagate": True,
+#         },
+#         "task.tasks": {
+#             "handlers": ["console", "file"],
+#             "level": "INFO",
+#             "propagate": True,
+#         },
+#     },
+# }
 
 # settings for django restAPI
 REST_FRAMEWORK = {
