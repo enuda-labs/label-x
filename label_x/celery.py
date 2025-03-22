@@ -4,7 +4,7 @@ from celery import Celery
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'label_x.settings')
 os.environ['FORKED_BY_MULTIPROCESSING'] = '1'
 
-celery_app = Celery('labelx_content_moderation')
+celery_app = Celery('label_x')
 celery_app.config_from_object('django.conf:settings', namespace='CELERY')
 
 # Auto-discover tasks in installed apps
@@ -24,8 +24,10 @@ celery_app.conf.task_reject_on_worker_lost = True
 
 # Configure task queues with priorities
 celery_app.conf.task_routes = {
-    'moderation.tasks.process_task': {'queue': 'default'},
-    'moderation.tasks.process_with_ai_model': {'queue': 'ai_queue'}
+    'task.tasks.process_task': {'queue': 'default'},
+    'task.tasks.process_with_ai_model': {'queue': 'ai_queue'},
+    'task.tasks.route_task_to_processing': {'queue': 'default'},
+    'task.tasks.queue_task_for_processing': {'queue': 'default'}
 }
 
 CELERY_TASK_QUEUES = {
