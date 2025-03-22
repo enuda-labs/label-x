@@ -1,5 +1,4 @@
 from django.db import models
-import uuid
 import string
 import random
 from account.models import CustomUser
@@ -74,6 +73,12 @@ class Task(models.Model):
     human_reviewed = models.BooleanField(
         default=False,
         help_text="Indicates if a human has reviewed this task"
+    )
+    priority = models.CharField(
+        max_length=10,
+        choices=PRIORITY_LEVELS,
+        default='NORMAL',
+        help_text="Task processing priority level"
     )
     
     # Relations
