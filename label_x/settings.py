@@ -19,7 +19,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 
 env_file = BASE_DIR / ".env"
-if env_file.exists():
+if env_file.exists(): 
     load_dotenv(env_file, override=True)
 else:
     print("No env file detected.")
@@ -30,13 +30,13 @@ else:
 
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = os.getenv("SECRET_KEY_VALUE", default="default")
-# SECRET_KEY = "django-insecure-+cn=smq7#xy3raty%9ba7@&8priukw!5*!3-vk4e@wf7)y#77#"
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv("DEBUG_VALUE", "true").lower() == "true"
 # DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS_VALUE", "127.0.0.1").split(",") # Use commas to seperate muliple host values
+CSRF_TRUSTED_ORIGINS = os.getenv("CSRF_TRUSTED_ORIGINS_VALUE", "http://127.0.0.1").split(",") # Same comma-value-seperation as above
 
 
 # Application definition
@@ -50,7 +50,9 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "rest_framework",
+    "rest_framework_simplejwt",
     'drf_spectacular',
+    'task',
 ]
 
 MIDDLEWARE = [
@@ -145,35 +147,60 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 AUTH_USER_MODEL = 'account.CustomUser'
 
 # setting for logging of errors
-LOGGING = {
-    "version": 1,
-    "disable_existing_loggers": False,
-    "formatters": {
-        "verbose": {
-            "format": "{levelname} {asctime} {module} {message}",
-            "style": "{",
-        },
-        "simple": {
-            "format": "{levelname} {message}",
-            "style": "{",
-        },
-    },
-    "handlers": {
-        "file": {
-            "level": "ERROR",
-            "class": "logging.FileHandler",
-            "filename": "logs/errors.log", 
-            "formatter": "verbose",
-        },
-    },
-    "loggers": {
-        "django": {
-            "handlers": ["file"],
-            "level": "ERROR",
-            "propagate": True,
-        },
-    },
-}
+# LOGGING = {
+#     "version": 1,
+#     "disable_existing_loggers": False,
+#     "formatters": {
+#         "verbose": {
+#             "format": "{levelname} {asctime} {module} {message}",
+#             "style": "{",
+#         },
+#         "simple": {
+#             "format": "{levelname} {message}",
+#             "style": "{",
+#         },
+#     },
+#     "handlers": {
+#         "file": {
+#             "level": "ERROR",
+#             "class": "logging.FileHandler",
+#             "filename": "logs/errors.log", 
+#             "formatter": "verbose",
+#         },
+#         "console": {
+#             "level": "INFO",
+#             "class": "logging.StreamHandler",
+#             "formatter": "verbose",
+#         },
+#     },
+#     "loggers": {
+#         "django": {
+#             "handlers": ["file"],
+#             "level": "ERROR",
+#             "propagate": True,
+#         },
+#         "task": {
+#             "handlers": ["console", "file"],
+#             "level": "INFO",
+#             "propagate": True,
+#         },
+#         "celery": {
+#             "handlers": ["console", "file"],
+#             "level": "INFO",
+#             "propagate": True,
+#         },
+#         "task.apis": {
+#             "handlers": ["console", "file"],
+#             "level": "INFO",
+#             "propagate": True,
+#         },
+#         "task.tasks": {
+#             "handlers": ["console", "file"],
+#             "level": "INFO",
+#             "propagate": True,
+#         },
+#     },
+# }
 
 # settings for django restAPI
 REST_FRAMEWORK = {
@@ -191,4 +218,16 @@ REST_FRAMEWORK = {
         "rest_framework.permissions.IsAuthenticated",
         # "rest_framework.permissions.AllowAny"
     ],
+    "DEFAULT_AUTHENTICATION_CLASSES": [
+        "rest_framework_simplejwt.authentication.JWTAuthentication",
+    ],
 }
+
+# celery settings
+CELERY_TASK_TRACK_STARTED = True
+CELERY_TASK_TIME_LIMIT = 30 * 60
+CELERY_RESULT_BACKEND = 'redis://localhost:6379/0'
+CELERY_BROKER_URL = 'redis://localhost:6379/0'
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
