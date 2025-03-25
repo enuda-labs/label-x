@@ -1,0 +1,63 @@
+name: PR Testing for Django
+
+on:
+  pull_request:
+    branches:
+      - staging
+      - main
+
+jobs:
+  test:
+    name: Run Django Tests
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:latest
+        env:
+          POSTGRES_USER: django
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: test_db
+        ports:
+          - 5432:5432
+
+      redis:
+        image: redis:latest
+        ports:
+          - 6379:6379
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set Up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.10"
+
+      - name: Cache Dependencies
+        uses: actions/cache@v3
+        with:
+          path: venv
+          key: ${{ runner.os }}-venv-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-venv-
+
+      - name: Install Dependencies
+        run: |
+          python -m venv venv
+          venv/bin/pip install -r requirements.txt
+
+      - name: Set Environment Variables
+        run: |
+          echo "DJANGO_SECRET_KEY=${{ secrets.DJANGO_SECRET_KEY }}" >> $GITHUB_ENV
+          echo "DATABASE_URL=postgres://django:password@postgres:5432/test_db" >> $GITHUB_ENV
+          echo "CELERY_BROKER_URL=redis://localhost:6379/0" >> $GITHUB_ENV
+
+      - name: Apply Migrations
+        run: |
+          venv/bin/python manage.py migrate
+
+      - name: Run Django Tests
+        run: |
+          venv/bin/python manage.py test
