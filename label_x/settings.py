@@ -19,12 +19,21 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 import dj_database_url
 
 
+# env_file = BASE_DIR / ".env"
+# if env_file.exists(): 
+#     load_dotenv(env_file, override=True)
+# else:
+#     print("No env file detected.")
+#     exit(code=5000)
+
+
 env_file = BASE_DIR / ".env"
-if env_file.exists(): 
+if env_file.exists():
+    from dotenv import load_dotenv
     load_dotenv(env_file, override=True)
 else:
-    print("No env file detected.")
-    exit(code=5000)
+    # Log a warning instead of exiting
+    print("No .env file detected. Using environment variables.")
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.1/howto/deployment/checklist/
