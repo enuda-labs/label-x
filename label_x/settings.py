@@ -9,11 +9,15 @@ https://docs.djangoproject.com/en/5.1/topics/settings/
 For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.1/ref/settings/
 """
-
+import logging
 import os
 from pathlib import Path
 
 from dotenv import load_dotenv
+import sentry_sdk
+from sentry_sdk.integrations.django import DjangoIntegration
+from sentry_sdk.integrations.logging import LoggingIntegration
+from sentry_sdk.integrations.redis import RedisIntegration
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 import dj_database_url
@@ -254,4 +258,13 @@ CELERY_RESULT_SERIALIZER = 'json'
 
 CORS_ALLOW_ALL_ORIGINS = True
 
-
+# Sentry settings
+sentry_sdk.init(
+    dsn=os.getenv("SENTRY_DSN"),
+    integrations=[
+        DjangoIntegration(),
+        LoggingIntegration(level=logging.INFO, event_level=logging.ERROR),
+        RedisIntegration(),
+    ],
+    send_default_pii=True,
+)
