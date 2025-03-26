@@ -63,9 +63,12 @@ INSTALLED_APPS = [
     "rest_framework_simplejwt",
     'drf_spectacular',
     'task',
+    "corsheaders",
+
 ]
 
 MIDDLEWARE = [
+    'corsheaders.middleware.CorsMiddleware',
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -248,3 +251,7 @@ CELERY_BROKER_URL = os.getenv('CELERY_BROKER_URL')
 CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
+
+CORS_ALLOW_ALL_ORIGINS = True
+
+
