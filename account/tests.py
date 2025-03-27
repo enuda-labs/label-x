@@ -1,6 +1,10 @@
+from datetime import timedelta, datetime
+import pytz
+
 from django.urls import reverse
 from rest_framework.test import APITransactionTestCase
 from rest_framework import status
+from rest_framework_simplejwt.tokens import RefreshToken
 
 from account.models import CustomUser
 
@@ -106,3 +110,65 @@ class LoginTestCase(APITransactionTestCase):
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
         self.assertEqual(response.data['status'], 'error')
         self.assertEqual(response.data['error'], 'Invalid Credentials')
+        
+class RefreshTokenTestCase(APITransactionTestCase):
+    def setUp(self):
+        self.refresh_path = reverse("account:token_refresh")  # Ensure this matches your URLs
+        self.user = CustomUser.objects.create_user(
+            username="testuser",
+            email="testuser@gmail.com",
+            password="TestPassword123!"
+        )
+        # Generate tokens
+        refresh = RefreshToken.for_user(self.user)
+        self.refresh_token = str(refresh)
+        self.access_token = str(refresh.access_token)
+
+    def test_refresh_token_success(self):
+        """
+        Ensure a valid refresh token returns a new access token.
+        """
+        response = self.client.post(
+            self.refresh_path, 
+            {"refresh": self.refresh_token}, 
+            format="json"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn("access", response.data)
+        self.assertTrue(len(response.data["access"]) > 0)
+
+    def test_refresh_token_failure(self):
+        """
+        Ensure an invalid refresh token returns a 401 error.
+        """
+        response = self.client.post(
+            self.refresh_path, 
+            {"refresh": "invalid_refresh_token"}, 
+            format="json"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+        self.assertEqual(response.data["error"], "Your session has expired. Please log in again.")
+        self.assertIn("error", response.data)
+
+    def test_refresh_token_expired(self):
+        """
+        Ensure an expired refresh token is rejected.
+        """
+        expired_refresh = RefreshToken.for_user(self.user)
+        expired_refresh.set_exp(from_time=datetime.now(pytz.UTC) - timedelta(days=3))
+        expired_refresh_token = str(expired_refresh)
+
+        response = self.client.post(
+            self.refresh_path, 
+            {"refresh": expired_refresh_token}, 
+            format="json"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+        self.assertEqual(response.data["status"], "error")
+        self.assertIn("error", response.data)
+
+    def tearDown(self):
+        CustomUser.objects.all().delete()
