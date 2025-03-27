@@ -98,3 +98,11 @@ class RegisterSerializer(serializers.ModelSerializer):
                 "Password must contain at least one special character (@$!%*?&)"
             )
         return value
+    
+
+class TokenRefreshSerializer(serializers.Serializer):
+    refresh = serializers.CharField(help_text="The refresh token to obtain a new access token.")
+
+class TokenRefreshResponseSerializer(serializers.Serializer):
+    access = serializers.CharField(help_text="The new access token.")
+    refresh = serializers.CharField(help_text="The new refresh token.", required=False)
