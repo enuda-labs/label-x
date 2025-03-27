@@ -1,14 +1,16 @@
 
 from django.db import IntegrityError
-from drf_spectacular.utils import extend_schema
+from drf_spectacular.utils import extend_schema, OpenApiResponse, OpenApiExample
 from rest_framework.response import Response
 from rest_framework import status
+from rest_framework.exceptions import AuthenticationFailed
 from rest_framework.views import APIView
 from rest_framework.permissions import AllowAny
 from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework_simplejwt.views import TokenRefreshView
 
 from .models import CustomUser
-from .serializers import UserSerializer, LoginSerializer, RegisterSerializer
+from .serializers import UserSerializer, LoginSerializer, RegisterSerializer, TokenRefreshResponseSerializer, TokenRefreshSerializer
 
 class LoginView(APIView):
     """User login view to generate JWT token"""
@@ -79,5 +81,53 @@ class RegisterView(APIView):
             'status': 'error',
             'error': error_message
         }, status=status.HTTP_400_BAD_REQUEST)
+
+
+class CustomTokenRefreshView(TokenRefreshView):
+    """
+    Custom refresh token endpoint with drf-spectacular documentation.
+    """
+
+    @extend_schema(
+        summary="Refresh JWT access token",
+        description="Exchanges a refresh token for a new access token.",
+        request=TokenRefreshSerializer,
+        responses={
+            200: OpenApiResponse(
+                response=TokenRefreshResponseSerializer,
+                description="A new access token is returned.",
+            ),
+            400: OpenApiResponse(description="Invalid or expired refresh token."),
+        },
+        examples=[
+            OpenApiExample(
+                "Valid Request",
+                value={"refresh": "your_refresh_token_here"},
+                request_only=True,
+            ),
+            OpenApiExample(
+                "Successful Response",
+                value={"access": "new_access_token_here", "refresh": "new_refresh_token_here"},
+                response_only=True,
+            ),
+        ],
+    )
+    def post(self, request, *args, **kwargs):
+        try:
+            response = super().post(request, *args, **kwargs)
+            return Response({
+                "status": "success",
+                "access": response.data["access"],
+                "refresh": response.data.get("refresh", ""),
+            }, status=status.HTTP_200_OK)
+        
+        except AuthenticationFailed as e:  # Catch invalid token error
+            return Response(
+                {
+                    "status": "error",
+                    "error": "Your session has expired. Please log in again."
+                },
+                status=status.HTTP_401_UNAUTHORIZED
+            )
 
 
