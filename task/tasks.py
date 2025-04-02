@@ -1,6 +1,9 @@
 from celery import shared_task
 from celery.utils.log import get_task_logger
+
+from .ai_processor import text_classification
 from .models import Task
+
 
 # Set up logger
 logger = get_task_logger(__name__)
@@ -106,16 +109,23 @@ def process_with_ai_model(task_id):
     
     try:
         task = Task.objects.select_related('user').get(id=task_id)
+
         
         # Only update if still in PROCESSING state
         if task.status == 'PROCESSING':
+            classification = text_classification(task.data)
+            logger.info(f"Checkinf for value {task.data} and got {classification}")
+            print(classification)
             task.status = 'AI_REVIEWED'
+            task.predicted_label = classification['label']
+            # task.confidence_score = classification['confidence_score']
+            task.human_reviewed = classification['need_human_intervention']
+            # task.justification = classification['justification']
             task.save()
             logger.info(f"Completed AI processing for task {task_id}")
             
             # Determine if human review is needed
-            confidence_threshold = 0.8  # You might want to make this configurable
-            if task.predicted_label and task.predicted_label.get('confidence', 0) < confidence_threshold:
+            if  classification['confidence_score'] < 0.9:
                 task.status = 'REVIEW_NEEDED'
                 task.save()
                 logger.info(f"Task {task_id} marked for human review")
@@ -123,6 +133,7 @@ def process_with_ai_model(task_id):
                 task.status = 'COMPLETED'
                 task.save()
                 logger.info(f"Task {task_id} completed automatically")
+        
         
         return {'status': 'success', 'task_id': task.id}
     except Exception as e:
