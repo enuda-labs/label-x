@@ -7,6 +7,10 @@ from requests.exceptions import Timeout, RequestException
 import requests
 import logging
 
+from channels.layers import get_channel_layer
+from asgiref.sync import async_to_sync
+
+
 # Set up logger
 logger = logging.getLogger(__name__)
 
@@ -54,6 +58,7 @@ def text_classification(text, max_retries=3):
                     }
                 ]
             )
+
             
             try:            
                 response_text = response.text.replace('```json', '').replace('```', '')

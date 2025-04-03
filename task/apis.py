@@ -3,10 +3,11 @@ from rest_framework.response import Response
 from rest_framework import status
 import logging
 from rest_framework.views import APIView
-
 from .models import Task
 from .serializers import TaskSerializer, TaskStatusSerializer
 from .tasks import process_task
+
+
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +33,7 @@ class TaskCreateView(generics.CreateAPIView):
 
                 # Get fresh task data with related fields
                 task = Task.objects.select_related('user').get(id=task.id)
-
+                
                 return Response({
                     'status': 'success',
                     'data': {
