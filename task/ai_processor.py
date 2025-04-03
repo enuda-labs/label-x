@@ -5,6 +5,10 @@ import json
 import time
 from requests.exceptions import Timeout, RequestException
 import requests
+import logging
+
+# Set up logger
+logger = logging.getLogger(__name__)
 
 load_dotenv()
 
@@ -15,10 +19,8 @@ co = cohere.Client(
 )
 
 def text_classification(text, max_retries=3):
-
-
     for attempt in range(max_retries):
-        print('trying text classification', os.getenv('CO_API_KEY'))
+        logger.info(f'Attempting text classification, attempt {attempt + 1} of {max_retries}')
 
         try:
             # Define the conversation with system configuration for classification
@@ -57,33 +59,26 @@ def text_classification(text, max_retries=3):
                 response_text = response.text.replace('```json', '').replace('```', '')
                 return json.loads(response_text)
             except json.JSONDecodeError:
-                print(f"Failed to parse response: {response.text}")
+                logger.error(f"Failed to parse response: {response.text}")
                 raise
                 
         except (Timeout, RequestException) as e:
             if attempt == max_retries - 1:  # Last attempt
-                print(f"Final retry failed: {str(e)}")
+                logger.error(f"Final retry failed: {str(e)}")
                 return {
                     "label": "Normal",
                     "confidence_score": 0.0,
                     "need_human_intervention": True,
                     "justification": f"Error: Connection timeout after {max_retries} attempts"
                 }
-            print(f"Attempt {attempt + 1} failed, retrying... Error: {str(e)}")
+            logger.warning(f"Attempt {attempt + 1} failed, retrying... Error: {str(e)}")
             time.sleep(2 ** attempt)  # Exponential backoff
             
         except Exception as e:
-            print(f"Error in classification: {str(e)}")
+            logger.error(f"Error in classification: {str(e)}")
             return {
                 "label": "Normal",
                 "confidence_score": 0.0,
                 "need_human_intervention": True,
                 "justification": f"Error: {str(e)}"
             }
-
-if __name__ == "__main__":
-    classification = text_classification("Hello, how are you?")
-    print(classification['label'])
-    print(classification['confidence_score'])
-    print(classification['need_human_intervention'])
-    print(classification['justification'])
