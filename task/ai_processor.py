@@ -4,6 +4,7 @@ import os
 import json
 import time
 from requests.exceptions import Timeout, RequestException
+import requests
 
 load_dotenv()
 
@@ -14,7 +15,11 @@ co = cohere.Client(
 )
 
 def text_classification(text, max_retries=3):
+
+
     for attempt in range(max_retries):
+        print('trying text classification', os.getenv('CO_API_KEY'))
+
         try:
             # Define the conversation with system configuration for classification
             response = co.chat(
@@ -48,8 +53,9 @@ def text_classification(text, max_retries=3):
                 ]
             )
             
-            try:
-                return json.loads(response.text)
+            try:            
+                response_text = response.text.replace('```json', '').replace('```', '')
+                return json.loads(response_text)
             except json.JSONDecodeError:
                 print(f"Failed to parse response: {response.text}")
                 raise
