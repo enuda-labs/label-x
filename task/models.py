@@ -57,6 +57,12 @@ class Task(models.Model):
         help_text="AI-generated predictions"
     )
     
+    ai_output = models.JSONField(
+        null=True, 
+        blank=True,
+        help_text="The full json output of the ai model"
+    )
+    
     final_label = models.JSONField(
         null=True, 
         blank=True,

@@ -4,7 +4,7 @@ from rest_framework import status
 import logging
 from rest_framework.views import APIView
 from .models import Task
-from .serializers import TaskSerializer, TaskStatusSerializer
+from .serializers import FullTaskSerializer, TaskSerializer, TaskStatusSerializer
 from .tasks import process_task
 
 

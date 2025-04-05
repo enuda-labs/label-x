@@ -2,11 +2,11 @@ from celery import Task
 from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
 
-from task.serializers import TaskSerializer
+from task.serializers import TaskSerializer, TaskStatusSerializer
 
 
 def serialize_task(task):
-    return TaskSerializer(task).data
+    return TaskStatusSerializer(task).data
 
 
 def dispatch_task_message(receiver_id, payload):
