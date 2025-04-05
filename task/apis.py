@@ -104,7 +104,7 @@ class UserTaskListView(generics.ListAPIView):
     """
     Endpoint to list all tasks submitted by the user
     """
-    serializer_class = TaskStatusSerializer
+    serializer_class = FullTaskSerializer
     
     def get_queryset(self):
         logger.info(f"Fetching tasks for user: {self.request.user.id}")
