@@ -58,6 +58,7 @@ CSRF_TRUSTED_ORIGINS = os.getenv("CSRF_TRUSTED_ORIGINS_VALUE", "http://127.0.0.1
 # Application definition
 
 INSTALLED_APPS = [
+    "daphne",
     'account',
     "django.contrib.admin",
     "django.contrib.auth",
@@ -105,6 +106,8 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = "label_x.wsgi.application"
+ASGI_APPLICATION = "label_x.asgi.application"
+
 
 
 # Database
@@ -282,4 +285,13 @@ sentry_sdk.init(
 )
 
 
-# 
+# CHANNEL_LAYERS = {"default": {"BACKEND": "channels.layers.InMemoryChannelLayer"}} 
+REDIS_URL = os.getenv("CELERY_RESULT_BACKEND", "redis://localhost:6379/0")
+CHANNEL_LAYERS = {
+    "default": {
+        "BACKEND": "channels_redis.core.RedisChannelLayer",
+        "CONFIG": {
+            "hosts": [REDIS_URL],
+        },
+    },
+}
