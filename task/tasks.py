@@ -1,6 +1,11 @@
 from celery import shared_task
 from celery.utils.log import get_task_logger
+
+from task.utils import dispatch_task_message, push_realtime_update
+
+from .ai_processor import text_classification
 from .models import Task
+
 
 # Set up logger
 logger = get_task_logger(__name__)
@@ -21,6 +26,8 @@ def process_task(task_id):
         # Update status to processing
         task.status = 'PROCESSING'
         task.save()
+        
+        push_realtime_update(task)
         logger.info(f"Updated task {task_id} status to PROCESSING")
         
         # Get priority with fallback to 'NORMAL'
@@ -59,6 +66,8 @@ def route_task_to_processing(task_id):
         
         task.status = 'PROCESSING'
         task.save()
+        
+        push_realtime_update(task)
         logger.info(f"Updated task {task_id} status to PROCESSING")
         
         # Call AI processing
@@ -106,23 +115,38 @@ def process_with_ai_model(task_id):
     
     try:
         task = Task.objects.select_related('user').get(id=task_id)
+
         
         # Only update if still in PROCESSING state
         if task.status == 'PROCESSING':
+            classification = text_classification(task.data)
+            logger.info(f"Checking for value {task.data} and got {classification}")
             task.status = 'AI_REVIEWED'
+            
+            task.predicted_label = classification['classification']
+            # task.confidence_score = classification['confidence_score']
+            task.human_reviewed = classification['requires_human_review']
+            # task.justification = classification['justification']
             task.save()
+            push_realtime_update(task)
+
             logger.info(f"Completed AI processing for task {task_id}")
             
             # Determine if human review is needed
-            confidence_threshold = 0.8  # You might want to make this configurable
-            if task.predicted_label and task.predicted_label.get('confidence', 0) < confidence_threshold:
+            if  classification['confidence'] < 0.9:
                 task.status = 'REVIEW_NEEDED'
+                task.ai_output = classification
                 task.save()
+                push_realtime_update(task=task)
                 logger.info(f"Task {task_id} marked for human review")
             else:
                 task.status = 'COMPLETED'
+                task.ai_output = classification
                 task.save()
+                
+                push_realtime_update(task)
                 logger.info(f"Task {task_id} completed automatically")
+        
         
         return {'status': 'success', 'task_id': task.id}
     except Exception as e:
