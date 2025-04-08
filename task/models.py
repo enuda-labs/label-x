@@ -27,6 +27,7 @@ class Task(models.Model):
         ('PENDING', 'Pending'),
         ('PROCESSING', 'Processing'),
         ('REVIEW_NEEDED', 'Review Needed'),
+        ('PENDING_REVIEWER', 'Pending Reviewer'),
         ('COMPLETED', 'Completed'),
         ('ESCALATED', 'Escalated'),
     )
@@ -71,7 +72,7 @@ class Task(models.Model):
     
     # Task status and review tracking
     status = models.CharField(
-        max_length=15, 
+        max_length=17, 
         choices=STATUS_CHOICES, 
         default='PENDING'
     )
