@@ -1,3 +1,4 @@
+import json
 from celery import shared_task
 from celery.utils.log import get_task_logger
 
@@ -150,4 +151,30 @@ def process_with_ai_model(task_id):
         return {'status': 'success', 'task_id': task.id}
     except Exception as e:
         logger.error(f"Error in AI processing for task {task_id}: {str(e)}", exc_info=True)
+        raise
+    
+    
+@shared_task
+def provide_feedback_to_ai_model(task_id, review):
+    """
+    Provide feedback to the AI Model
+    """
+    logger.info(f"Starting Feedback processing for task {task_id}")
+    
+    try:
+        task = Task.objects.select_related('user').get(id=task_id)
+        # strinify the review before sending to the api
+        json_string = json.dumps(review, indent=2)
+        classification = text_classification(json_string)        
+        task.status = 'COMPLETED'
+        task.ai_output = classification
+        task.save()
+        
+        push_realtime_update(task)
+        logger.info(f"Feedback completed for task with ID {task.id}")
+        
+        
+        return {'status': 'success', 'task_id': task.id}
+    except Exception as e:
+        logger.error(f"Error processing feedback for task {task.id }: {str(e)}", exc_info=True)
         raise

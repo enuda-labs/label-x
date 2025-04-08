@@ -1,6 +1,17 @@
 from rest_framework import serializers
 from .models import Task
 
+class HumanReviewSerializer(serializers.Serializer):
+    correction = serializers.CharField(allow_null=True, required=False)
+    justification = serializers.CharField(allow_null=True, required=False)
+
+class AIOutputSerializer(serializers.Serializer):
+    text = serializers.CharField()
+    classification = serializers.CharField()
+    confidence = serializers.FloatField()
+    requires_human_review = serializers.BooleanField()
+    human_review = HumanReviewSerializer()
+
 
 class FullTaskSerializer(serializers.ModelSerializer):
     class Meta:
@@ -8,10 +19,11 @@ class FullTaskSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 class TaskSerializer(serializers.ModelSerializer):
+    ai_output = AIOutputSerializer()
     class Meta:
         model = Task
         fields = [
-            'id', 'serial_no', 'task_type', 'data', 
+            'id', 'serial_no', 'task_type', 'data', 'ai_output' ,
             'predicted_label', 'human_reviewed', 'final_label',
             'status', 'assigned_to', 'created_at', 'updated_at',
             'priority'
@@ -34,3 +46,12 @@ class TaskStatusSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = fields
         
+        
+
+class TaskReviewSerializer(serializers.ModelSerializer):
+    task_id = serializers.IntegerField()
+    ai_output = AIOutputSerializer()
+
+    class Meta:
+        model = Task
+        exclude = ['assigned_to', 'user']

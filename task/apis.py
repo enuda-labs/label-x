@@ -1,11 +1,12 @@
+from drf_spectacular.utils import extend_schema, OpenApiResponse, OpenApiExample
 from rest_framework import generics
 from rest_framework.response import Response
 from rest_framework import status
 import logging
 from rest_framework.views import APIView
 from .models import Task
-from .serializers import FullTaskSerializer, TaskSerializer, TaskStatusSerializer
-from .tasks import process_task
+from .serializers import FullTaskSerializer, TaskSerializer, TaskStatusSerializer, TaskReviewSerializer
+from .tasks import process_task, provide_feedback_to_ai_model
 
 
 
@@ -58,7 +59,78 @@ class TaskCreateView(generics.CreateAPIView):
             'status': 'error',
             'errors': serializer.errors
         }, status=status.HTTP_400_BAD_REQUEST)
+        
+        
 
+class TaskReviewView(APIView):
+    """View for submission of review by a reviewer"""
+    
+    @extend_schema(
+        summary="Submit task review",
+        description="Submit a review for an existing task with AI output data.",
+        request=TaskReviewSerializer,
+        responses={
+            200: TaskReviewSerializer,
+            400: None,
+            404: None,
+            500: None
+        }
+    )
+    def post(self, request, *args, **kwargs):
+        # Get task_id from request data
+        task_id = request.data.get('task_id')
+        
+        if not task_id:
+            return Response({
+                'status': 'error',
+                'error': 'Task ID is required'
+            }, status=status.HTTP_400_BAD_REQUEST)
+            
+        try:
+            # Fetch the existing task
+            task = Task.objects.select_related('user', 'assigned_to').get(id=task_id)
+            
+            # Validate incoming data against serializer with existing task instance
+            serializer = TaskReviewSerializer(task, data=request.data, partial=True)
+            
+            if not serializer.is_valid():
+                return Response({
+                    'status': 'error',
+                    'errors': serializer.errors
+                }, status=status.HTTP_400_BAD_REQUEST)
+                
+            # Extract ai_output for processing
+            ai_output = serializer.validated_data.get('ai_output')
+            
+            # Log and queue task to Celery with both task id and ai_output
+            logger.info(f"Submitting task {task.id} to Celery queue")
+            celery_task = provide_feedback_to_ai_model.delay(task.id, ai_output)
+            logger.info(f"Task {task.id} submitted to Celery. Celery task ID: {celery_task.id}")
+            
+            return Response({
+                'status': 'success',
+                'data': {
+                    'message': 'Task queued for review',
+                    'task_id': task.id,
+                    'serial_no': task.serial_no,
+                    'celery_task_id': celery_task.id,
+                    'status': task.status,
+                }
+            }, status=status.HTTP_200_OK)
+            
+        except Task.DoesNotExist:
+            return Response({
+                'status': 'error',
+                'error': f"Task with ID {task_id} not found."
+            }, status=status.HTTP_404_NOT_FOUND)
+            
+        except Exception as e:
+            logger.error(f"Failed to queue task: {str(e)}", exc_info=True)
+            return Response({
+                'status': 'error',
+                'error': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
 class TaskStatusView(APIView):
     """
     Endpoint to check the status of a task by ID or serial number
