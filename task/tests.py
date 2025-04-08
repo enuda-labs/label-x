@@ -101,6 +101,15 @@ class TaskSubmissionTestCase(APITestCase):
         self.multimodal_task_data = {
             "task_type": "MULTIMODAL",
             "priority": "URGENT",
+            "ai_output": {
+                "text": "This is some AI output",
+                "classification": "POSITIVE",
+                "confidence": 0.94,
+                "requires_human_review": False,
+                "human_review": {
+                    "correction": None,
+                    "justification": None
+                },},
             "data": {
                 "text_content": "Check this product advertisement",
                 "image_url": "https://example.com/product-image.jpg",
@@ -117,15 +126,7 @@ class TaskSubmissionTestCase(APITestCase):
                         }
                     }
                 },
-                "ai_output": {
-                "text": "This is some AI output",
-                "classification": "POSITIVE",
-                "confidence": 0.94,
-                "requires_human_review": False,
-                "human_review": {
-                    "correction": None,
-                    "justification": None
-                },},
+                
                 "metadata": {
                     "source": "marketing_team",
                     "context": "advertisement",
