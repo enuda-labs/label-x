@@ -15,6 +15,7 @@ os.environ.setdefault("DJANGO_SETTINGS_MODULE", "label_x.settings")
 
 django_asgi_app = get_asgi_application()
 from channels.routing import ProtocolTypeRouter, URLRouter
+import account.routing
 import alert.routing
 from alert.middleware import JWTAuthMiddleWare
 
@@ -22,7 +23,9 @@ application = ProtocolTypeRouter({
     "http": django_asgi_app,
     "websocket": JWTAuthMiddleWare(
         URLRouter(
-            alert.routing.websocket_urlpatterns
+            alert.routing.websocket_urlpatterns +
+            account.routing.websocket_urlpatterns,
+            
         )
     )
 })
