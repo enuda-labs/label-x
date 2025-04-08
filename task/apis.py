@@ -112,3 +112,17 @@ class UserTaskListView(generics.ListAPIView):
                 .select_related('user', 'assigned_to')
                 .filter(user=self.request.user)
                 .order_by('-created_at'))
+        
+        
+class AssignedTaskListView(generics.ListAPIView):
+    """
+    Endpoint to list all tasks assigned to the authenticated user
+    """
+    serializer_class = TaskSerializer
+    
+    def get_queryset(self):
+        logger.info(f"Fetching assigned tasks for user: {self.request.user.id}")
+        return (Task.objects
+                .select_related('user', 'assigned_to')
+                .filter(assigned_to=self.request.user)
+                .order_by('-created_at'))
