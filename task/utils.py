@@ -5,7 +5,7 @@ from django.db import models
 from django.utils import timezone
 from datetime import timedelta
 
-from task.serializers import TaskSerializer, TaskStatusSerializer
+from task.serializers import TaskStatusSerializer
 from account.models import CustomUser
 
 
