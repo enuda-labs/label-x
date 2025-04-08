@@ -86,6 +86,7 @@ class TaskStatusView(APIView):
                     'task_type': task.task_type,
                     'status': task.status,
                     'human_reviewed': task.human_reviewed,
+                    "ai_output": task.ai_output,
                     'submitted_by': task.user.username,
                     'assigned_to': task.assigned_to.username if task.assigned_to else None,
                     'created_at': task.created_at,
