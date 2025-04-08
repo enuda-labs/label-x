@@ -28,7 +28,15 @@ class TaskSubmissionTestCase(APITestCase):
         self.text_task_data = {
             "task_type": "TEXT",
             "priority": "NORMAL",
-            'ai_output': {},
+            "ai_output": {
+                "text": "This is some AI output",
+                "classification": "POSITIVE",
+                "confidence": 0.94,
+                "requires_human_review": False,
+                "human_review": {
+                    "correction": None,
+                    "justification": None
+                },},
             "data": {
                 "content": "This is a sample text to analyze for inappropriate content.",
                 "language": "en",
@@ -42,7 +50,15 @@ class TaskSubmissionTestCase(APITestCase):
         self.image_task_data = {
             "task_type": "IMAGE",
             "priority": "URGENT",
-            'ai_output': {},
+           "ai_output": {
+                "text": "This is some AI output",
+                "classification": "POSITIVE",
+                "confidence": 0.94,
+                "requires_human_review": False,
+                "human_review": {
+                    "correction": None,
+                    "justification": None
+                },},
             "data": {
                 "image_url": "https://example.com/sample-image.jpg",
                 "file_type": "jpg",
@@ -60,7 +76,15 @@ class TaskSubmissionTestCase(APITestCase):
         self.video_task_data = {
             "task_type": "VIDEO",
             "priority": "NORMAL",
-            'ai_output': {},
+            "ai_output": {
+                "text": "This is some AI output",
+                "classification": "POSITIVE",
+                "confidence": 0.94,
+                "requires_human_review": False,
+                "human_review": {
+                    "correction": None,
+                    "justification": None
+                },},
             "data": {
                 "video_url": "https://example.com/sample-video.mp4",
                 "duration": "00:02:30",
@@ -93,7 +117,15 @@ class TaskSubmissionTestCase(APITestCase):
                         }
                     }
                 },
-                'ai_output': {},
+                "ai_output": {
+                "text": "This is some AI output",
+                "classification": "POSITIVE",
+                "confidence": 0.94,
+                "requires_human_review": False,
+                "human_review": {
+                    "correction": None,
+                    "justification": None
+                },},
                 "metadata": {
                     "source": "marketing_team",
                     "context": "advertisement",
