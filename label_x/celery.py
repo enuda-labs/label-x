@@ -45,7 +45,8 @@ celery_app.conf.task_routes = {
     'task.tasks.process_task': {'queue': 'default'},
     'task.tasks.process_with_ai_model': {'queue': 'ai_queue'},
     'task.tasks.route_task_to_processing': {'queue': 'default'},
-    'task.tasks.queue_task_for_processing': {'queue': 'default'}
+    'task.tasks.queue_task_for_processing': {'queue': 'default'},
+    'task.tasks.provide_feedback_to_ai_model': {'queue': 'default'},
 }
 
 CELERY_TASK_QUEUES = {
