@@ -30,7 +30,10 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     password = models.CharField(max_length=255)
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
+    is_reviewer = models.BooleanField(default=False, help_text="Designates whether this user can review tasks")
+    is_online = models.BooleanField(default=False, help_text="Indicates if the user is currently online")
     date_joined = models.DateTimeField(auto_now_add=True)
+    last_activity = models.DateTimeField(auto_now=True, help_text="Last time the user was active")
 
     objects = CustomUserManager()
 
@@ -39,3 +42,8 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
 
     def __str__(self):
         return self.username
+
+    @property
+    def pending_review_count(self):
+        """Returns the number of tasks awaiting review by this user"""
+        return self.assigned_tasks.filter(status='REVIEW_NEEDED').count()
