@@ -4,13 +4,12 @@ from asgiref.sync import async_to_sync
 from django.db import models
 from django.utils import timezone
 from datetime import timedelta
-
 from task.serializers import TaskStatusSerializer
 from account.models import CustomUser
 
 
 def serialize_task(task):
-    return TaskStatusSerializer(task).data
+    return FullTaskSerializer(task).data
 
 
 def dispatch_task_message(receiver_id, payload):
