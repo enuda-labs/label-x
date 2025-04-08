@@ -1,3 +1,4 @@
+import json
 from celery import shared_task
 from celery.utils.log import get_task_logger
 
@@ -5,6 +6,7 @@ from task.utils import dispatch_task_message, push_realtime_update
 
 from .ai_processor import text_classification
 from .models import Task
+from .utils import assign_reviewer
 
 
 # Set up logger
@@ -109,46 +111,70 @@ def queue_task_for_processing(task_id):
 @shared_task
 def process_with_ai_model(task_id):
     """
-    A place holder function for task processing. 
+    Process the task using AI model and handle reviewer assignment if needed.
     """
     logger.info(f"Starting AI processing for task {task_id}")
     
     try:
         task = Task.objects.select_related('user').get(id=task_id)
-
         
         # Only update if still in PROCESSING state
         if task.status == 'PROCESSING':
             classification = text_classification(task.data)
-            logger.info(f"Checking for value {task.data} and got {classification}")
-            task.status = 'AI_REVIEWED'
+            logger.info(f"AI classification result: {classification}")
             
+            task.status = 'AI_REVIEWED'
             task.predicted_label = classification['classification']
-            # task.confidence_score = classification['confidence_score']
             task.human_reviewed = classification['requires_human_review']
-            # task.justification = classification['justification']
+            task.ai_output = classification
             task.save()
+            
             push_realtime_update(task)
-
             logger.info(f"Completed AI processing for task {task_id}")
             
-            # Determine if human review is needed
-            if  classification['confidence'] < 0.9:
-                task.status = 'REVIEW_NEEDED'
-                task.ai_output = classification
-                task.save()
-                push_realtime_update(task=task)
-                logger.info(f"Task {task_id} marked for human review")
+            # If human review is needed, try to assign a reviewer
+            if classification['requires_human_review']:
+                logger.info(f"We are in require human intelligence")
+                if assign_reviewer(task):
+                    logger.info(f"Task {task_id} assigned to reviewer")
+                else:
+                    logger.warning(f"No available reviewers for task {task_id}")
+                    task.status = 'PENDING_REVIEWER'
+                    task.save()
+                    push_realtime_update(task)
             else:
                 task.status = 'COMPLETED'
-                task.ai_output = classification
                 task.save()
-                
                 push_realtime_update(task)
                 logger.info(f"Task {task_id} completed automatically")
-        
         
         return {'status': 'success', 'task_id': task.id}
     except Exception as e:
         logger.error(f"Error in AI processing for task {task_id}: {str(e)}", exc_info=True)
+        raise
+    
+    
+@shared_task
+def provide_feedback_to_ai_model(task_id, review):
+    """
+    Provide feedback to the AI Model
+    """
+    logger.info(f"Starting Feedback processing for task {task_id}")
+    
+    try:
+        task = Task.objects.select_related('user').get(id=task_id)
+        # strinify the review before sending to the api
+        json_string = json.dumps(review, indent=2)
+        classification = text_classification(json_string)        
+        task.status = 'COMPLETED'
+        task.ai_output = classification
+        task.save()
+        
+        push_realtime_update(task)
+        logger.info(f"Feedback completed for task with ID {task.id}")
+        
+        
+        return {'status': 'success', 'task_id': task.id}
+    except Exception as e:
+        logger.error(f"Error processing feedback for task {task.id }: {str(e)}", exc_info=True)
         raise

@@ -10,7 +10,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenRefreshView
 
 from .models import CustomUser
-from .serializers import UserSerializer, LoginSerializer, RegisterSerializer, TokenRefreshResponseSerializer, TokenRefreshSerializer
+from .serializers import UserSerializer, LoginSerializer, RegisterSerializer, TokenRefreshResponseSerializer, TokenRefreshSerializer,RegisterReviewerSerializer
 
 class LoginView(APIView):
     """User login view to generate JWT token"""
@@ -80,6 +80,35 @@ class RegisterView(APIView):
         return Response({
             'status': 'error',
             'error': error_message
+        }, status=status.HTTP_400_BAD_REQUEST)
+        
+
+class RegisterReviewerView(APIView):
+    """API view for creating a new reviewer user"""
+    permission_classes = [AllowAny]  # Make this accessible to everyone
+
+    @extend_schema(
+        summary="Register a new reviewer",
+        description="This endpoint allows you to register a new user who will be marked as a reviewer.",
+        request=RegisterReviewerSerializer,  # Specify the request schema
+        responses={201: RegisterReviewerSerializer, 400: "Invalid data provided"}
+    )
+    def post(self, request):
+        # Use the RegisterReviewerSerializer to create a new reviewer
+        serializer = RegisterReviewerSerializer(data=request.data)
+        
+        if serializer.is_valid():
+            user = serializer.save()  # Save the user as a reviewer
+            return Response({
+                'status': 'success',
+                'user_data': RegisterReviewerSerializer(user).data
+            }, status=status.HTTP_201_CREATED)
+        
+        # If the serializer is not valid, return the error
+        return Response({
+            'status': 'error',
+            'error': "Invalid data provided",
+            'details': serializer.errors
         }, status=status.HTTP_400_BAD_REQUEST)
 
 
