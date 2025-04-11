@@ -3,6 +3,7 @@ from drf_spectacular.utils import extend_schema, OpenApiResponse, OpenApiExample
 from rest_framework import generics
 from rest_framework.response import Response
 from rest_framework import status
+from rest_framework.permissions import IsAuthenticated
 import logging
 from rest_framework.views import APIView
 from .models import Task
@@ -261,10 +262,10 @@ class AssignedTaskListView(generics.ListAPIView):
     Endpoint to list all tasks assigned to the authenticated user
     """
     serializer_class = TaskSerializer
-    
+    permission_classes = [IsAuthenticated]
     def get_queryset(self):
         logger.info(f"Fetching assigned tasks for user: {self.request.user.id}")
         return (Task.objects
-                .select_related('user', 'assigned_to')
+                .select_related('assigned_to')
                 .filter(assigned_to=self.request.user)
                 .order_by('-created_at'))

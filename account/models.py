@@ -41,6 +41,8 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     is_admin = models.BooleanField(default=False)
     date_joined = models.DateTimeField(auto_now_add=True)
     last_activity = models.DateTimeField(auto_now=True, help_text="Last time the user was active")
+    is_staff = models.BooleanField(default=False)
+    is_superuser = models.BooleanField(default=False) 
 
     objects = CustomUserManager()
 
