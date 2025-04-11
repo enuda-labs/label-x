@@ -1,7 +1,7 @@
 from django.db import models
 import string
 import random
-from account.models import CustomUser
+from account.models import CustomUser, Project
 
 def generate_serial_no():
     """Generate a random 6-character alphanumeric string"""
@@ -23,13 +23,18 @@ class Task(models.Model):
         ('LOW', 'Low'),
     )
     
-    STATUS_CHOICES = (
+    PROCESSING_STATUS_CHOICES = (
         ('PENDING', 'Pending'),
         ('PROCESSING', 'Processing'),
         ('REVIEW_NEEDED', 'Review Needed'),
-        ('PENDING_REVIEWER', 'Pending Reviewer'),
+        ('ASSIGNED_REVIEWER', 'Assigned Reviewer'),
         ('COMPLETED', 'Completed'),
         ('ESCALATED', 'Escalated'),
+    )
+    REVIEW_STATUS_CHOICES = (
+        ('PENDING_REVIEW', 'Pending Review'),
+        ('PENDING_APPROVAL', 'Pending Arpoval'),
+        ('COMPLETED', 'Completed'),
     )
     
     # Basic fields
@@ -71,10 +76,17 @@ class Task(models.Model):
     )
     
     # Task status and review tracking
-    status = models.CharField(
+    processing_status = models.CharField(
         max_length=17, 
-        choices=STATUS_CHOICES, 
+        choices=PROCESSING_STATUS_CHOICES, 
         default='PENDING'
+    )
+    
+    review_status = models.CharField(
+        max_length=17, 
+        choices=REVIEW_STATUS_CHOICES, 
+        default=None,
+        null=True
     )
     
     human_reviewed = models.BooleanField(
@@ -89,11 +101,11 @@ class Task(models.Model):
     )
     
     # Relations
-    user = models.ForeignKey(
-        CustomUser, 
+    group = models.ForeignKey(
+        Project, 
         on_delete=models.CASCADE, 
         related_name='created_tasks',
-        help_text="User who created the task"
+        help_text="Group who created the task"
     )
     
     assigned_to = models.ForeignKey(
@@ -113,7 +125,7 @@ class Task(models.Model):
         ordering = ['-created_at']
         indexes = [
             models.Index(fields=['serial_no']),
-            models.Index(fields=['status']),
+            models.Index(fields=['processing_status']),
             models.Index(fields=['task_type']),
             models.Index(fields=['human_reviewed']),
         ]
