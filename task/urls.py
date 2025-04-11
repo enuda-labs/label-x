@@ -1,11 +1,15 @@
 from django.urls import path
-from .apis import TaskCreateView, TaskStatusView, UserTaskListView, AssignedTaskListView, TaskReviewView
+from . import apis
 
 app_name = 'task'
 urlpatterns = [
-    path('', TaskCreateView.as_view(), name='task_create'),
-    path('status/<str:identifier>/', TaskStatusView.as_view(), name='task_status'),
-    path('my-tasks/', UserTaskListView.as_view(), name='user_tasks'),
-    path('assigned-task', AssignedTaskListView.as_view(), name="assigned_task"),
-    path('submit-review', TaskReviewView.as_view(), name="submit-review" ),
+    path('', apis.TaskCreateView.as_view(), name='task_create'),
+    path('review-needed/', apis.TasksNeedingReviewView.as_view(), name='tasks_review_needed'),
+    path('assign-to-me/', apis.AssignTaskToSelfView.as_view(), name='assign_task_to_self'),
+    path('my-pending-reviews/', apis.MyPendingReviewTasks.as_view(), name='my_pending_reviews'),
+    
+    path('status/<str:identifier>/', apis.TaskStatusView.as_view(), name='task_status'),
+    path('my-tasks/', apis.UserTaskListView.as_view(), name='user_tasks'),
+    path('assigned-task', apis.AssignedTaskListView.as_view(), name="assigned_task"),
+    path('submit-review', apis.TaskReviewView.as_view(), name="submit-review" ),
 ]
