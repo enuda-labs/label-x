@@ -1,3 +1,4 @@
+from django.shortcuts  import get_object_or_404
 from drf_spectacular.utils import extend_schema, OpenApiResponse, OpenApiExample
 from rest_framework import generics
 from rest_framework.response import Response
@@ -5,8 +6,11 @@ from rest_framework import status
 import logging
 from rest_framework.views import APIView
 from .models import Task
-from .serializers import FullTaskSerializer, TaskSerializer, TaskStatusSerializer, TaskReviewSerializer
+from .serializers import FullTaskSerializer, TaskSerializer, TaskStatusSerializer, TaskReviewSerializer, AssignTaskSerializer
 from .tasks import process_task, provide_feedback_to_ai_model
+
+# import custom permissions
+from account.utils import IsReviewer
 
 
 
@@ -60,7 +64,72 @@ class TaskCreateView(generics.CreateAPIView):
             'errors': serializer.errors
         }, status=status.HTTP_400_BAD_REQUEST)
         
-        
+
+class TasksNeedingReviewView(APIView):
+    """
+    View all tasks that need review (Admins or Reviewers)
+    """
+
+    def get(self, request):
+        if not (request.user.is_admin or request.user.is_reviewer):
+            return Response({"detail": "Not authorized."}, status=status.HTTP_403_FORBIDDEN)
+
+        tasks = Task.objects.filter(processing_status='REVIEW_NEEDED')
+        serializer = TaskSerializer(tasks, many=True)
+        return Response(serializer.data)
+
+
+class AssignTaskToSelfView(APIView):
+    """
+    Allow a reviewer to assign a REVIEW_NEEDED task to themselves.
+    Expects POST payload: { "task_id": 123 }
+    """
+    permission_classes = [IsReviewer]
+
+    def post(self, request):
+        serializer = AssignTaskSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        task_id = serializer.validated_data['task_id']
+        task = get_object_or_404(Task, id=task_id)
+
+        if task.processing_status != 'REVIEW_NEEDED':
+            return Response(
+                {   "status": "error",
+                    "detail": "Task is not available for review."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if task.assigned_to:
+            return Response(
+                {
+                    "status": "error",
+                    "detail": "Task is already assigned."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        task.assigned_to = request.user
+        task.processing_status = 'ASSIGNED_REVIEWER'
+        task.review_status = "PENDING_REVIEW"
+        task.save()
+
+        return Response(
+            {   "status": "success",
+                "message": f"Task {task.serial_no} assigned to you."},
+            status=status.HTTP_200_OK
+        )
+
+class MyPendingReviewTasks(APIView):
+    permission_classes = [IsReviewer]
+
+    def get(self, request):
+        tasks = Task.objects.select_related('assigned_to', 'group').filter(
+            assigned_to=request.user,
+            review_status='PENDING_REVIEW')
+       
+        serializer = TaskSerializer(tasks, many=True)
+        return Response(serializer.data)
+
 
 class TaskReviewView(APIView):
     """View for submission of review by a reviewer"""
