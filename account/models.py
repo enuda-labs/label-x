@@ -5,6 +5,8 @@ class Project(models.Model):
     """Group that reviewers belong to"""
     name = models.CharField(max_length=100, unique=True)
     reviewers = models.ManyToManyField('CustomUser', related_name='reviewer_groups', blank=True)
+    created_by = models.ForeignKey('CustomUser', related_name='tasks', blank=True, on_delete=models.CASCADE, null=True)
+    
 
     def __str__(self):
         return self.name

@@ -26,7 +26,7 @@ def process_task(task_id):
         logger.debug(f"Retrieved task {task_id}")
         
         # Update status to processing
-        task.status = 'PROCESSING'
+        task.processing_status = 'PROCESSING'
         task.save()
         
         push_realtime_update(task)
@@ -66,7 +66,7 @@ def route_task_to_processing(task_id):
         task = Task.objects.select_related('user').get(id=task_id)
         logger.debug(f"Retrieved task {task_id} for routing")
         
-        task.status = 'PROCESSING'
+        task.processing_status = 'PROCESSING'
         task.save()
         
         push_realtime_update(task)
@@ -119,11 +119,11 @@ def process_with_ai_model(task_id):
         task = Task.objects.select_related('user').get(id=task_id)
         
         # Only update if still in PROCESSING state
-        if task.status == 'PROCESSING':
+        if task.processing_status == 'PROCESSING':
             classification = text_classification(task.data)
             logger.info(f"AI classification result: {classification}")
             
-            task.status = 'AI_REVIEWED'
+            task.processing_status = 'AI_REVIEWED'
             task.predicted_label = classification['classification']
             task.human_reviewed = classification['requires_human_review']
             task.ai_output = classification
@@ -139,11 +139,11 @@ def process_with_ai_model(task_id):
                     logger.info(f"Task {task_id} assigned to reviewer")
                 else:
                     logger.warning(f"No available reviewers for task {task_id}")
-                    task.status = 'PENDING_REVIEWER'
+                    task.processing_status = 'PENDING_REVIEWER'
                     task.save()
                     push_realtime_update(task)
             else:
-                task.status = 'COMPLETED'
+                task.processing_status = 'COMPLETED'
                 task.save()
                 push_realtime_update(task)
                 logger.info(f"Task {task_id} completed automatically")
@@ -166,7 +166,7 @@ def provide_feedback_to_ai_model(task_id, review):
         # strinify the review before sending to the api
         json_string = json.dumps(review, indent=2)
         classification = text_classification(json_string)        
-        task.status = 'COMPLETED'
+        task.processing_status = 'COMPLETED'
         task.ai_output = classification
         task.save()
         

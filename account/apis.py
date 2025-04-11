@@ -121,6 +121,8 @@ class CreateProjectView(generics.CreateAPIView):
     serializer_class = ProjectCreateSerializer
     permission_classes = [IsAdminUser]
     
+    
+    
 
 class CustomTokenRefreshView(TokenRefreshView):
     """

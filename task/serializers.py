@@ -1,6 +1,8 @@
 from rest_framework import serializers
 from .models import Task
 
+
+
 class HumanReviewSerializer(serializers.Serializer):
     correction = serializers.CharField(allow_null=True, required=False)
     justification = serializers.CharField(allow_null=True, required=False)
@@ -26,7 +28,7 @@ class TaskSerializer(serializers.ModelSerializer):
             'id', 'serial_no', 'task_type', 'data', 'ai_output' ,
             'predicted_label', 'human_reviewed', 'final_label',
             'processing_status', 'assigned_to', 'created_at', 'updated_at',
-            'priority' 
+            'priority', 'group' 
         ]
         read_only_fields = [
             'id', 'serial_no', 'predicted_label', "ai_output",

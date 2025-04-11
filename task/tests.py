@@ -150,7 +150,7 @@ class TaskSubmissionTestCase(APITestCase):
         # Verify task in database
         task = Task.objects.get(id=response.data['data']['task_id'])
         self.assertEqual(task.task_type, 'TEXT')
-        self.assertEqual(task.status, 'PENDING')
+        self.assertEqual(task.processing_status, 'PENDING')
         self.assertEqual(task.user, self.user)
 
     def test_submit_image_task(self):

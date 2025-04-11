@@ -6,6 +6,9 @@ from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 import logging
 from rest_framework.views import APIView
+
+from account.models import Project
+from task.utils import dispatch_task_message, push_realtime_update
 from .models import Task
 from .serializers import FullTaskSerializer, TaskSerializer, TaskStatusSerializer, TaskReviewSerializer, AssignTaskSerializer
 from .tasks import process_task, provide_feedback_to_ai_model
@@ -17,11 +20,29 @@ from account.utils import IsReviewer
 
 logger = logging.getLogger(__name__)
 
-class TaskCreateView(generics.CreateAPIView):
+
+class TaskListView(generics.ListAPIView):
+    """
+    Get a list of tasks the currently logged in user can work on
+    
+    ---
+    """
     serializer_class = TaskSerializer
+    permission_classes = [IsAuthenticated]
+    queryset = Task.objects.all()
     
     def get_queryset(self):
-        return Task.objects.select_related('user').all()
+        my_projects= Project.objects.filter(reviewers=self.request.user)
+        tasks_list= Task.objects.filter(group__in=my_projects, assigned_to=None, processing_status="REVIEW_NEEDED")
+        return tasks_list
+    
+
+class TaskCreateView(generics.CreateAPIView):
+    serializer_class = TaskSerializer
+    permission_classes = [IsAuthenticated]
+    
+    def get_queryset(self):
+        return Task.objects.select_related('group').all()
     
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
@@ -38,7 +59,7 @@ class TaskCreateView(generics.CreateAPIView):
                 logger.info(f"Task {task.id} submitted to Celery. Celery task ID: {celery_task.id}")
 
                 # Get fresh task data with related fields
-                task = Task.objects.select_related('user').get(id=task.id)
+                task = Task.objects.select_related('group').get(id=task.id)
                 
                 return Response({
                     'status': 'success',
@@ -47,8 +68,8 @@ class TaskCreateView(generics.CreateAPIView):
                         'task_id': task.id,
                         'serial_no': task.serial_no,
                         'celery_task_id': celery_task.id,
-                        'status': task.status,
-                        'submitted_by': task.user.username
+                        'processing_status': task.processing_status,
+                        # 'submitted_by': task.user.username
                     }
                 }, status=status.HTTP_201_CREATED)
 
@@ -65,12 +86,11 @@ class TaskCreateView(generics.CreateAPIView):
             'errors': serializer.errors
         }, status=status.HTTP_400_BAD_REQUEST)
         
-
 class TasksNeedingReviewView(APIView):
     """
     View all tasks that need review (Admins or Reviewers)
     """
-
+    permission_classes = [IsAuthenticated]
     def get(self, request):
         if not (request.user.is_admin or request.user.is_reviewer):
             return Response({"detail": "Not authorized."}, status=status.HTTP_403_FORBIDDEN)
@@ -86,6 +106,7 @@ class AssignTaskToSelfView(APIView):
     Expects POST payload: { "task_id": 123 }
     """
     permission_classes = [IsReviewer]
+    serializer_class= AssignTaskSerializer
 
     def post(self, request):
         serializer = AssignTaskSerializer(data=request.data)
@@ -113,6 +134,7 @@ class AssignTaskToSelfView(APIView):
         task.processing_status = 'ASSIGNED_REVIEWER'
         task.review_status = "PENDING_REVIEW"
         task.save()
+        push_realtime_update(task)
 
         return Response(
             {   "status": "success",
@@ -184,7 +206,7 @@ class TaskReviewView(APIView):
                     'task_id': task.id,
                     'serial_no': task.serial_no,
                     'celery_task_id': celery_task.id,
-                    'status': task.status,
+                    'processing_status': task.processing_status,
                 }
             }, status=status.HTTP_200_OK)
             
@@ -218,7 +240,7 @@ class TaskStatusView(APIView):
             else:
                 task = tasks_qs.get(serial_no=identifier, user=request.user)
             
-            logger.info(f"Found task {task.id} with status: {task.status}")
+            logger.info(f"Found task {task.id} with status: {task.processing_status}")
             
             return Response({
                 'status': 'success',
@@ -226,10 +248,10 @@ class TaskStatusView(APIView):
                     'task_id': task.id,
                     'serial_no': task.serial_no,
                     'task_type': task.task_type,
-                    'status': task.status,
+                    'processing_status': task.processing_status,
                     'human_reviewed': task.human_reviewed,
                     "ai_output": task.ai_output,
-                    'submitted_by': task.user.username,
+                    'submitted_by': task.user.username if task.user else None,
                     'assigned_to': task.assigned_to.username if task.assigned_to else None,
                     'created_at': task.created_at,
                     'updated_at': task.updated_at

@@ -22,8 +22,8 @@ def dispatch_task_message(receiver_id, payload):
 
 def push_realtime_update(task: Task):
     serialized = serialize_task(task)
-    print(task.user.id)
-    dispatch_task_message(task.user.id, serialized)
+    if task.user:
+        dispatch_task_message(task.user.id, serialized)
 
 def assign_reviewer(task):
     """
@@ -51,7 +51,7 @@ def assign_reviewer(task):
     
     # Assign the task to the reviewer
     task.assigned_to = reviewer
-    task.status = 'REVIEW_NEEDED'
+    task.processing_status = 'REVIEW_NEEDED'
     task.save()
     
     # Notify the reviewer about the new task
