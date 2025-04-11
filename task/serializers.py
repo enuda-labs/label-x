@@ -19,18 +19,18 @@ class FullTaskSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 class TaskSerializer(serializers.ModelSerializer):
-    ai_output = AIOutputSerializer()
+    ai_output = AIOutputSerializer(read_only=True) 
     class Meta:
         model = Task
         fields = [
             'id', 'serial_no', 'task_type', 'data', 'ai_output' ,
             'predicted_label', 'human_reviewed', 'final_label',
-            'status', 'assigned_to', 'created_at', 'updated_at',
-            'priority'
+            'processing_status', 'assigned_to', 'created_at', 'updated_at',
+            'priority' 
         ]
         read_only_fields = [
-            'id', 'serial_no', 'predicted_label', 
-            'human_reviewed', 'final_label', 'status',
+            'id', 'serial_no', 'predicted_label', "ai_output",
+            'human_reviewed', 'final_label', 'processing_status',
             'assigned_to', 'created_at', 'updated_at'
         ]
         extra_kwargs = {
@@ -41,7 +41,7 @@ class TaskStatusSerializer(serializers.ModelSerializer):
     class Meta:
         model = Task
         fields = [
-            'id', 'serial_no', 'task_type', 'status',
+            'id', 'serial_no', 'task_type', 'processing_status', 'review_status',
             'human_reviewed', 'created_at', 'updated_at'
         ]
         read_only_fields = fields
@@ -54,4 +54,9 @@ class TaskReviewSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Task
-        exclude = ['assigned_to', 'user']
+        exclude = ['assigned_to', 'group']
+
+
+class AssignTaskSerializer(serializers.Serializer):
+    task_id = serializers.IntegerField(help_text="ID of the task to assign to the current reviewer")
+    
