@@ -1,22 +1,48 @@
+from django.shortcuts  import get_object_or_404
 from drf_spectacular.utils import extend_schema, OpenApiResponse, OpenApiExample
 from rest_framework import generics
 from rest_framework.response import Response
 from rest_framework import status
+from rest_framework.permissions import IsAuthenticated
 import logging
 from rest_framework.views import APIView
+
+from account.models import Project
+from task.utils import dispatch_task_message, push_realtime_update
 from .models import Task
-from .serializers import FullTaskSerializer, TaskSerializer, TaskStatusSerializer, TaskReviewSerializer
+from .serializers import FullTaskSerializer, TaskSerializer, TaskStatusSerializer, TaskReviewSerializer, AssignTaskSerializer
 from .tasks import process_task, provide_feedback_to_ai_model
+
+# import custom permissions
+from account.utils import IsReviewer
 
 
 
 logger = logging.getLogger(__name__)
 
-class TaskCreateView(generics.CreateAPIView):
+
+class TaskListView(generics.ListAPIView):
+    """
+    Get a list of tasks the currently logged in user can work on
+    
+    ---
+    """
     serializer_class = TaskSerializer
+    permission_classes = [IsAuthenticated]
+    queryset = Task.objects.all()
     
     def get_queryset(self):
-        return Task.objects.select_related('user').all()
+        my_projects= Project.objects.filter(reviewers=self.request.user)
+        tasks_list= Task.objects.filter(group__in=my_projects, assigned_to=None, processing_status="REVIEW_NEEDED")
+        return tasks_list
+    
+
+class TaskCreateView(generics.CreateAPIView):
+    serializer_class = TaskSerializer
+    permission_classes = [IsAuthenticated]
+    
+    def get_queryset(self):
+        return Task.objects.select_related('group').all()
     
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
@@ -33,7 +59,7 @@ class TaskCreateView(generics.CreateAPIView):
                 logger.info(f"Task {task.id} submitted to Celery. Celery task ID: {celery_task.id}")
 
                 # Get fresh task data with related fields
-                task = Task.objects.select_related('user').get(id=task.id)
+                task = Task.objects.select_related('group').get(id=task.id)
                 
                 return Response({
                     'status': 'success',
@@ -42,8 +68,8 @@ class TaskCreateView(generics.CreateAPIView):
                         'task_id': task.id,
                         'serial_no': task.serial_no,
                         'celery_task_id': celery_task.id,
-                        'status': task.status,
-                        'submitted_by': task.user.username
+                        'processing_status': task.processing_status,
+                        # 'submitted_by': task.user.username
                     }
                 }, status=status.HTTP_201_CREATED)
 
@@ -60,11 +86,79 @@ class TaskCreateView(generics.CreateAPIView):
             'errors': serializer.errors
         }, status=status.HTTP_400_BAD_REQUEST)
         
+class TasksNeedingReviewView(APIView):
+    """
+    View all tasks that need review (Admins or Reviewers)
+    """
+    permission_classes = [IsAuthenticated]
+    def get(self, request):
+        if not (request.user.is_admin or request.user.is_reviewer):
+            return Response({"detail": "Not authorized."}, status=status.HTTP_403_FORBIDDEN)
         
+        my_projects= Project.objects.filter(reviewers=self.request.user)
+        tasks = Task.objects.filter(processing_status='REVIEW_NEEDED', group__in=my_projects, assigned_to=None,)
+        serializer = TaskSerializer(tasks, many=True)
+        return Response(serializer.data)
 
-class TaskReviewView(APIView):
+
+class AssignTaskToSelfView(APIView):
+    """
+    Allow a reviewer to assign a REVIEW_NEEDED task to themselves.
+    Expects POST payload: { "task_id": 123 }
+    """
+    permission_classes = [IsReviewer]
+    serializer_class= AssignTaskSerializer
+
+    def post(self, request):
+        serializer = AssignTaskSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        task_id = serializer.validated_data['task_id']
+        task = get_object_or_404(Task, id=task_id)
+
+        if task.processing_status != 'REVIEW_NEEDED':
+            return Response(
+                {   "status": "error",
+                    "detail": "Task is not available for review."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if task.assigned_to:
+            return Response(
+                {
+                    "status": "error",
+                    "detail": "Task is already assigned."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        task.assigned_to = request.user
+        task.processing_status = 'ASSIGNED_REVIEWER'
+        task.review_status = "PENDING_REVIEW"
+        task.save()
+        push_realtime_update(task, action='task_status_changed')
+
+        return Response(
+            {   "status": "success",
+                "message": f"Task {task.serial_no} assigned to you."},
+            status=status.HTTP_200_OK
+        )
+
+class MyPendingReviewTasks(APIView):
+    permission_classes = [IsReviewer]
+
+    def get(self, request):
+        tasks = Task.objects.select_related('assigned_to', 'group').filter(
+            assigned_to=request.user,
+            review_status='PENDING_REVIEW')
+       
+        serializer = TaskSerializer(tasks, many=True)
+        return Response(serializer.data)
+
+
+class TaskReviewView(generics.GenericAPIView):
     """View for submission of review by a reviewer"""
-    
+    serializer_class = TaskReviewSerializer
+    permission_classes = [IsAuthenticated, IsReviewer]
     @extend_schema(
         summary="Submit task review",
         description="Submit a review for an existing task with AI output data.",
@@ -77,33 +171,50 @@ class TaskReviewView(APIView):
         }
     )
     def post(self, request, *args, **kwargs):
-        # Get task_id from request data
-        task_id = request.data.get('task_id')
-        
-        if not task_id:
+        serializer = self.get_serializer(data=request.data)
+        if not serializer.is_valid():
             return Response({
                 'status': 'error',
-                'error': 'Task ID is required'
-            }, status=status.HTTP_400_BAD_REQUEST)
+                'errors': serializer.errors
+            }, status=status.HTTP_400_BAD_REQUEST)  
             
+        # Get task_id from request data
+        task_id = serializer.validated_data.get('task_id')            
         try:
             # Fetch the existing task
             task = Task.objects.select_related('user', 'assigned_to').get(id=task_id)
+
+            # Extract ai_output for processing
+            ai_output = task.ai_output
+    
+            if task.review_status != 'PENDING_REVIEW':
+                return Response({
+                    'status': "error",
+                    'error': "Task does not require review at this moment"
+                }, status=status.HTTP_403_FORBIDDEN)
+
             
-            # Validate incoming data against serializer with existing task instance
-            serializer = TaskReviewSerializer(task, data=request.data, partial=True)
+            if task.assigned_to != request.user:
+                
+                return Response({
+                    'status': "error",
+                    'error': "You have not been assigned to review this task"
+                }, status=status.HTTP_401_UNAUTHORIZED)
             
-            if not serializer.is_valid():
+                        
+            if not ai_output or not ai_output.get('human_review'):
                 return Response({
                     'status': 'error',
-                    'errors': serializer.errors
-                }, status=status.HTTP_400_BAD_REQUEST)
-                
-            # Extract ai_output for processing
-            ai_output = serializer.validated_data.get('ai_output')
+                    'error': "AI output for this task does not match predefined structure"
+                }, status=status.HTTP_417_EXPECTATION_FAILED)
+            
+            ai_output['human_review']['correction'] = serializer.validated_data.get('correction')
+            ai_output['human_review']['justification'] = serializer.validated_data.get('justification')
+            ai_output['confidence'] = serializer.validated_data.get('confidence')
             
             # Log and queue task to Celery with both task id and ai_output
             logger.info(f"Submitting task {task.id} to Celery queue")
+            
             celery_task = provide_feedback_to_ai_model.delay(task.id, ai_output)
             logger.info(f"Task {task.id} submitted to Celery. Celery task ID: {celery_task.id}")
             
@@ -114,7 +225,7 @@ class TaskReviewView(APIView):
                     'task_id': task.id,
                     'serial_no': task.serial_no,
                     'celery_task_id': celery_task.id,
-                    'status': task.status,
+                    'processing_status': task.processing_status,
                 }
             }, status=status.HTTP_200_OK)
             
@@ -148,7 +259,7 @@ class TaskStatusView(APIView):
             else:
                 task = tasks_qs.get(serial_no=identifier, user=request.user)
             
-            logger.info(f"Found task {task.id} with status: {task.status}")
+            logger.info(f"Found task {task.id} with status: {task.processing_status}")
             
             return Response({
                 'status': 'success',
@@ -156,10 +267,10 @@ class TaskStatusView(APIView):
                     'task_id': task.id,
                     'serial_no': task.serial_no,
                     'task_type': task.task_type,
-                    'status': task.status,
+                    'processing_status': task.processing_status,
                     'human_reviewed': task.human_reviewed,
                     "ai_output": task.ai_output,
-                    'submitted_by': task.user.username,
+                    'submitted_by': task.user.username if task.user else None,
                     'assigned_to': task.assigned_to.username if task.assigned_to else None,
                     'created_at': task.created_at,
                     'updated_at': task.updated_at
@@ -192,10 +303,10 @@ class AssignedTaskListView(generics.ListAPIView):
     Endpoint to list all tasks assigned to the authenticated user
     """
     serializer_class = TaskSerializer
-    
+    permission_classes = [IsAuthenticated]
     def get_queryset(self):
         logger.info(f"Fetching assigned tasks for user: {self.request.user.id}")
         return (Task.objects
-                .select_related('user', 'assigned_to')
+                .select_related('assigned_to')
                 .filter(assigned_to=self.request.user)
                 .order_by('-created_at'))
