@@ -149,8 +149,7 @@ class RefreshTokenTestCase(APITransactionTestCase):
         )
 
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
-        self.assertEqual(response.data["error"], "Your session has expired. Please log in again.")
-        self.assertIn("error", response.data)
+        self.assertEqual(response.data["detail"], "Your session has expired. Please log in again.")
 
     def test_refresh_token_expired(self):
         """
@@ -168,7 +167,6 @@ class RefreshTokenTestCase(APITransactionTestCase):
 
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
         self.assertEqual(response.data["status"], "error")
-        self.assertIn("error", response.data)
 
     def tearDown(self):
         CustomUser.objects.all().delete()

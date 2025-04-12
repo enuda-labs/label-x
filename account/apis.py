@@ -1,6 +1,6 @@
 
-from django.db import IntegrityError
-from drf_spectacular.utils import extend_schema, OpenApiResponse, OpenApiExample
+from drf_spectacular.utils import extend_schema
+from rest_framework import generics
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.exceptions import AuthenticationFailed
@@ -9,8 +9,10 @@ from rest_framework.permissions import AllowAny
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenRefreshView
 
-from .models import CustomUser
-from .serializers import UserSerializer, LoginSerializer, RegisterSerializer, TokenRefreshResponseSerializer, TokenRefreshSerializer,RegisterReviewerSerializer
+
+from .serializers import UserSerializer, LoginSerializer, RegisterSerializer, TokenRefreshResponseSerializer, TokenRefreshSerializer,MakeReviewerSerializer, ProjectCreateSerializer, MakeAdminSerializer
+from .utils import IsAdminUser, IsSuperAdmin
+from .models import Project
 
 class LoginView(APIView):
     """User login view to generate JWT token"""
@@ -82,35 +84,73 @@ class RegisterView(APIView):
             'error': error_message
         }, status=status.HTTP_400_BAD_REQUEST)
         
-
-class RegisterReviewerView(APIView):
-    """API view for creating a new reviewer user"""
-    permission_classes = [AllowAny]  # Make this accessible to everyone
-
+class MakeUserAdminView(APIView):
+    """ view to upgrade a user to reviewer """
+    permission_classes = [IsSuperAdmin]
+    
     @extend_schema(
-        summary="Register a new reviewer",
-        description="This endpoint allows you to register a new user who will be marked as a reviewer.",
-        request=RegisterReviewerSerializer,  # Specify the request schema
-        responses={201: RegisterReviewerSerializer, 400: "Invalid data provided"}
+    request=MakeAdminSerializer,
+    responses={200: None}
     )
-    def post(self, request):
-        # Use the RegisterReviewerSerializer to create a new reviewer
-        serializer = RegisterReviewerSerializer(data=request.data)
-        
-        if serializer.is_valid():
-            user = serializer.save()  # Save the user as a reviewer
-            return Response({
-                'status': 'success',
-                'user_data': RegisterReviewerSerializer(user).data
-            }, status=status.HTTP_201_CREATED)
-        
-        # If the serializer is not valid, return the error
-        return Response({
-            'status': 'error',
-            'error': "Invalid data provided",
-            'details': serializer.errors
-        }, status=status.HTTP_400_BAD_REQUEST)
 
+    def post(self, request):
+        """
+        Admin-only: Promote a user to reviewer and assign them to a reviewer group.
+        Expects POST data: {"user_id": 5, "group_id": 1}
+        """
+        serializer = MakeAdminSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        user = serializer.validated_data['user_id']
+
+        user.is_admin = True
+        user.is_staff = True
+        user.save()
+        
+
+        return Response({
+            "status": "success",
+            "detail": f"User '{user.username}' is now an admin."
+        }, status=status.HTTP_200_OK)
+
+class MakeUserReviewerView(APIView):
+    """ view to upgrade a user to reviewer """
+    permission_classes = [IsAdminUser]
+    
+    @extend_schema(
+    request=MakeReviewerSerializer,
+    responses={200: None}
+    )
+
+    def post(self, request):
+        """
+        Admin-only: Promote a user to reviewer and assign them to a reviewer group.
+        Expects POST data: {"user_id": 5, "group_id": 1}
+        """
+        serializer = MakeReviewerSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        user = serializer.validated_data['user_id']
+        group = serializer.validated_data['group_id']
+
+        user.is_reviewer = True
+        user.save()
+        group.reviewers.add(user)
+        group.save()
+        
+
+        return Response({
+            "status": "success",
+            "detail": f"User '{user.username}' is now a reviewer in group '{group.name}'."
+        }, status=status.HTTP_200_OK)
+
+class CreateProjectView(generics.CreateAPIView):
+    queryset = Project.objects.all()
+    serializer_class = ProjectCreateSerializer
+    permission_classes = [IsAdminUser]
+    
+    
+    
 
 class CustomTokenRefreshView(TokenRefreshView):
     """
@@ -121,25 +161,10 @@ class CustomTokenRefreshView(TokenRefreshView):
         summary="Refresh JWT access token",
         description="Exchanges a refresh token for a new access token.",
         request=TokenRefreshSerializer,
-        responses={
-            200: OpenApiResponse(
-                response=TokenRefreshResponseSerializer,
-                description="A new access token is returned.",
-            ),
-            400: OpenApiResponse(description="Invalid or expired refresh token."),
-        },
-        examples=[
-            OpenApiExample(
-                "Valid Request",
-                value={"refresh": "your_refresh_token_here"},
-                request_only=True,
-            ),
-            OpenApiExample(
-                "Successful Response",
-                value={"access": "new_access_token_here", "refresh": "new_refresh_token_here"},
-                response_only=True,
-            ),
-        ],
+         responses={
+            200:TokenRefreshResponseSerializer,  # Document the response structure
+            401: {"status":"error", "detail": "Invalid credentials....."},
+        }
     )
     def post(self, request, *args, **kwargs):
         try:
@@ -154,9 +179,7 @@ class CustomTokenRefreshView(TokenRefreshView):
             return Response(
                 {
                     "status": "error",
-                    "error": "Your session has expired. Please log in again."
+                    "detail": "Your session has expired. Please log in again."
                 },
                 status=status.HTTP_401_UNAUTHORIZED
             )
-
-
