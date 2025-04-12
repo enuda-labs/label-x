@@ -134,7 +134,7 @@ class AssignTaskToSelfView(APIView):
         task.processing_status = 'ASSIGNED_REVIEWER'
         task.review_status = "PENDING_REVIEW"
         task.save()
-        push_realtime_update(task)
+        push_realtime_update(task, action='task_status_changed')
 
         return Response(
             {   "status": "success",
@@ -154,9 +154,10 @@ class MyPendingReviewTasks(APIView):
         return Response(serializer.data)
 
 
-class TaskReviewView(APIView):
+class TaskReviewView(generics.GenericAPIView):
     """View for submission of review by a reviewer"""
-    
+    serializer_class = TaskReviewSerializer
+    permission_classes = [IsAuthenticated, IsReviewer]
     @extend_schema(
         summary="Submit task review",
         description="Submit a review for an existing task with AI output data.",
@@ -169,33 +170,49 @@ class TaskReviewView(APIView):
         }
     )
     def post(self, request, *args, **kwargs):
-        # Get task_id from request data
-        task_id = request.data.get('task_id')
-        
-        if not task_id:
+        serializer = self.get_serializer(data=request.data)
+        if not serializer.is_valid():
             return Response({
                 'status': 'error',
-                'error': 'Task ID is required'
-            }, status=status.HTTP_400_BAD_REQUEST)
+                'errors': serializer.errors
+            }, status=status.HTTP_400_BAD_REQUEST)  
             
+        # Get task_id from request data
+        task_id = serializer.validated_data.get('task_id')            
         try:
             # Fetch the existing task
             task = Task.objects.select_related('user', 'assigned_to').get(id=task_id)
+
+            # Extract ai_output for processing
+            ai_output = task.ai_output
+    
+            if task.review_status != 'PENDING_REVIEW':
+                return Response({
+                    'status': "error",
+                    'error': "Task does not require review at this moment"
+                }, status=status.HTTP_403_FORBIDDEN)
+
             
-            # Validate incoming data against serializer with existing task instance
-            serializer = TaskReviewSerializer(task, data=request.data, partial=True)
+            if task.assigned_to != request.user:
+                
+                return Response({
+                    'status': "error",
+                    'error': "You have not been assigned to review this task"
+                }, status=status.HTTP_401_UNAUTHORIZED)
             
-            if not serializer.is_valid():
+                        
+            if not ai_output or not ai_output.get('human_review'):
                 return Response({
                     'status': 'error',
-                    'errors': serializer.errors
-                }, status=status.HTTP_400_BAD_REQUEST)
-                
-            # Extract ai_output for processing
-            ai_output = serializer.validated_data.get('ai_output')
+                    'error': "AI output for this task does not match predefined structure"
+                }, status=status.HTTP_417_EXPECTATION_FAILED)
+            
+            ai_output['human_review']['correction'] = serializer.validated_data.get('correction')
+            ai_output['human_review']['justification'] = serializer.validated_data.get('justification')
             
             # Log and queue task to Celery with both task id and ai_output
             logger.info(f"Submitting task {task.id} to Celery queue")
+            
             celery_task = provide_feedback_to_ai_model.delay(task.id, ai_output)
             logger.info(f"Task {task.id} submitted to Celery. Celery task ID: {celery_task.id}")
             

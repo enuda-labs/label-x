@@ -2,7 +2,7 @@ import json
 from celery import shared_task
 from celery.utils.log import get_task_logger
 
-from task.utils import dispatch_task_message, push_realtime_update
+from task.utils import push_realtime_update
 
 from .ai_processor import text_classification
 from .models import Task
@@ -29,7 +29,7 @@ def process_task(task_id):
         task.processing_status = 'PROCESSING'
         task.save()
         
-        push_realtime_update(task)
+        push_realtime_update(task, action='task_status_changed')
         logger.info(f"Updated task {task_id} status to PROCESSING")
         
         # Get priority with fallback to 'NORMAL'
@@ -69,7 +69,7 @@ def route_task_to_processing(task_id):
         task.processing_status = 'PROCESSING'
         task.save()
         
-        push_realtime_update(task)
+        push_realtime_update(task, action='task_status_changed')
         logger.info(f"Updated task {task_id} status to PROCESSING")
         
         # Call AI processing
@@ -141,11 +141,11 @@ def process_with_ai_model(task_id):
                     logger.warning(f"No available reviewers for task {task_id}")
                     task.processing_status = 'PENDING_REVIEWER'
                     task.save()
-                    push_realtime_update(task)
+                    push_realtime_update(task, action='task_status_changed')
             else:
                 task.processing_status = 'COMPLETED'
                 task.save()
-                push_realtime_update(task)
+                push_realtime_update(task, action='task_status_changed')
                 logger.info(f"Task {task_id} completed automatically")
         
         return {'status': 'success', 'task_id': task.id}
@@ -165,12 +165,14 @@ def provide_feedback_to_ai_model(task_id, review):
         task = Task.objects.select_related('user').get(id=task_id)
         # strinify the review before sending to the api
         json_string = json.dumps(review, indent=2)
-        classification = text_classification(json_string)        
+        classification = text_classification(json_string)    
+        print('the classification', classification)    
         task.processing_status = 'COMPLETED'
+        task.review_status = 'PENDING_APPROVAL'
         task.ai_output = classification
         task.save()
         
-        push_realtime_update(task)
+        push_realtime_update(task, action='task_status_changed')
         logger.info(f"Feedback completed for task with ID {task.id}")
         
         

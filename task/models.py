@@ -10,6 +10,10 @@ def generate_serial_no():
     return "".join(random.choices(chars, k=6))
 
 
+class TaskClassificationChoices(models.TextChoices):
+    SAFE = 'Safe', 'Safe',
+    MILDLY_OFFENSIVE = 'Mildly Offensive', 'Mildly Offensive'
+    HIGHLY_OFFENSIVE = 'Highly Offensive', 'Highly Offensive'
 class Task(models.Model):
     TASK_TYPES = (
         ("TEXT", "Text"),
@@ -35,7 +39,7 @@ class Task(models.Model):
     )
     REVIEW_STATUS_CHOICES = (
         ("PENDING_REVIEW", "Pending Review"),
-        ("PENDING_APPROVAL", "Pending Arpoval"),
+        ("PENDING_APPROVAL", "Pending Approval"),
         ("COMPLETED", "Completed"),
     )
 

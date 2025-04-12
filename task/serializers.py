@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Task
+from .models import Task, TaskClassificationChoices
 
 
 
@@ -50,13 +50,18 @@ class TaskStatusSerializer(serializers.ModelSerializer):
         
         
 
-class TaskReviewSerializer(serializers.ModelSerializer):
+class TaskReviewSerializer(serializers.Serializer):
     task_id = serializers.IntegerField()
-    ai_output = AIOutputSerializer()
+    correction = serializers.ChoiceField(choices=TaskClassificationChoices.choices)
+    justification = serializers.CharField()
+    confidence = serializers.FloatField(min_value=0.0, max_value=1.0)
+    
+    
+    # ai_output = AIOutputSerializer()
 
-    class Meta:
-        model = Task
-        exclude = ['assigned_to', 'group']
+    # class Meta:
+    #     model = Task
+    #     exclude = ['assigned_to', 'group']
 
 
 class AssignTaskSerializer(serializers.Serializer):
