@@ -89,7 +89,7 @@ class MakeUserAdminView(APIView):
     permission_classes = [IsSuperAdmin]
     
     @extend_schema(
-    request=MakeReviewerSerializer,
+    request=MakeAdminSerializer,
     responses={200: None}
     )
 
@@ -104,6 +104,7 @@ class MakeUserAdminView(APIView):
         user = serializer.validated_data['user_id']
 
         user.is_admin = True
+        user.is_staff = True
         user.save()
         
 
