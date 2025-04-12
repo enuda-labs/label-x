@@ -109,6 +109,11 @@ class MakeReviewerSerializer(serializers.Serializer):
         help_text="ID of the project group to assign the user to"
     )
 
+class MakeAdminSerializer(serializers.Serializer):
+    user_id = serializers.PrimaryKeyRelatedField(
+        queryset=CustomUser.objects.all(),
+        help_text="ID of the user to promote to admin"
+    )
 
 class TokenRefreshSerializer(serializers.Serializer):
     refresh = serializers.CharField(help_text="The refresh token to obtain a new access token.")
