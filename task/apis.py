@@ -209,6 +209,7 @@ class TaskReviewView(generics.GenericAPIView):
             
             ai_output['human_review']['correction'] = serializer.validated_data.get('correction')
             ai_output['human_review']['justification'] = serializer.validated_data.get('justification')
+            ai_output['confidence'] = serializer.validated_data.get('confidence')
             
             # Log and queue task to Celery with both task id and ai_output
             logger.info(f"Submitting task {task.id} to Celery queue")
