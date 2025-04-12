@@ -1,5 +1,11 @@
 from rest_framework.permissions import BasePermission
 
+class IsSuperAdmin(BasePermission):
+    """Allow access to only users mark as admin"""
+    def has_permission(self, request, view):
+        return request.user and request.user.is_authenticated and request.user.is_superuser
+    
+
 class IsAdminUser(BasePermission):
     """Allow access to only users mark as admin"""
     def has_permission(self, request, view):
