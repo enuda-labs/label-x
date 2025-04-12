@@ -135,13 +135,10 @@ def process_with_ai_model(task_id):
             # If human review is needed, try to assign a reviewer
             if classification['requires_human_review']:
                 logger.info(f"We are in require human intelligence")
-                if assign_reviewer(task):
-                    logger.info(f"Task {task_id} assigned to reviewer")
-                else:
-                    logger.warning(f"No available reviewers for task {task_id}")
-                    task.processing_status = 'PENDING_REVIEWER'
-                    task.save()
-                    push_realtime_update(task, action='task_status_changed')
+                task.processing_status = 'REVIEW_NEEDED'
+                task.review_status = 'PENDING_REVIEW'
+                task.save()
+                push_realtime_update(task, action='task_status_changed')
             else:
                 task.processing_status = 'COMPLETED'
                 task.save()
