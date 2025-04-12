@@ -10,8 +10,8 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenRefreshView
 
 
-from .serializers import UserSerializer, LoginSerializer, RegisterSerializer, TokenRefreshResponseSerializer, TokenRefreshSerializer,MakeReviewerSerializer, ProjectCreateSerializer
-from .utils import IsAdminUser
+from .serializers import UserSerializer, LoginSerializer, RegisterSerializer, TokenRefreshResponseSerializer, TokenRefreshSerializer,MakeReviewerSerializer, ProjectCreateSerializer, MakeAdminSerializer
+from .utils import IsAdminUser, IsSuperAdmin
 from .models import Project
 
 class LoginView(APIView):
@@ -84,6 +84,33 @@ class RegisterView(APIView):
             'error': error_message
         }, status=status.HTTP_400_BAD_REQUEST)
         
+class MakeUserAdminView(APIView):
+    """ view to upgrade a user to reviewer """
+    permission_classes = [IsSuperAdmin]
+    
+    @extend_schema(
+    request=MakeReviewerSerializer,
+    responses={200: None}
+    )
+
+    def post(self, request):
+        """
+        Admin-only: Promote a user to reviewer and assign them to a reviewer group.
+        Expects POST data: {"user_id": 5, "group_id": 1}
+        """
+        serializer = MakeAdminSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        user = serializer.validated_data['user_id']
+
+        user.is_admin = True
+        user.save()
+        
+
+        return Response({
+            "status": "success",
+            "detail": f"User '{user.username}' is now an admin."
+        }, status=status.HTTP_200_OK)
 
 class MakeUserReviewerView(APIView):
     """ view to upgrade a user to reviewer """
