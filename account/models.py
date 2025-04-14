@@ -4,7 +4,6 @@ from django.db import models
 class Project(models.Model):
     """Group that reviewers belong to"""
     name = models.CharField(max_length=100, unique=True)
-    reviewers = models.ManyToManyField('CustomUser', related_name='reviewer_groups', blank=True)
     created_by = models.ForeignKey('CustomUser', related_name='tasks', blank=True, on_delete=models.CASCADE, null=True)
     
 
@@ -46,6 +45,7 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     last_activity = models.DateTimeField(auto_now=True, help_text="Last time the user was active")
     is_staff = models.BooleanField(default=False)
     is_superuser = models.BooleanField(default=False) 
+    project = models.ForeignKey(Project, on_delete=models.SET_NULL, related_name='members', null=True, blank=True)
 
     objects = CustomUserManager()
 
