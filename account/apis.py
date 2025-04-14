@@ -10,9 +10,9 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenRefreshView
 
 
-from .serializers import UserSerializer, LoginSerializer, RegisterSerializer, TokenRefreshResponseSerializer, TokenRefreshSerializer,MakeReviewerSerializer, ProjectCreateSerializer, MakeAdminSerializer
+from .serializers import UserSerializer, LoginSerializer, RegisterSerializer, TokenRefreshResponseSerializer, TokenRefreshSerializer,MakeReviewerSerializer, ProjectCreateSerializer, MakeAdminSerializer, UserDetailSerializer, SimpleUserSerializer
 from .utils import IsAdminUser, IsSuperAdmin
-from .models import Project
+from .models import CustomUser, Project
 
 class LoginView(APIView):
     """User login view to generate JWT token"""
@@ -131,17 +131,16 @@ class MakeUserReviewerView(APIView):
         serializer.is_valid(raise_exception=True)
 
         user = serializer.validated_data['user_id']
-        group = serializer.validated_data['group_id']
+        project = serializer.validated_data['group_id']
 
         user.is_reviewer = True
+        user.project = project
         user.save()
-        group.reviewers.add(user)
-        group.save()
         
 
         return Response({
             "status": "success",
-            "detail": f"User '{user.username}' is now a reviewer in group '{group.name}'."
+            "detail": f"User '{user.username}' is now a reviewer in project '{project.name}'."
         }, status=status.HTTP_200_OK)
 
 class CreateProjectView(generics.CreateAPIView):
@@ -183,3 +182,44 @@ class CustomTokenRefreshView(TokenRefreshView):
                 },
                 status=status.HTTP_401_UNAUTHORIZED
             )
+
+
+class ProjectListView(APIView):
+    """
+    Endpoint to list all tasks submitted by the user
+    """
+    permission_classes = [IsAdminUser]
+
+    def get(self, request, *args, **kwargs):
+        projects = Project.objects.all()
+        serializer = ProjectCreateSerializer(projects, many=True)
+        return Response({
+            "status": "success",
+            "projects": serializer.data,
+        }, status=status.HTTP_200_OK)
+        
+
+class UserDetailView(APIView):
+    """
+    Endpoint to get the authenticated user's detail
+    """
+
+    def get(self, request):
+        user = request.user
+        serializer = UserDetailSerializer(user)
+        return Response({
+            "status": "success",
+            "user": serializer.data
+        }, status=status.HTTP_200_OK)
+        
+
+class UsersNotInProjectView(APIView):
+    permission_classes = [IsAdminUser]
+
+    def get(self, request, project_id=None):
+        users = CustomUser.objects.filter(project__isnull=True)
+        serializer = SimpleUserSerializer(users, many=True)
+        return Response({
+            "status": "success",
+            "users": serializer.data
+        }, status=status.HTTP_200_OK)
