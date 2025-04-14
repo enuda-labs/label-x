@@ -9,7 +9,7 @@ class UserSerializer(serializers.ModelSerializer):
     """Serializer for the user model"""
     class Meta:
         model = CustomUser
-        fields = ['id', 'username', 'email']
+        fields = ['id', 'username', 'email', 'is_reviewer', 'is_admin']
 
 class LoginSerializer(serializers.Serializer):
     """Serializer for user login"""
@@ -127,3 +127,26 @@ class ProjectCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Project
         fields = ['id', 'name']
+        
+
+
+class UserDetailSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CustomUser
+        fields = [
+            'id',
+            'username',
+            'email',
+            'is_reviewer',
+            'is_admin',
+            'is_staff',
+            'is_superuser',
+            'date_joined',
+            'last_activity',
+        ]
+        
+
+class SimpleUserSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CustomUser
+        fields = ['id', 'username', 'email',]
