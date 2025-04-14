@@ -95,8 +95,7 @@ class TasksNeedingReviewView(APIView):
         if not (request.user.is_admin or request.user.is_reviewer):
             return Response({"detail": "Not authorized."}, status=status.HTTP_403_FORBIDDEN)
         
-        my_projects= Project.objects.filter(reviewers=self.request.user)
-        tasks = Task.objects.filter(processing_status='REVIEW_NEEDED', group__in=my_projects, assigned_to=None,)
+        tasks = Task.objects.filter(processing_status='REVIEW_NEEDED', group=request.user.project, assigned_to=None,)
         serializer = TaskSerializer(tasks, many=True)
         return Response(serializer.data)
 
