@@ -124,6 +124,7 @@ def process_with_ai_model(task_id):
             logger.info(f"AI classification result: {classification}")
             
             task.processing_status = 'AI_REVIEWED'
+                        
             task.predicted_label = classification['classification']
             task.human_reviewed = classification['requires_human_review']
             task.ai_output = classification
