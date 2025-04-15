@@ -1,5 +1,8 @@
+import uuid
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
 from django.db import models
+from rest_framework_api_key.models import AbstractAPIKey
+
 
 class Project(models.Model):
     """Group that reviewers belong to"""
@@ -36,6 +39,7 @@ class CustomUserManager(BaseUserManager):
 class CustomUser(AbstractBaseUser, PermissionsMixin):
     """Custom User model that uses username and email for authentication"""
     username = models.CharField(max_length=255, unique=True)
+    pid = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
     email = models.EmailField(unique=True)
     password = models.CharField(max_length=255)
     is_active = models.BooleanField(default=True)
@@ -54,4 +58,17 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
 
     def __str__(self):
         return self.username
+
+
+class UserAPIKey(AbstractAPIKey):
+    user = models.ForeignKey(
+        CustomUser,
+        on_delete=models.CASCADE,
+        related_name="api_keys"
+    )
+
+    class Meta(AbstractAPIKey.Meta):
+        verbose_name = "User API key"
+        verbose_name_plural = "User API keys"
+
 

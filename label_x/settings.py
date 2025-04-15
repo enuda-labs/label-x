@@ -67,11 +67,14 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "rest_framework",
+    'rest_framework_api_key',
     "rest_framework_simplejwt",
     'rest_framework_simplejwt.token_blacklist',
     'drf_spectacular',
     'task',
     "corsheaders",
+    'api_auth',
+    'common'
 
 ]
 
@@ -295,3 +298,5 @@ CHANNEL_LAYERS = {
         },
     },
 }
+
+API_KEY_CUSTOM_HEADER = "HTTP_X_API_KEY"
