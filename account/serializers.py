@@ -100,6 +100,7 @@ class RegisterSerializer(serializers.ModelSerializer):
         return value
     
 class MakeReviewerSerializer(serializers.Serializer):
+    """serializer to make a user a reviewer"""
     user_id = serializers.PrimaryKeyRelatedField(
         queryset=CustomUser.objects.all(),
         help_text="ID of the user to promote"
@@ -107,6 +108,14 @@ class MakeReviewerSerializer(serializers.Serializer):
     group_id = serializers.PrimaryKeyRelatedField(
         queryset=Project.objects.all(),
         help_text="ID of the project group to assign the user to"
+    )
+    
+
+class RevokeReviewerSerializer(serializers.Serializer):
+    """Serializer to remove a user from being a reviewer"""
+    user_id = serializers.PrimaryKeyRelatedField(
+        queryset=CustomUser.objects.all(),
+        help_text="ID of the reviewer to revoke"
     )
 
 class MakeAdminSerializer(serializers.Serializer):
@@ -161,3 +170,22 @@ class SimpleUserSerializer(serializers.ModelSerializer):
     class Meta:
         model = CustomUser
         fields = ['id', 'username', 'email',]
+        
+        
+# Set of Serializers to use for api doc example and documentation
+# ==============================================================
+class SuccessDetailResponseSerializer(serializers.Serializer):
+    status = serializers.CharField()
+    detail = serializers.CharField()
+
+class UserDetailResponseSerializer(serializers.Serializer):
+    status = serializers.CharField()
+    user = UserDetailSerializer()
+
+class UserListResponseSerializer(serializers.Serializer):
+    status = serializers.CharField()
+    users = SimpleUserSerializer(many=True)
+
+class ProjectListResponseSerializer(serializers.Serializer):
+    status = serializers.CharField()
+    projects = ProjectCreateSerializer(many=True)
