@@ -12,9 +12,10 @@ from task.utils import dispatch_task_message, push_realtime_update
 from .models import Task
 from .serializers import FullTaskSerializer, TaskSerializer, TaskStatusSerializer, TaskReviewSerializer, AssignTaskSerializer
 from .tasks import process_task, provide_feedback_to_ai_model
+from rest_framework_api_key.permissions import HasAPIKey
 
 # import custom permissions
-from account.utils import IsReviewer
+from account.utils import HasUserAPIKey, IsReviewer
 
 
 
@@ -39,7 +40,7 @@ class TaskListView(generics.ListAPIView):
 
 class TaskCreateView(generics.CreateAPIView):
     serializer_class = TaskSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated | HasUserAPIKey]
     
     def get_queryset(self):
         return Task.objects.select_related('group').all()
