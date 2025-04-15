@@ -91,6 +91,49 @@ class TasksNeedingReviewView(APIView):
     View all tasks that need review (Admins or Reviewers)
     """
     permission_classes = [IsAuthenticated]
+    @extend_schema(
+        summary="View all tasks that need review",
+        description="Admins and Reviewers can view tasks that are awaiting review. "
+                    "This includes filtering by the user's associated project and tasks with the "
+                    "'REVIEW_NEEDED' processing status.",
+        request=None,  # No request body
+        responses={
+            200: TaskSerializer(many=True),
+            403: OpenApiExample(
+                "Unauthorized",
+                value={"detail": "Not authorized."},
+                response_only=True
+            ),
+        },
+        examples=[
+            OpenApiExample(
+                "Tasks Needing Review Example",
+                value=[
+                    {
+                        "id": 1,
+                        "serial_no": "T12345",
+                        "task_type": "text_classification",
+                        "data": {"text": "This is an example task data."},
+                        "ai_output": {
+                            "label": "positive",
+                            "confidence": 0.95
+                        },
+                        "predicted_label": "positive",
+                        "human_reviewed": False,
+                        "final_label": None,
+                        "processing_status": "REVIEW_NEEDED",
+                        "assigned_to": None,
+                        "created_at": "2025-04-15T07:58:59Z",
+                        "updated_at": "2025-04-15T08:00:00Z",
+                        "priority": "NORMAL",
+                        "group": 1  # Reference to a project/group ID
+                    }
+                ],
+                response_only=True
+            ),
+        ]
+    )
+    
     def get(self, request):
         if not (request.user.is_admin or request.user.is_reviewer):
             return Response({"detail": "Not authorized."}, status=status.HTTP_403_FORBIDDEN)
@@ -107,6 +150,57 @@ class AssignTaskToSelfView(APIView):
     """
     permission_classes = [IsReviewer]
     serializer_class= AssignTaskSerializer
+    
+    @extend_schema(
+        summary="Assign a task to self",
+        description="Allows a reviewer to claim a task for review if it is in REVIEW_NEEDED state and unassigned.",
+        request=AssignTaskSerializer,
+        responses={
+            200: OpenApiResponse(
+                response=None,
+                description="Task successfully assigned",
+                examples=[
+                    OpenApiExample(
+                        "Successful Assignment",
+                        value={
+                            "status": "success",
+                            "message": "Task T12345 assigned to you."
+                        },
+                        response_only=True
+                    )
+                ]
+            ),
+            400: OpenApiResponse(
+                response=None,
+                description="Invalid task or already assigned",
+                examples=[
+                    OpenApiExample(
+                        "Task Already Assigned",
+                        value={
+                            "status": "error",
+                            "detail": "Task is already assigned."
+                        },
+                        response_only=True
+                    ),
+                    OpenApiExample(
+                        "Invalid Status",
+                        value={
+                            "status": "error",
+                            "detail": "Task is not available for review."
+                        },
+                        response_only=True
+                    ),
+                ]
+            )
+        },
+        examples=[
+            OpenApiExample(
+                "Assign Task Request",
+                value={"task_id": 123},
+                request_only=True
+            )
+        ]
+    )
 
     def post(self, request):
         serializer = AssignTaskSerializer(data=request.data)
@@ -144,6 +238,41 @@ class AssignTaskToSelfView(APIView):
 
 class MyPendingReviewTasks(APIView):
     permission_classes = [IsReviewer]
+    
+    @extend_schema(
+        summary="List My Pending Review Tasks",
+        description="Returns all tasks assigned to the authenticated reviewer that are in `PENDING_REVIEW` status.",
+        responses={
+            200: OpenApiResponse(
+                response=TaskSerializer(many=True),
+                description="List of pending review tasks assigned to the user",
+                examples=[
+                    OpenApiExample(
+                        "Successful Response",
+                        value=[
+                            {
+                                "id": 12,
+                                "serial_no": "T12345",
+                                "task_type": "classification",
+                                "data": {"text": "Example input text"},
+                                "ai_output": {"prediction": "label_1"},
+                                "predicted_label": "label_1",
+                                "human_reviewed": False,
+                                "final_label": None,
+                                "processing_status": "ASSIGNED_REVIEWER",
+                                "assigned_to": 7,
+                                "created_at": "2024-04-01T10:00:00Z",
+                                "updated_at": "2024-04-02T10:00:00Z",
+                                "priority": "NORMAL",
+                                "group": 3
+                            }
+                        ],
+                        response_only=True
+                    )
+                ]
+            )
+        }
+    )
 
     def get(self, request):
         tasks = Task.objects.select_related('assigned_to', 'group').filter(
@@ -303,6 +432,41 @@ class AssignedTaskListView(generics.ListAPIView):
     """
     serializer_class = TaskSerializer
     permission_classes = [IsAuthenticated]
+    
+    @extend_schema(
+    summary="List tasks assigned to the authenticated user",
+    description="Retrieve a list of all tasks currently assigned to the authenticated user, ordered by creation date (descending).",
+    responses={
+        200: OpenApiResponse(
+            response=TaskSerializer(many=True),
+            description="List of tasks assigned to the user",
+            examples=[
+                OpenApiExample(
+                    "Successful Response Example",
+                    value=[
+                        {
+                            "id": 42,
+                            "serial_no": "T98765",
+                            "task_type": "classification",
+                            "data": {"text": "Sample text input"},
+                            "ai_output": {"prediction": "positive"},
+                            "predicted_label": "positive",
+                            "human_reviewed": False,
+                            "final_label": None,
+                            "processing_status": "ASSIGNED_REVIEWER",
+                            "assigned_to": 10,
+                            "created_at": "2024-03-20T12:00:00Z",
+                            "updated_at": "2024-03-21T12:00:00Z",
+                            "priority": "NORMAL",
+                            "group": 2
+                        }
+                    ],
+                    response_only=True
+                )
+            ]
+        )
+    }
+)
     def get_queryset(self):
         logger.info(f"Fetching assigned tasks for user: {self.request.user.id}")
         return (Task.objects
