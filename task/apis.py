@@ -322,7 +322,7 @@ class TaskReviewView(generics.GenericAPIView):
                 }, status=status.HTTP_403_FORBIDDEN)
 
             
-            if task.assigned_to != request.user:
+            if task.assigned_to != request.user and request.user.is_admin != True :
                 
                 return Response({
                     'status': "error",
@@ -454,6 +454,7 @@ class AssignedTaskListView(generics.ListAPIView):
                             "human_reviewed": False,
                             "final_label": None,
                             "processing_status": "ASSIGNED_REVIEWER",
+                            "review_status": "PENDING_REVIEW",
                             "assigned_to": 10,
                             "created_at": "2024-03-20T12:00:00Z",
                             "updated_at": "2024-03-21T12:00:00Z",
