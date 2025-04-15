@@ -10,27 +10,24 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenRefreshView
 
-
-from .serializers import( UserSerializer, LoginSerializer, RegisterSerializer, 
-                         TokenRefreshResponseSerializer, TokenRefreshSerializer,MakeReviewerSerializer,
-                         ProjectCreateSerializer, MakeAdminSerializer, UserDetailSerializer,
-                         SimpleUserSerializer, RevokeReviewerSerializer, SuccessDetailResponseSerializer, 
-                         UserDetailResponseSerializer, UserListResponseSerializer, ProjectListResponseSerializer)
-
-
 from .utils import IsAdminUser, IsSuperAdmin
 from .serializers import (
-    UserProjectSerializer,
-    UserSerializer,
     LoginSerializer,
-    RegisterSerializer,
-    TokenRefreshResponseSerializer,
-    TokenRefreshSerializer,
+    MakeAdminSerializer,
     MakeReviewerSerializer,
     ProjectCreateSerializer,
-    MakeAdminSerializer,
-    UserDetailSerializer,
+    ProjectListResponseSerializer,
+    RegisterSerializer,
+    RevokeReviewerSerializer,
     SimpleUserSerializer,
+    SuccessDetailResponseSerializer,
+    TokenRefreshResponseSerializer,
+    TokenRefreshSerializer,
+    UserDetailResponseSerializer,
+    UserDetailSerializer,
+    UserListResponseSerializer,
+    UserProjectSerializer,
+    UserSerializer,
 )
 from .utils import (
     HasUserAPIKey,
