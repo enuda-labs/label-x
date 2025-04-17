@@ -166,6 +166,7 @@ def provide_feedback_to_ai_model(task_id, review):
         print('the classification', classification)    
         task.processing_status = 'COMPLETED'
         task.review_status = 'PENDING_APPROVAL'
+        task.human_reviewed = True
         task.ai_output = classification
         task.save()
         
