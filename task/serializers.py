@@ -27,12 +27,12 @@ class TaskSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'serial_no', 'task_type', 'data', 'ai_output' ,
             'predicted_label', 'human_reviewed', 'final_label',
-            'processing_status', 'assigned_to', 'created_at', 'updated_at',
+            'processing_status', "review_status", 'assigned_to', 'created_at', 'updated_at',
             'priority', 'group' 
         ]
         read_only_fields = [
             'id', 'serial_no', 'predicted_label', "ai_output",
-            'human_reviewed', 'final_label', 'processing_status',
+            'human_reviewed', 'final_label', 'processing_status',"review_status",
             'assigned_to', 'created_at', 'updated_at'
         ]
         extra_kwargs = {
@@ -43,7 +43,7 @@ class TaskStatusSerializer(serializers.ModelSerializer):
     class Meta:
         model = Task
         fields = [
-            'id', 'serial_no', 'task_type', 'processing_status', 'review_status',
+            'id', 'serial_no', 'task_type', 'processing_status', "review_status",
             'human_reviewed', 'created_at', 'updated_at'
         ]
         read_only_fields = fields
