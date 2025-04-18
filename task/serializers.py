@@ -1,4 +1,6 @@
 from rest_framework import serializers
+
+from account.serializers import UserSerializer
 from .models import Task, TaskClassificationChoices
 
 
@@ -22,6 +24,25 @@ class FullTaskSerializer(serializers.ModelSerializer):
 
 class TaskSerializer(serializers.ModelSerializer):
     ai_output = AIOutputSerializer(read_only=True) 
+    class Meta:
+        model = Task
+        fields = [
+            'id', 'serial_no', 'task_type', 'data', 'ai_output' ,
+            'predicted_label', 'human_reviewed', 'final_label',
+            'processing_status', "review_status", 'assigned_to', 'created_at', 'updated_at',
+            'priority', 'group' 
+        ]
+        read_only_fields = [
+            'id', 'serial_no', 'predicted_label', "ai_output",
+            'human_reviewed', 'final_label', 'processing_status',"review_status",
+            'assigned_to', 'created_at', 'updated_at'
+        ]
+        extra_kwargs = {
+            'priority': {'default': 'NORMAL'}
+        }
+class AssignedTaskSerializer(serializers.ModelSerializer):
+    ai_output = AIOutputSerializer(read_only=True) 
+    assigned_to = UserSerializer()
     class Meta:
         model = Task
         fields = [
