@@ -10,7 +10,7 @@ from rest_framework.views import APIView
 from account.models import Project
 from task.utils import dispatch_task_message, push_realtime_update
 from .models import Task
-from .serializers import FullTaskSerializer, TaskSerializer, TaskStatusSerializer, TaskReviewSerializer, AssignTaskSerializer
+from .serializers import AssignedTaskSerializer, FullTaskSerializer, TaskSerializer, TaskStatusSerializer, TaskReviewSerializer, AssignTaskSerializer
 from .tasks import process_task, provide_feedback_to_ai_model
 from rest_framework_api_key.permissions import HasAPIKey
 
@@ -431,7 +431,7 @@ class AssignedTaskListView(generics.ListAPIView):
     """
     Endpoint to list all tasks assigned to the authenticated user
     """
-    serializer_class = TaskSerializer
+    serializer_class = AssignedTaskSerializer
     permission_classes = [IsAuthenticated]
     
     @extend_schema(
