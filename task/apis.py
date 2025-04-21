@@ -8,9 +8,10 @@ import logging
 from rest_framework.views import APIView
 
 from account.models import Project
+from common.responses import ErrorResponse, SuccessResponse
 from task.utils import dispatch_task_message, push_realtime_update
-from .models import Task
-from .serializers import AssignedTaskSerializer, FullTaskSerializer, TaskSerializer, TaskStatusSerializer, TaskReviewSerializer, AssignTaskSerializer
+from .models import Task, UserReviewChatHistory
+from .serializers import AssignedTaskSerializer, FullTaskSerializer, TaskIdSerializer, TaskSerializer, TaskStatusSerializer, TaskReviewSerializer, AssignTaskSerializer
 from .tasks import process_task, provide_feedback_to_ai_model
 from rest_framework_api_key.permissions import HasAPIKey
 
@@ -283,6 +284,36 @@ class MyPendingReviewTasks(APIView):
         serializer = TaskSerializer(tasks, many=True)
         return Response(serializer.data)
 
+class CompleteTaskReviewView(generics.GenericAPIView):
+    """
+    After using the websocket to review a task, use this endpoint to save the final decision
+    
+    ---
+    """
+    serializer_class = TaskIdSerializer
+    permission_classes =[IsAuthenticated]
+    def post(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        if not serializer.is_valid():
+            return ErrorResponse(data=serializer.errors, message="Error validating request")
+        
+        task_id = serializer.validated_data.get('task_id')
+        
+        try:
+            task = Task.objects.get(id=task_id)
+            last_human_review = UserReviewChatHistory.objects.filter(task=task).order_by('-created_at').first()
+            
+            if not last_human_review:
+                return ErrorResponse(message="This task has not been reviewed by a human")
+            
+            task.processing_status = 'COMPLETED'
+            task.review_status = 'PENDING_APPROVAL'
+            task.human_reviewed = True
+            task.final_label = last_human_review.ai_output.get('corrected_classification')
+            task.save()
+            return SuccessResponse(message="Task review complete", data=TaskSerializer(task).data)
+        except Task.DoesNotExist:
+            return ErrorResponse(message="Task not found")
 
 class TaskReviewView(generics.GenericAPIView):
     """View for submission of review by a reviewer"""
@@ -340,6 +371,8 @@ class TaskReviewView(generics.GenericAPIView):
             ai_output['human_review']['correction'] = serializer.validated_data.get('correction')
             ai_output['human_review']['justification'] = serializer.validated_data.get('justification')
             ai_output['confidence'] = serializer.validated_data.get('confidence')
+            
+            print('the final ai ap', ai_output)
             
             # Log and queue task to Celery with both task id and ai_output
             logger.info(f"Submitting task {task.id} to Celery queue")

@@ -74,7 +74,8 @@ INSTALLED_APPS = [
     'task',
     "corsheaders",
     'api_auth',
-    'common'
+    'common',
+    "alert"
 
 ]
 

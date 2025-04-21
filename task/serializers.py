@@ -68,8 +68,11 @@ class TaskStatusSerializer(serializers.ModelSerializer):
             'human_reviewed', 'created_at', 'updated_at'
         ]
         read_only_fields = fields
-        
-        
+
+
+class TaskIdSerializer(serializers.Serializer):
+    task_id = serializers.IntegerField()
+    
 
 class TaskReviewSerializer(serializers.Serializer):
     task_id = serializers.IntegerField()

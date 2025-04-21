@@ -2,11 +2,12 @@ import json
 from celery import shared_task
 from celery.utils.log import get_task_logger
 
+from account.models import CustomUser
 from task.utils import push_realtime_update
 
-from .ai_processor import text_classification
-from .models import Task
-from .utils import assign_reviewer
+from .ai_processor import submit_human_review, text_classification
+from .models import Task, UserReviewChatHistory
+from .utils import assign_reviewer, dispatch_review_response_message
 
 
 # Set up logger
@@ -81,6 +82,7 @@ def route_task_to_processing(task_id):
         logger.error(f"Error routing task {task_id}: {str(e)}", exc_info=True)
         raise
 
+
 @shared_task
 def queue_task_for_processing(task_id):
     """
@@ -142,6 +144,7 @@ def process_with_ai_model(task_id):
                 push_realtime_update(task, action='task_status_changed')
             else:
                 task.processing_status = 'COMPLETED'
+                task.final_label = classification.get('classification', None)
                 task.save()
                 push_realtime_update(task, action='task_status_changed')
                 logger.info(f"Task {task_id} completed automatically")
@@ -150,8 +153,41 @@ def process_with_ai_model(task_id):
     except Exception as e:
         logger.error(f"Error in AI processing for task {task_id}: {str(e)}", exc_info=True)
         raise
+
+@shared_task    
+def submit_human_review_history(reviewer_id, task_id, confidence_score, justification, classification):
+    try:
+        task = Task.objects.select_related('user').get(id=int(task_id))
+        reviewer = CustomUser.objects.get(id=reviewer_id)
+        
+        last_human_review = UserReviewChatHistory.objects.filter(task=task).order_by('-created_at').first()
+        
+        review_history = UserReviewChatHistory.objects.create(reviewer=reviewer, task=task, human_confidence_score=float(confidence_score), human_justification=justification, human_classification=classification)
+        
+        if last_human_review:
+            success, ai_response =submit_human_review(task.data, last_human_review.ai_output.get('corrected_classification'), classification, justification)
+        else:        
+            success, ai_response= submit_human_review(task.data, task.ai_output.get('classification'), classification, justification)
+        
+        if success:
+            review_history.ai_output = ai_response
+            review_history.save()
+            #respond to the frontend websocket
+            dispatch_review_response_message(reviewer.id, ai_response)
+        else:
+            dispatch_review_response_message(reviewer.id, {
+                "error": True,
+                "message": ai_response
+            })
+    except Exception as e:
+        print(e)
+        logger.info(f"Error submitting feedback for task {str(e)}")
     
+        
     
+
+
+
 @shared_task
 def provide_feedback_to_ai_model(task_id, review):
     """
@@ -164,7 +200,6 @@ def provide_feedback_to_ai_model(task_id, review):
         # strinify the review before sending to the api
         json_string = json.dumps(review, indent=2)
         classification = text_classification(json_string)    
-        print('the classification', classification)    
         task.processing_status = 'COMPLETED'
         task.review_status = 'PENDING_APPROVAL'
         task.human_reviewed = True

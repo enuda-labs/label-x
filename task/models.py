@@ -142,3 +142,14 @@ class Task(models.Model):
             self.serial_no = generate_serial_no()
 
         super().save(*args, **kwargs)
+
+class UserReviewChatHistory(models.Model):
+    reviewer = models.ForeignKey(CustomUser, on_delete=models.CASCADE, null=True)
+    ai_output = models.JSONField(null=True, blank=True)
+    created_at =models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    task = models.ForeignKey(Task, on_delete=models.CASCADE)
+    human_confidence_score = models.FloatField()
+    human_justification = models.TextField()
+    human_classification = models.CharField(max_length=25, choices=TaskClassificationChoices.choices)
+    
