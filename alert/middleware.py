@@ -81,7 +81,7 @@ class HybridAuthentication(BaseMiddleware):
         query_params = parse_qs(query_string)
 
 
-        api_key = query_params.get('token', [None])[0]
+        api_key = query_params.get('api_key', [None])[0]
         if api_key:
             user = await get_user_from_key(api_key)
             if user:

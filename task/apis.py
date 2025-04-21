@@ -311,6 +311,9 @@ class CompleteTaskReviewView(generics.GenericAPIView):
             task.human_reviewed = True
             task.final_label = last_human_review.ai_output.get('corrected_classification')
             task.save()
+            
+            push_realtime_update(task, action='task_status_changed')
+            
             return SuccessResponse(message="Task review complete", data=TaskSerializer(task).data)
         except Task.DoesNotExist:
             return ErrorResponse(message="Task not found")
