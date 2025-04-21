@@ -355,7 +355,6 @@ class TaskReviewView(generics.GenericAPIView):
 
             
             if task.assigned_to != request.user and request.user.is_admin != True :
-                
                 return Response({
                     'status': "error",
                     'error': "You have not been assigned to review this task"
