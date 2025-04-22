@@ -21,6 +21,15 @@ def dispatch_task_message(receiver_id, payload, action="notification"):
     print("dispatched ws message")
 
 
+def dispatch_review_response_message(receiver_id, payload):
+    channel_layer = get_channel_layer()
+    async_to_sync(channel_layer.group_send)(
+        f"reviewer_group_{receiver_id}",
+        {"type": "response.message", "text": {"action": "review_response", **payload}},
+    )
+    print("dispatched ws message")    
+
+
 def push_realtime_update(task: Task, action="notification"):
     serialized = serialize_task(task)
     if task.user:

@@ -1,3 +1,4 @@
+import token
 from channels.middleware import BaseMiddleware
 from channels.db import database_sync_to_async
 from django.contrib.auth.models import AnonymousUser
@@ -63,8 +64,6 @@ class ApiKeyMiddleware(BaseMiddleware):
         query_params = parse_qs(query_string)
         api_key = query_params.get("api_key", [None])[0]
         
-        print(api_key)
-
         if api_key:
             user = await get_user_from_key(api_key)
             if user:
@@ -74,3 +73,34 @@ class ApiKeyMiddleware(BaseMiddleware):
         else:
             scope['user'] = AnonymousUser()
         return await super().__call__(scope, receive, send)
+    
+
+class HybridAuthentication(BaseMiddleware):
+    async def __call__(self, scope, receive, send):
+        query_string = scope['query_string'].decode()
+        query_params = parse_qs(query_string)
+
+
+        api_key = query_params.get('api_key', [None])[0]
+        if api_key:
+            user = await get_user_from_key(api_key)
+            if user:
+                scope["user"] = user
+            else:
+                scope["user"] = AnonymousUser()
+                
+                    
+        token = query_params.get('token', [None])[0]
+        if token:
+            try:
+                user_id = UntypedToken(token=token)[
+                    "user_id"
+                ]
+                scope["user"] = await get_user(user_id)
+
+            except (InvalidToken, TokenError) as e:
+                scope["user"] = AnonymousUser()
+
+        return await super().__call__(scope, receive, send)            
+        
+        

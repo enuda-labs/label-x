@@ -1,4 +1,5 @@
 from email import message
+from pickle import FALSE
 import cohere
 from dotenv import load_dotenv
 import os
@@ -21,6 +22,77 @@ load_dotenv()
 co = cohere.Client(
     api_key=os.getenv("CO_API_KEY"), timeout=30  # Set timeout to 30 seconds
 )
+
+
+def submit_human_review(original_text, original_classification, correct_classification, justification, max_retries=3):
+    for attempt in range(max_retries):
+        logger.info(f"Attempting text")
+        feedback_prompt = f"""
+        I'm providing human review feedback for a text classification you previously analyzed.
+
+        ### Original Analysis
+        - Text: "{original_text}"
+        - Your classification: "{original_classification}"
+
+        ### Human Review Correction
+        - Correct classification: "{correct_classification}"
+        - Justification: "{justification}"
+
+        ### Learning Instructions
+        1. Please analyze the difference between your classification and the human-provided correction.
+        2. Update your understanding of what constitutes "{correct_classification}" content.
+        3. Respond with a confirmation that you've registered this feedback and explain how you'll apply this learning to similar content in the future.
+        4. Provide an updated confidence score for this classification now that you have human guidance.
+
+        ### Output Format (JSON):
+        ```json
+        {{
+            "text": "<INPUT_TEXT>",
+            "original_classification": "<Your original classification>",
+            "corrected_classification": "<Human-provided classification>",
+            "learning_summary": "<Your analysis of what you learned from this correction>",
+            "updated_confidence": <0.00 - 1.00>,
+            "similar_examples": ["<Brief descriptions of similar text patterns you'll now classify correctly>"]
+        }}
+        ```
+        """
+        
+        # Submit the feedback to the model
+        response = co.chat(
+            model="command-a-03-2025",
+            message="Please process this human review feedback",
+            chat_history=[
+                {
+                    "role": "system", 
+                    "message": feedback_prompt
+                }
+            ],
+        )
+        
+        try:
+            # response_text = response.text.replace("```json", "").replace("```", "")
+            json_match = re.search(
+                r"```json\s*(.*?)\s*```", response.text, re.DOTALL
+            )
+            if json_match:
+                json_str = json_match.group(1)
+                print("processed ai response is", json_str)
+                return True, json.loads(json_str)
+            else:
+                return False, "Error processing ai response"
+        except json.JSONDecodeError:
+            logger.error(f"Failed to parse response: {response.text}")
+            return False, response.text
+               
+        except (Timeout, RequestException) as e:
+            if attempt == max_retries - 1:  # Last attempt
+                logger.error(f"Final retry failed: {str(e)}")
+                return False, str(e)
+            logger.warning(f"Attempt {attempt + 1} failed, retrying... Error: {str(e)}")
+            time.sleep(2**attempt)  # Exponential backoff            
+        except Exception as e:
+            logger.error(f"Error in classification: {str(e)}")
+            return False, str(e)
 
 
 def text_classification(text, max_retries=3):
@@ -61,7 +133,7 @@ def text_classification(text, max_retries=3):
             ```
                         
             """
-            
+
             # Define the conversation with system configuration for classification
             response = co.chat(
                 model="command-a-03-2025",  # Using standard model instead of command-a-03-2025
@@ -73,10 +145,12 @@ def text_classification(text, max_retries=3):
                     }
                 ],
             )
-            
+
             try:
                 # response_text = response.text.replace("```json", "").replace("```", "")
-                json_match = re.search(r'```json\s*(.*?)\s*```', response.text, re.DOTALL)
+                json_match = re.search(
+                    r"```json\s*(.*?)\s*```", response.text, re.DOTALL
+                )
                 if json_match:
                     json_str = json_match.group(1)
                     return json.loads(json_str)
@@ -87,7 +161,7 @@ def text_classification(text, max_retries=3):
                         "need_human_intervention": True,
                         "justification": f"No JSON found in response",
                     }
-            
+
             except json.JSONDecodeError:
                 logger.error(f"Failed to parse response: {response.text}")
                 raise
