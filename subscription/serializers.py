@@ -4,7 +4,7 @@ from .models import SubscriptionPlan, UserSubscription, Wallet
 class SubscriptionPlanSerializer(serializers.ModelSerializer):
     class Meta:
         model = SubscriptionPlan
-        fields = ['id', 'name', 'monthly_fee', 'cost_per_extra_request']
+        fields = ['id', 'name', 'monthly_fee', 'cost_per_extra_request', "included_requests"]
 
 class UserSubscriptionSerializer(serializers.ModelSerializer):
     plan = SubscriptionPlanSerializer()

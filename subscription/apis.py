@@ -5,6 +5,8 @@ from rest_framework import generics, permissions, status
 from rest_framework.response import Response
 from drf_spectacular.utils import extend_schema, OpenApiExample, OpenApiResponse
 
+from account.utils import IsAdminUser
+
 from .models import SubscriptionPlan, UserSubscription, Wallet
 from .serializers import (
     SubscriptionPlanSerializer,
@@ -12,6 +14,40 @@ from .serializers import (
     SubscriptionStatusSerializer,
 )
 
+# for administrative use only
+class CreateSubscriptionPlanView(generics.CreateAPIView):
+    queryset = SubscriptionPlan.objects.all()
+    serializer_class = SubscriptionPlanSerializer
+    permission_classes = [IsAdminUser]
+
+    @extend_schema(
+        summary="Create a new subscription plan",
+        request=SubscriptionPlanSerializer,
+        responses={201: SubscriptionPlanSerializer},
+        examples=[
+            OpenApiExample(
+                "Example Request",
+                value={"name": "Starter", "monthly_fee": 25.0, "included_requests": 1000, "cost_per_extra_request": 0.01},
+                request_only=True
+            ),
+            OpenApiExample(
+                "Example Response",
+                value={"id": 2, "name": "Pro",  "monthly_fee": 25.0, "included_requests": 1000, "cost_per_extra_request": 0.01},
+                response_only=True
+            ),
+        ]
+    )
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+        return Response(
+            {
+                "status": "success",
+                "detail": serializer.data
+            },
+            status=status.HTTP_201_CREATED
+        )
 
 class ListSubscriptionPlansView(generics.ListAPIView):
     queryset = SubscriptionPlan.objects.all()
