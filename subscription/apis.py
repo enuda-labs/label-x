@@ -5,10 +5,10 @@ from rest_framework import generics, permissions, status
 from rest_framework.response import Response
 from drf_spectacular.utils import extend_schema, OpenApiExample, OpenApiResponse
 
-from .models import SubscriptionPlan, Subscription, Wallet
+from .models import SubscriptionPlan, UserSubscription, Wallet
 from .serializers import (
     SubscriptionPlanSerializer,
-    SubscriptionCreateSerializer,
+    SubscribeRequestSerializer,
     SubscriptionStatusSerializer,
 )
 
@@ -34,16 +34,21 @@ class ListSubscriptionPlansView(generics.ListAPIView):
         ]
     )
     def get(self, request, *args, **kwargs):
-        return super().get(request, *args, **kwargs)
+        queryset = self.get_queryset()
+        serializer = self.get_serializer(queryset, many=True)
+        return Response({
+        "status": "success",
+        "detail": serializer.data
+        })
 
 
 class SubscribeToPlanView(generics.CreateAPIView):
-    serializer_class = SubscriptionCreateSerializer
+    serializer_class = SubscribeRequestSerializer
     permission_classes = [permissions.IsAuthenticated]
 
     @extend_schema(
         summary="Subscribe to a plan using wallet balance",
-        request=SubscriptionCreateSerializer,
+        request=SubscribeRequestSerializer,
         responses={
             201: SubscriptionStatusSerializer,
             400: OpenApiResponse(description="Insufficient wallet balance"),
@@ -68,61 +73,51 @@ class SubscribeToPlanView(generics.CreateAPIView):
     def post(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-
         plan = serializer.validated_data["plan"]
         user = request.user
         wallet = Wallet.objects.get(user=user)
 
-        if wallet.balance < plan.price:
+        if wallet.balance < plan.monthly_fee:
             return Response({"error": "Insufficient wallet balance"}, status=400)
 
-        wallet.balance -= plan.price
+        wallet.balance -= plan.monthly_fee
         wallet.save()
 
         expires_at = timezone.now() + timedelta(days=30)
-        subscription, _ = Subscription.objects.update_or_create(
+        subscription, _ = SubscriptionPlan.objects.update_or_create(
             user=user,
             defaults={"plan": plan, "expires_at": expires_at}
         )
 
         return Response({
+            "status": "success",
+            "detail": {
             "plan": SubscriptionPlanSerializer(plan).data,
             "expires_at": expires_at,
-            "wallet_balance": wallet.balance
+            "wallet_balance": wallet.balance}
         }, status=201)
 
 
 class CurrentSubscriptionView(generics.RetrieveAPIView):
-    serializer_class = SubscriptionStatusSerializer
     permission_classes = [permissions.IsAuthenticated]
 
     @extend_schema(
-        summary="Get current user’s active plan and wallet balance",
+        summary="Get current user's subscription status",
         responses={
             200: SubscriptionStatusSerializer,
-            404: OpenApiResponse(description="No active subscription found"),
-        },
-        examples=[
-            OpenApiExample(
-                "Current Plan",
-                value={
-                    "plan": {"id": 2, "name": "Pro", "price": 25.0},
-                    "expires_at": "2025-06-12T14:30:00Z",
-                    "wallet_balance": 45.0
-                },
-                response_only=True
-            )
-        ]
+            404: OpenApiResponse(description="No active subscription found")
+        }
     )
-    def get(self, request, *args, **kwargs):
+    def get(self, request):
         try:
-            subscription = Subscription.objects.get(user=request.user)
+            subscription = UserSubscription.objects.get(user=request.user)
             wallet = Wallet.objects.get(user=request.user)
-
             return Response({
                 "plan": SubscriptionPlanSerializer(subscription.plan).data,
+                "wallet_balance": wallet.balance,
+                "subscribed_at": subscription.subscribed_at,
                 "expires_at": subscription.expires_at,
-                "wallet_balance": wallet.balance
+                "request_balance": subscription.plan.included_requests - subscription.requests_used
             })
-        except Subscription.DoesNotExist:
-            return Response({"error": "No active subscription"}, status=404)
+        except UserSubscription.DoesNotExist:
+            return Response({"error": "No active subscription found"}, status=404)

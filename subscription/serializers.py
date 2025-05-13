@@ -4,7 +4,7 @@ from .models import SubscriptionPlan, UserSubscription, Wallet
 class SubscriptionPlanSerializer(serializers.ModelSerializer):
     class Meta:
         model = SubscriptionPlan
-        fields = ['id', 'name', 'price', 'request_quota']
+        fields = ['id', 'name', 'monthly_fee', 'cost_per_extra_request']
 
 class UserSubscriptionSerializer(serializers.ModelSerializer):
     plan = SubscriptionPlanSerializer()
@@ -17,3 +17,22 @@ class WalletSerializer(serializers.ModelSerializer):
     class Meta:
         model = Wallet
         fields = ['balance']
+        
+
+class SubscribeRequestSerializer(serializers.Serializer):
+    plan_id = serializers.IntegerField()
+    plan = serializers.SerializerMethodField(read_only=True)
+
+    def validate(self, data):
+        try:
+            data["plan"] = SubscriptionPlan.objects.get(id=data["plan_id"])
+        except SubscriptionPlan.DoesNotExist:
+            raise serializers.ValidationError({"plan_id": "Plan not found."})
+        return data
+
+class SubscriptionStatusSerializer(serializers.Serializer):
+    plan = SubscriptionPlanSerializer()
+    wallet_balance = serializers.DecimalField(max_digits=10, decimal_places=2)
+    subscribed_at = serializers.DateTimeField()
+    expires_at = serializers.DateTimeField()
+    request_balance = serializers.IntegerField()
