@@ -11,6 +11,17 @@ class UserSubscriptionSerializer(serializers.ModelSerializer):
     class Meta:
         model = UserSubscription
         fields = ['plan', 'subscribed_at', 'expires_at', 'request_balance']
+
+
+class InitializerSubscriptionSerializer(serializers.Serializer):
+    subscription_plan = serializers.IntegerField()
+    
+    def validate_subscription_plan(self, value):
+        try:
+            plan = SubscriptionPlan.objects.get(id=value)
+        except SubscriptionPlan.DoesNotExist:
+            raise serializers.ValidationError("Invalid subscription plan")
+        return plan
         
 
 class WalletSerializer(serializers.ModelSerializer):

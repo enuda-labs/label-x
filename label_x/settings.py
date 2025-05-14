@@ -12,6 +12,7 @@ https://docs.djangoproject.com/en/5.1/ref/settings/
 
 from datetime import timedelta
 import logging
+from logging import config
 import os
 from pathlib import Path
 
@@ -301,3 +302,6 @@ CHANNEL_LAYERS = {
 }
 
 API_KEY_CUSTOM_HEADER = "HTTP_X_API_KEY"
+STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY")
+STRIPE_WEBHOOK_SECRET= os.getenv("STRIPE_WEBHOOK_SECRET")
+
