@@ -14,6 +14,7 @@ class SubscriptionPlan(models.Model):
     cost_per_extra_request = models.DecimalField(max_digits=6, decimal_places=4)
     stripe_monthly_plan_id = models.CharField(max_length=100, null=True, blank=True)    
     
+    
     def __str__(self):
         return self.name
     

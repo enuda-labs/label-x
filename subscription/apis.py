@@ -6,6 +6,7 @@ from rest_framework.response import Response
 from drf_spectacular.utils import extend_schema, OpenApiExample, OpenApiResponse
 import stripe.error
 
+from account.models import CustomUser
 from common.responses import ErrorResponse, SuccessResponse, format_first_error
 
 from .models import SubscriptionPlan, UserSubscription, Wallet
@@ -37,10 +38,34 @@ class StripeWebhookListener(generics.GenericAPIView):
             return ErrorResponse(status=400)
 
         event_type = event.get("type")
+        event_object = event.get('data', {}).get('object', {})
+        
+        
         if event_type == "invoice.payment_succeeded":
-            # TODO: grant user permissions
-            pass
-
+            customer_email = event_object.get('customer_email')
+            price_id = event_object.get('lines').get('data')[0].get('plan').get('id')
+            try:
+                customer = CustomUser.objects.get(email=customer_email)
+                
+            except CustomUser.DoesNotExist:
+                customer= None
+            
+            
+            subscription_plan = SubscriptionPlan.objects.filter(stripe_monthly_plan_id=price_id).first()
+            
+            if customer and subscription_plan:
+                #grant user permissions
+                expires_at = timezone.now() + timedelta(days=30)
+                UserSubscription.objects.update_or_create(
+                    user=customer, defaults={
+                        "plan": subscription_plan,
+                        "expires_at": expires_at,
+                        "renews_at": expires_at
+                    }
+                )
+                print('user subscribed successfully')
+            
+            
         if event_type == "customer.subscription.deleted":
             # TODO: revoke user permissions
             pass
@@ -149,7 +174,7 @@ class InitializeStripeSubscription(generics.GenericAPIView):
         subscription_plan = serializer.validated_data.get('subscription_plan')
         
         #checking if admin has set a price id for the chosen plan
-        stripe_monthly_price_id= getattr(subscription_plan, "stripe_subscription_plan_id", None)
+        stripe_monthly_price_id= getattr(subscription_plan, "stripe_monthly_plan_id", None)
         if not stripe_monthly_price_id:
             return ErrorResponse(message="A price id has not been configured for this plan, please contact admin support")
             
