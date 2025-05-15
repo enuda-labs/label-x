@@ -24,7 +24,23 @@ from django.conf import settings
 
 class StripeWebhookListener(generics.GenericAPIView):
     permission_classes = [permissions.AllowAny]
+    
+    def get_user_and_plan_from_event(self, event):
+        event_object = event.get('data', {}).get('object', {})
+        
+        customer_email = event_object.get('customer_email')
+        
+        price_id = event_object.get('lines').get('data')[0].get('plan').get('id')
+        try:
+            customer = CustomUser.objects.get(email=customer_email)
+        except CustomUser.DoesNotExist:
+            customer= None
+        
+        subscription_plan = SubscriptionPlan.objects.filter(stripe_monthly_plan_id=price_id).first()
+        
+        return customer, subscription_plan
 
+        
     def post(self, request):
         payload = request.body
         sig_header = request.META.get("HTTP_STRIPE_SIGNATURE")
@@ -38,20 +54,9 @@ class StripeWebhookListener(generics.GenericAPIView):
             return ErrorResponse(status=400)
 
         event_type = event.get("type")
-        event_object = event.get('data', {}).get('object', {})
-        
-        
-        if event_type == "invoice.payment_succeeded":
-            customer_email = event_object.get('customer_email')
-            price_id = event_object.get('lines').get('data')[0].get('plan').get('id')
-            try:
-                customer = CustomUser.objects.get(email=customer_email)
                 
-            except CustomUser.DoesNotExist:
-                customer= None
-            
-            
-            subscription_plan = SubscriptionPlan.objects.filter(stripe_monthly_plan_id=price_id).first()
+        if event_type == "invoice.payment_succeeded":            
+            customer, subscription_plan = self.get_user_and_plan_from_event(event)
             
             if customer and subscription_plan:
                 #grant user permissions
@@ -64,14 +69,14 @@ class StripeWebhookListener(generics.GenericAPIView):
                     }
                 )
                 print('user subscribed successfully')
-            
+                
             
         if event_type == "customer.subscription.deleted":
             # TODO: revoke user permissions
             pass
 
         # print("stripe webhook was called", request.data.get("type"))
-        return SuccessResponse(message="Implementation in progress")
+        return SuccessResponse(message="")
 
 
 class ListSubscriptionPlansView(generics.ListAPIView):
