@@ -6,6 +6,10 @@ from django.contrib.auth import authenticate
 from .models import CustomUser, OTPVerification, Project
 
 
+class LogoutSerializer(serializers.Serializer):
+    refresh_token = serializers.CharField()
+
+
 class Disable2faSerializer(serializers.Serializer):
     password = serializers.CharField()
 

@@ -1,5 +1,6 @@
 import logging
 from datetime import datetime
+from tokenize import TokenError
 from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiExample, OpenApiResponse
 from drf_spectacular.utils import extend_schema
 from rest_framework import generics
@@ -17,6 +18,7 @@ from .utils import IsAdminUser, IsSuperAdmin
 from .serializers import (
     Disable2faSerializer,
     LoginSerializer,
+    LogoutSerializer,
     MakeAdminSerializer,
     MakeReviewerSerializer,
     OtpVerificationSerializer,
@@ -40,9 +42,37 @@ from .utils import (
     IsSuperAdmin,
 )
 from .models import CustomUser, OTPVerification, Project
-
+from django.contrib.auth import logout
 # Set up logger
 logger = logging.getLogger('account.apis')
+
+
+class LogoutView(generics.GenericAPIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = LogoutSerializer
+    
+    @extend_schema(
+        summary="Logout a user by blacklisting the refresh token"
+    )
+    def post(self, request):
+        serializer = self.get_serializer(data=request.data)
+        if not serializer.is_valid():
+            return ErrorResponse(message=format_first_error(serializer.errors))
+        
+        refresh_token = serializer.validated_data.get('refresh_token')
+        
+        try:
+            token = RefreshToken(refresh_token)
+            token.blacklist()
+            
+            logout(request)
+            return SuccessResponse(message="Logout successful")
+        except TokenError as e:
+            return ErrorResponse(message="Invalid token")
+        except Exception as e:
+            return ErrorResponse(message="An error occurred during logout", status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
+        
 
 
 class Disable2FAView(generics.GenericAPIView):
