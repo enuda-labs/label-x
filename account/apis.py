@@ -47,12 +47,52 @@ class LoginView(APIView):
 
     @extend_schema(
         summary="User Login",
-        description="Authenticate user and return access & refresh tokens.",
-        request=LoginSerializer,  # This tells Swagger the expected request format
+        description="Authenticate user and return access & refresh tokens along with user roles and permissions.",
+        request=LoginSerializer,
         responses={
-            200: UserSerializer,  # Document the response structure
-            401: {"status": "error", "error": "Invalid credentials....."},
-        },
+            200: OpenApiResponse(
+                response=None,
+                description="Successful login response with tokens and user data",
+                examples=[
+                    OpenApiExample(
+                        "Login Success",
+                        value={
+                            "status": "success",
+                            "refresh": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...",
+                            "access": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...",
+                            "user_data": {
+                                "id": 1,
+                                "username": "john_doe",
+                                "email": "john@example.com",
+                                "is_reviewer": True,
+                                "is_admin": False,
+                                "roles": ["reviewer"],
+                                "permissions": [
+                                    "can_review_tasks",
+                                    "can_create_tasks",
+                                    "can_view_assigned_tasks"
+                                ]
+                            }
+                        },
+                        response_only=True
+                    )
+                ]
+            ),
+            401: OpenApiResponse(
+                response=None,
+                description="Invalid credentials",
+                examples=[
+                    OpenApiExample(
+                        "Login Failed",
+                        value={
+                            "status": "error",
+                            "error": "Invalid credentials"
+                        },
+                        response_only=True
+                    )
+                ]
+            )
+        }
     )
     def post(self, request):
         serializer = LoginSerializer(data=request.data)
@@ -64,6 +104,7 @@ class LoginView(APIView):
             
             return Response(
                 {
+                    "status": "success",
                     "refresh": str(refresh),
                     "access": str(refresh.access_token),
                     "user_data": UserSerializer(user).data,

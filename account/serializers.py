@@ -8,10 +8,55 @@ from .models import CustomUser, Project
 
 class UserSerializer(serializers.ModelSerializer):
     """Serializer for the user model"""
+    roles = serializers.SerializerMethodField()
+    permissions = serializers.SerializerMethodField()
 
     class Meta:
         model = CustomUser
-        fields = ["id", "username", "email", "is_reviewer", "is_admin"]
+        fields = ["id", "username", "email", "is_reviewer", "is_admin", "roles", "permissions"]
+
+    def get_roles(self, obj):
+        roles = []
+        if obj.is_superuser:
+            roles.append("superuser")
+        if obj.is_admin & obj.is_staff:
+            roles.append("admin")
+        if obj.is_reviewer:
+            roles.append("reviewer")
+        
+        return roles
+
+    def get_permissions(self, obj):
+        permissions = []
+        if obj.is_superuser:
+            permissions.extend([
+                "can_manage_users",
+                "can_manage_projects",
+                "can_manage_subscriptions",
+                "can_manage_api_keys",
+                "can_review_tasks",
+                "can_create_tasks",
+                "can_view_all_tasks"
+            ])
+        elif obj.is_admin:
+            permissions.extend([
+                "can_manage_reviewers",
+                "can_manage_projects",
+                "can_review_tasks",
+                "can_create_tasks",
+                "can_view_all_tasks"
+            ])
+        elif obj.is_reviewer:
+            permissions.extend([
+                "can_review_tasks",
+                "can_view_assigned_tasks"
+            ])
+        else:
+            permissions.extend([
+                "can_create_tasks",
+                "can_view_own_tasks"
+            ])
+        return permissions
 
 
 class LoginSerializer(serializers.Serializer):
