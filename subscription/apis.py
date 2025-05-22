@@ -1,6 +1,8 @@
 from datetime import timedelta
 import decimal
 from django.utils import timezone
+import logging
+from datetime import datetime
 
 from rest_framework import generics, permissions, status
 from rest_framework.response import Response
@@ -29,6 +31,8 @@ import stripe
 import json
 from django.conf import settings
 
+logger = logging.getLogger('subscription.apis')
+
 
 class GetUserPaymentHistoryView(generics.ListAPIView):
     permission_classes = [permissions.IsAuthenticated]
@@ -38,6 +42,7 @@ class GetUserPaymentHistoryView(generics.ListAPIView):
         summary="Get the payment history list for the currently logged in user"
     )
     def get_queryset(self):
+        logger.info(f"User '{self.request.user.username}' fetching payment history at {datetime.now()}")
         return UserPaymentHistory.objects.filter(user=self.request.user)
 
 
@@ -46,14 +51,14 @@ class StripeWebhookListener(generics.GenericAPIView):
 
     def get_user_and_plan_from_event(self, event):
         event_object = event.get("data", {}).get("object", {})
-
         customer_email = event_object.get("customer_email")
-
         price_id = event_object.get("lines").get("data")[0].get("plan").get("id")
+        
         try:
             customer = CustomUser.objects.get(email=customer_email)
         except CustomUser.DoesNotExist:
             customer = None
+            logger.warning(f"Customer not found for email: {customer_email} at {datetime.now()}")
 
         subscription_plan = SubscriptionPlan.objects.filter(
             stripe_monthly_plan_id=price_id
@@ -69,11 +74,14 @@ class StripeWebhookListener(generics.GenericAPIView):
         try:
             event = stripe.Webhook.construct_event(payload, sig_header, endpoint_secret)
         except ValueError as e:
+            logger.error(f"Invalid webhook payload: {str(e)} at {datetime.now()}")
             return ErrorResponse(message="Error")
         except stripe.error.SignatureVerificationError as e:
+            logger.error(f"Invalid webhook signature: {str(e)} at {datetime.now()}")
             return ErrorResponse(status=400)
 
         event_type = event.get("type")
+        logger.info(f"Received Stripe webhook event: {event_type} at {datetime.now()}")
 
         if event_type == "invoice.payment_succeeded":
             customer, subscription_plan = self.get_user_and_plan_from_event(event)
@@ -96,9 +104,10 @@ class StripeWebhookListener(generics.GenericAPIView):
                     description=f"Subscription for {subscription_plan.name}",
                     status=UserPaymentStatus.SUCCESS,
                 )
-                print("user subscribed successfully")
+                logger.info(f"User '{customer.username}' subscribed to plan '{subscription_plan.name}' at {datetime.now()}")
 
         if event_type == "customer.subscription.deleted":
+            logger.info(f"Subscription deleted event received at {datetime.now()}")
             # TODO: revoke user permissions
             pass
 
@@ -127,6 +136,7 @@ class ListSubscriptionPlansView(generics.ListAPIView):
         ],
     )
     def get(self, request, *args, **kwargs):
+        logger.info(f"User '{request.user.username if request.user.is_authenticated else 'Anonymous'}' fetched subscription plans at {datetime.now()}")
         queryset = self.get_queryset()
         serializer = self.get_serializer(queryset, many=True)
         return Response({"status": "success", "detail": serializer.data})
@@ -166,6 +176,7 @@ class SubscribeToPlanView(generics.CreateAPIView):
         wallet = Wallet.objects.get(user=user)
 
         if wallet.balance < plan.monthly_fee:
+            logger.warning(f"User '{user.username}' attempted subscription with insufficient balance. Required: {plan.monthly_fee}, Available: {wallet.balance} at {datetime.now()}")
             return Response({"error": "Insufficient wallet balance"}, status=400)
 
         wallet.balance -= plan.monthly_fee
@@ -176,6 +187,7 @@ class SubscribeToPlanView(generics.CreateAPIView):
             user=user, defaults={"plan": plan, "expires_at": expires_at}
         )
 
+        logger.info(f"User '{user.username}' subscribed to plan '{plan.name}' using wallet balance at {datetime.now()}")
         return Response(
             {
                 "status": "success",
@@ -200,6 +212,7 @@ class InitializeStripeSubscription(generics.GenericAPIView):
         stripe.api_key = settings.STRIPE_SECRET_KEY
         serializer = self.get_serializer(data=request.data)
         if not serializer.is_valid():
+            logger.error(f"Invalid subscription initialization request by '{request.user.username}': {serializer.errors} at {datetime.now()}")
             return ErrorResponse(
                 message=format_first_error(serializer.errors), data=serializer.errors
             )
@@ -211,6 +224,7 @@ class InitializeStripeSubscription(generics.GenericAPIView):
             subscription_plan, "stripe_monthly_plan_id", None
         )
         if not stripe_monthly_price_id:
+            logger.error(f"Missing Stripe price ID for plan '{subscription_plan.name}' requested by '{request.user.username}' at {datetime.now()}")
             return ErrorResponse(
                 message="A price id has not been configured for this plan, please contact admin support"
             )
@@ -224,8 +238,10 @@ class InitializeStripeSubscription(generics.GenericAPIView):
                 customer_email=request.user.email,
                 line_items=[{"price": stripe_monthly_price_id, "quantity": 1}],
             )
+            logger.info(f"User '{request.user.username}' initialized Stripe subscription for plan '{subscription_plan.name}' at {datetime.now()}")
             return SuccessResponse(data={"payment_url": session.url})
         except Exception as e:
+            logger.error(f"Stripe subscription initialization failed for user '{request.user.username}': {str(e)} at {datetime.now()}")
             return ErrorResponse(
                 message=str(e), status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
@@ -245,6 +261,7 @@ class CurrentSubscriptionView(generics.RetrieveAPIView):
         try:
             subscription = UserSubscription.objects.filter(user=request.user).order_by('-subscribed_at').first()
             wallet, created = Wallet.objects.get_or_create(user=request.user)
+            logger.info(f"User '{request.user.username}' fetched current subscription status at {datetime.now()}")
             return Response(
                 {
                     "plan": SubscriptionPlanSerializer(subscription.plan).data,
@@ -256,4 +273,5 @@ class CurrentSubscriptionView(generics.RetrieveAPIView):
                 }
             )
         except UserSubscription.DoesNotExist:
+            logger.warning(f"No active subscription found for user '{request.user.username}' at {datetime.now()}")
             return Response({"error": "No active subscription found"}, status=404)

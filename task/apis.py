@@ -5,6 +5,7 @@ from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 import logging
+from datetime import datetime
 from rest_framework.views import APIView
 
 from account.models import Project
@@ -19,7 +20,7 @@ from account.utils import HasUserAPIKey, IsReviewer
 
 
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger('task.apis')
 
 
 class TaskListView(generics.ListAPIView):
@@ -33,8 +34,9 @@ class TaskListView(generics.ListAPIView):
     queryset = Task.objects.all()
     
     def get_queryset(self):
-        my_projects= Project.objects.filter(reviewers=self.request.user)
-        tasks_list= Task.objects.filter(group__in=my_projects, assigned_to=None, processing_status="REVIEW_NEEDED")
+        my_projects = Project.objects.filter(reviewers=self.request.user)
+        tasks_list = Task.objects.filter(group__in=my_projects, assigned_to=None, processing_status="REVIEW_NEEDED")
+        logger.info(f"User '{self.request.user.username}' fetched {tasks_list.count()} available tasks at {datetime.now()}")
         return tasks_list
     
 
@@ -50,16 +52,12 @@ class TaskCreateView(generics.CreateAPIView):
 
         if serializer.is_valid():
             try:
-                # Set the user to the current authenticated user
                 task = serializer.save(user=request.user)
-                logger.info(f"Submitting task {task.id} to Celery queue")
+                logger.info(f"User '{request.user.username}' created new task {task.id} (Serial: {task.serial_no}) at {datetime.now()}")
                 
-                # Queue the task for processing using Celery
                 celery_task = process_task.delay(task.id)
-                
-                logger.info(f"Task {task.id} submitted to Celery. Celery task ID: {celery_task.id}")
+                logger.info(f"Task {task.id} submitted to Celery queue. Celery task ID: {celery_task.id} at {datetime.now()}")
 
-                # Get fresh task data with related fields
                 task = Task.objects.select_related('group').get(id=task.id)
                 
                 return Response({
@@ -70,18 +68,17 @@ class TaskCreateView(generics.CreateAPIView):
                         'serial_no': task.serial_no,
                         'celery_task_id': celery_task.id,
                         'processing_status': task.processing_status,
-                        # 'submitted_by': task.user.username
                     }
                 }, status=status.HTTP_201_CREATED)
 
             except Exception as e:
-                logger.error(f"Task creation failed: {str(e)}", exc_info=True)
+                logger.error(f"Task creation failed for user '{request.user.username}': {str(e)}", exc_info=True)
                 return Response({
                     'status': 'error',
                     'error': str(e)
                 }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-        logger.error(f"Task creation failed: {serializer.errors}")
+        logger.error(f"Task creation validation failed for user '{request.user.username}': {serializer.errors}")
         return Response({
             'status': 'error',
             'errors': serializer.errors
@@ -137,9 +134,11 @@ class TasksNeedingReviewView(APIView):
     
     def get(self, request):
         if not (request.user.is_admin or request.user.is_reviewer):
+            logger.warning(f"Unauthorized access attempt to review tasks by user '{request.user.username}' at {datetime.now()}")
             return Response({"detail": "Not authorized."}, status=status.HTTP_403_FORBIDDEN)
         
-        tasks = Task.objects.filter(processing_status='REVIEW_NEEDED', group=request.user.project, assigned_to=None,)
+        tasks = Task.objects.filter(processing_status='REVIEW_NEEDED', group=request.user.project, assigned_to=None)
+        logger.info(f"Reviewer '{request.user.username}' fetched {tasks.count()} tasks needing review at {datetime.now()}")
         serializer = TaskSerializer(tasks, many=True)
         return Response(serializer.data)
 
@@ -211,17 +210,16 @@ class AssignTaskToSelfView(APIView):
         task = get_object_or_404(Task, id=task_id)
 
         if task.processing_status != 'REVIEW_NEEDED':
+            logger.warning(f"Reviewer '{request.user.username}' attempted to assign task {task_id} with invalid status '{task.processing_status}' at {datetime.now()}")
             return Response(
-                {   "status": "error",
-                    "detail": "Task is not available for review."},
+                {"status": "error", "detail": "Task is not available for review."},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
         if task.assigned_to:
+            logger.warning(f"Reviewer '{request.user.username}' attempted to assign already assigned task {task_id} at {datetime.now()}")
             return Response(
-                {
-                    "status": "error",
-                    "detail": "Task is already assigned."},
+                {"status": "error", "detail": "Task is already assigned."},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
@@ -231,9 +229,9 @@ class AssignTaskToSelfView(APIView):
         task.save()
         push_realtime_update(task, action='task_status_changed')
 
+        logger.info(f"Reviewer '{request.user.username}' successfully assigned task {task.serial_no} to self at {datetime.now()}")
         return Response(
-            {   "status": "success",
-                "message": f"Task {task.serial_no} assigned to you."},
+            {"status": "success", "message": f"Task {task.serial_no} assigned to you."},
             status=status.HTTP_200_OK
         )
 
@@ -302,36 +300,33 @@ class TaskReviewView(generics.GenericAPIView):
     def post(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         if not serializer.is_valid():
+            logger.error(f"Invalid review submission by '{request.user.username}': {serializer.errors}")
             return Response({
                 'status': 'error',
                 'errors': serializer.errors
             }, status=status.HTTP_400_BAD_REQUEST)  
             
-        # Get task_id from request data
         task_id = serializer.validated_data.get('task_id')            
         try:
-            # Fetch the existing task
             task = Task.objects.select_related('user', 'assigned_to').get(id=task_id)
 
-            # Extract ai_output for processing
-            ai_output = task.ai_output
-    
             if task.review_status != 'PENDING_REVIEW':
+                logger.warning(f"Reviewer '{request.user.username}' attempted to review task {task_id} with invalid status '{task.review_status}' at {datetime.now()}")
                 return Response({
                     'status': "error",
                     'error': "Task does not require review at this moment"
                 }, status=status.HTTP_403_FORBIDDEN)
 
-            
-            if task.assigned_to != request.user and request.user.is_admin != True :
-                
+            if task.assigned_to != request.user and not request.user.is_admin:
+                logger.warning(f"Unauthorized review attempt by '{request.user.username}' for task {task_id} at {datetime.now()}")
                 return Response({
                     'status': "error",
                     'error': "You have not been assigned to review this task"
                 }, status=status.HTTP_401_UNAUTHORIZED)
             
-                        
+            ai_output = task.ai_output
             if not ai_output or not ai_output.get('human_review'):
+                logger.error(f"Invalid AI output structure for task {task_id} reviewed by '{request.user.username}' at {datetime.now()}")
                 return Response({
                     'status': 'error',
                     'error': "AI output for this task does not match predefined structure"
@@ -341,11 +336,10 @@ class TaskReviewView(generics.GenericAPIView):
             ai_output['human_review']['justification'] = serializer.validated_data.get('justification')
             ai_output['confidence'] = serializer.validated_data.get('confidence')
             
-            # Log and queue task to Celery with both task id and ai_output
-            logger.info(f"Submitting task {task.id} to Celery queue")
+            logger.info(f"Reviewer '{request.user.username}' submitted review for task {task.serial_no} at {datetime.now()}")
             
             celery_task = provide_feedback_to_ai_model.delay(task.id, ai_output)
-            logger.info(f"Task {task.id} submitted to Celery. Celery task ID: {celery_task.id}")
+            logger.info(f"Task {task.id} review submitted to Celery. Celery task ID: {celery_task.id} at {datetime.now()}")
             
             return Response({
                 'status': 'success',
@@ -359,13 +353,14 @@ class TaskReviewView(generics.GenericAPIView):
             }, status=status.HTTP_200_OK)
             
         except Task.DoesNotExist:
+            logger.error(f"Task {task_id} not found for review by '{request.user.username}' at {datetime.now()}")
             return Response({
                 'status': 'error',
                 'error': f"Task with ID {task_id} not found."
             }, status=status.HTTP_404_NOT_FOUND)
             
         except Exception as e:
-            logger.error(f"Failed to queue task: {str(e)}", exc_info=True)
+            logger.error(f"Failed to queue task review: {str(e)}", exc_info=True)
             return Response({
                 'status': 'error',
                 'error': str(e)
@@ -376,19 +371,17 @@ class TaskStatusView(APIView):
     Endpoint to check the status of a task by ID or serial number
     """
     def get(self, request, identifier):
-        logger.info(f"Checking status for task identifier: {identifier}")
+        logger.info(f"User '{request.user.username}' checking status for task identifier: {identifier} at {datetime.now()}")
         
         try:
-            # Use select_related for user data
             tasks_qs = Task.objects.select_related('user', 'assigned_to')
             
-            # Try to find task by serial_no first, then by id
             if identifier.isdigit():
                 task = tasks_qs.get(id=identifier, user=request.user)
             else:
                 task = tasks_qs.get(serial_no=identifier, user=request.user)
             
-            logger.info(f"Found task {task.id} with status: {task.processing_status}")
+            logger.info(f"Task {task.id} status retrieved for user '{request.user.username}' at {datetime.now()}")
             
             return Response({
                 'status': 'success',
@@ -407,7 +400,7 @@ class TaskStatusView(APIView):
             })
             
         except Task.DoesNotExist:
-            logger.error(f"Task not found for identifier: {identifier}")
+            logger.error(f"Task not found for identifier: {identifier} requested by '{request.user.username}' at {datetime.now()}")
             return Response({
                 'status': 'error',
                 'error': 'Task not found'
@@ -420,7 +413,7 @@ class UserTaskListView(generics.ListAPIView):
     serializer_class = FullTaskSerializer
     
     def get_queryset(self):
-        logger.info(f"Fetching tasks for user: {self.request.user.id}")
+        logger.info(f"User '{self.request.user.username}' fetching their task list at {datetime.now()}")
         return (Task.objects
                 .select_related('user', 'assigned_to')
                 .filter(user=self.request.user)
@@ -470,7 +463,7 @@ class AssignedTaskListView(generics.ListAPIView):
     }
 )
     def get_queryset(self):
-        logger.info(f"Fetching assigned tasks for user: {self.request.user.id}")
+        logger.info(f"User '{self.request.user.username}' fetching their assigned tasks at {datetime.now()}")
         return (Task.objects
                 .select_related('assigned_to')
                 .filter(assigned_to=self.request.user)

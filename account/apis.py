@@ -1,4 +1,5 @@
-
+import logging
+from datetime import datetime
 from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiExample, OpenApiResponse
 from drf_spectacular.utils import extend_schema
 from rest_framework import generics
@@ -36,6 +37,8 @@ from .utils import (
 )
 from .models import CustomUser, Project
 
+# Set up logger
+logger = logging.getLogger('account.apis')
 
 class LoginView(APIView):
     """User login view to generate JWT token"""
@@ -56,7 +59,9 @@ class LoginView(APIView):
         if serializer.is_valid():
             user = serializer.validated_data
             refresh = RefreshToken.for_user(user)
-
+            
+            logger.info(f"User '{user.username}' logged in successfully at {datetime.now()}")
+            
             return Response(
                 {
                     "refresh": str(refresh),
@@ -65,6 +70,7 @@ class LoginView(APIView):
                 }
             )
 
+        logger.warning(f"Failed login attempt for username '{request.data.get('username')}' at {datetime.now()}")
         return Response(
             {"status": "error", "error": "Invalid Credentials"},
             status=status.HTTP_401_UNAUTHORIZED,
@@ -87,6 +93,7 @@ class RegisterView(APIView):
 
         if serializer.is_valid():
             user = serializer.save()
+            logger.info(f"New user '{user.username}' registered successfully at {datetime.now()}")
             return Response(
                 {"status": "success", "user_data": RegisterSerializer(user).data},
                 status=status.HTTP_201_CREATED,
@@ -104,6 +111,7 @@ class RegisterView(APIView):
         else:
             error_message = "Invalid data provided"
 
+        logger.warning(f"Failed registration attempt for username '{request.data.get('username')}' at {datetime.now()}. Error: {error_message}")
         return Response(
             {"status": "error", "error": error_message},
             status=status.HTTP_400_BAD_REQUEST,
@@ -154,11 +162,13 @@ class MakeUserAdminView(APIView):
         serializer.is_valid(raise_exception=True)
 
         user = serializer.validated_data["user_id"]
+        admin_user = request.user
 
         user.is_admin = True
         user.is_staff = True
         user.save()
 
+        logger.info(f"User '{admin_user.username}' promoted '{user.username}' to admin at {datetime.now()}")
         return Response(
             {"status": "success", "detail": f"User '{user.username}' is now an admin."},
             status=status.HTTP_200_OK,
@@ -212,12 +222,13 @@ class MakeUserReviewerView(APIView):
 
         user = serializer.validated_data["user_id"]
         project = serializer.validated_data["group_id"]
+        admin_user = request.user
 
         user.is_reviewer = True
         user.project = project
         user.save()
-        
 
+        logger.info(f"Admin '{admin_user.username}' promoted '{user.username}' to reviewer in project '{project.name}' at {datetime.now()}")
         return Response({
             "status": "success",
             "detail": f"User '{user.username}' is now a reviewer in project '{project.name}'."
@@ -261,10 +272,14 @@ class RemoveUserReviewerView(APIView):
         serializer.is_valid(raise_exception=True)
 
         user = serializer.validated_data['user_id']
+        admin_user = request.user
+        project_name = user.project.name if user.project else "No Project"
+
         user.is_reviewer = False
         user.project = None
         user.save()
 
+        logger.info(f"Admin '{admin_user.username}' removed reviewer status from '{user.username}' (previously in project '{project_name}') at {datetime.now()}")
         return Response({
             "status": "success",
             "detail": f"User '{user.username}' is no longer a reviewer."
@@ -316,7 +331,7 @@ class CreateProjectView(generics.CreateAPIView):
     permission_classes = [IsAdminUser]
     
     @extend_schema(
-        summary="Create a new project (admin only)",
+        summary="Create a new project",
         description="Allows an admin user to create a new project by providing a name.(only for testing now)",
         request=ProjectCreateSerializer,
         responses={
@@ -340,7 +355,11 @@ class CreateProjectView(generics.CreateAPIView):
         ]
     )
     def post(self, request, *args, **kwargs):
-        return super().post(request, *args, **kwargs)
+        response = super().post(request, *args, **kwargs)
+        if response.status_code == 201:
+            project_name = request.data.get('name')
+            logger.info(f"Admin '{request.user.username}' created new project '{project_name}' at {datetime.now()}")
+        return response
     
     
     
@@ -401,6 +420,7 @@ class CustomTokenRefreshView(TokenRefreshView):
     def post(self, request, *args, **kwargs):
         try:
             response = super().post(request, *args, **kwargs)
+            logger.info(f"Token refresh successful at {datetime.now()}")
             return Response(
                 {
                     "status": "success",
@@ -411,6 +431,7 @@ class CustomTokenRefreshView(TokenRefreshView):
             )
 
         except AuthenticationFailed as e:  # Catch invalid token error
+            logger.warning(f"Failed token refresh attempt at {datetime.now()}")
             return Response(
                 {
                     "status": "error",
