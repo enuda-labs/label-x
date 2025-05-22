@@ -15,6 +15,7 @@ from common.responses import ErrorResponse, SuccessResponse, format_first_error,
 
 from .utils import IsAdminUser, IsSuperAdmin
 from .serializers import (
+    Disable2faSerializer,
     LoginSerializer,
     MakeAdminSerializer,
     MakeReviewerSerializer,
@@ -42,6 +43,34 @@ from .models import CustomUser, OTPVerification, Project
 
 # Set up logger
 logger = logging.getLogger('account.apis')
+
+
+class Disable2FAView(generics.GenericAPIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = Disable2faSerializer
+    
+    def post(self, request):
+        serializer = self.get_serializer(data=request.data)
+        
+        if not serializer.is_valid():
+            return ErrorResponse(message=format_first_error(serializer.errors))
+        
+        user = request.user
+        
+        try:
+            otp_verification = OTPVerification.objects.get(user=user)
+            password = serializer.validated_data.get('password')
+            
+            if not user.check_password(password):
+                return ErrorResponse(message="Invalid password")
+            
+            
+            otp_verification.is_verified = False
+            otp_verification.save()
+            
+            return SuccessResponse(message="2FA disabled successfully")
+        except OTPVerification.DoesNotExist:
+            return ErrorResponse(message="2FA not setup yet.", status=status.HTTP_400_BAD_REQUEST)
 
 
 class Setup2faView(generics.GenericAPIView):

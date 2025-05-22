@@ -6,6 +6,10 @@ from django.contrib.auth import authenticate
 from .models import CustomUser, OTPVerification, Project
 
 
+class Disable2faSerializer(serializers.Serializer):
+    password = serializers.CharField()
+
+
 class OtpVerificationSerializer(serializers.ModelSerializer):
     otp_code = serializers.CharField(write_only=True)
     
