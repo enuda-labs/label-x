@@ -285,19 +285,26 @@ class ListUserProjectView(generics.ListAPIView):
     permission_classes =[IsAuthenticated | HasUserAPIKey]
     serializer_class = UserProjectSerializer
     
+    
     def get_queryset(self):
         return Project.objects.filter(created_by=self.request.user)
+    
+    @extend_schema(
+        summary="Get the list of projects owned by the currently logged in user"
+    )
+    def get(self, request, *args, **kwargs):
+        return super().get(request, *args, **kwargs)
 
 class CreateUserProject(generics.CreateAPIView):
-    """
-    Create a project for the currently logged in user 
-    
-    ---
-    """
     queryset = Project.objects.all()
     permission_classes =[IsAuthenticated | HasUserAPIKey]
     serializer_class = UserProjectSerializer
     
+    @extend_schema(
+        summary="Create a project for the currently logged in user "
+    )
+    def post(self, request, *args, **kwargs):
+        return super().post(request, *args, **kwargs)
     
 
 
@@ -309,7 +316,7 @@ class CreateProjectView(generics.CreateAPIView):
     permission_classes = [IsAdminUser]
     
     @extend_schema(
-        summary="Create a new project",
+        summary="Create a new project (admin only)",
         description="Allows an admin user to create a new project by providing a name.(only for testing now)",
         request=ProjectCreateSerializer,
         responses={
@@ -327,7 +334,7 @@ class CreateProjectView(generics.CreateAPIView):
         examples=[
             OpenApiExample(
                 'Create Project Example',
-                value={"name": "New Project X"},
+                value={"name": "New Project X", "description": "For a new project"},
                 request_only=True
             )
         ]

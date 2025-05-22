@@ -7,7 +7,10 @@ from rest_framework_api_key.models import AbstractAPIKey
 class Project(models.Model):
     """Group that reviewers belong to"""
     name = models.CharField(max_length=100, unique=True)
+    description = models.TextField(null=True, blank=True)
     created_by = models.ForeignKey('CustomUser', related_name='tasks', blank=True, on_delete=models.CASCADE, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
     
 
     def __str__(self):
