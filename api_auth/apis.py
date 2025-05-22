@@ -12,6 +12,7 @@ from api_auth.serializers import APIKeySerializer, ApiKeyActionSerializer
 from rest_framework.permissions import IsAuthenticated, AllowAny
 
 from common.responses import ErrorResponse, SuccessResponse
+from drf_spectacular.utils import extend_schema
 
 logger = logging.getLogger('api_auth.apis')
 
@@ -94,15 +95,13 @@ class RollApiKey(generics.GenericAPIView):
 
 
 class GenerateApiKeyView(generics.GenericAPIView):
-    """
-    Generate an api key
-
-    ---
-    """
-
     permission_classes = []
     serializer_class = LoginSerializer
     permission_classes = [AllowAny]
+    
+    @extend_schema(
+        summary="Generate a new api key for the currently logged in user"
+    )
     def post(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         if serializer.is_valid():

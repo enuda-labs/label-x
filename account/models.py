@@ -1,7 +1,12 @@
+from io import BytesIO
 import uuid
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
 from django.db import models
+import pyotp
+import qrcode
 from rest_framework_api_key.models import AbstractAPIKey
+from django.core.files.base import ContentFile
+
 
 
 class Project(models.Model):
@@ -73,5 +78,54 @@ class UserAPIKey(AbstractAPIKey):
     class Meta(AbstractAPIKey.Meta):
         verbose_name = "User API key"
         verbose_name_plural = "User API keys"
+    
+    
+class OTPVerification(models.Model):
+    user= models.OneToOneField(CustomUser, on_delete=models.CASCADE, related_name='otp')
+    secret_key = models.CharField(max_length=100, blank=True)
+    is_verified = models.BooleanField(default=False)
+    qr_code = models.ImageField(upload_to="qr_codes/", blank=True, null=True)    
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    def __str__(self) -> str:
+        return f"Otp for {self.user.email}"
+    
+    def save(self, *args, **kwargs):
+        if not self.secret_key:
+            self.secret_key = pyotp.random_base32()
+            self.generate_qr_code()
+        super().save(*args, **kwargs)
+    
+    
+    def generate_qr_code(self):
+        """Generate qr code for otp verification"""
+        totp = pyotp.totp.TOTP(self.secret_key).provisioning_uri(
+            name=self.user.email,
+            issuer_name="Label x"
+        )
+        
+        qr = qrcode.QRCode(
+            version=1,
+            error_correction=qrcode.constants.ERROR_CORRECT_L,
+            box_size=10,
+            border=4,
+        )
+        qr.add_data(totp)
+        qr.make(fit=True)
+        
+        img = qr.make_image(fill_color="black", back_color="white")
 
-
+        buffer = BytesIO()
+        img.save(buffer, format="PNG")
+        buffer.seek(0)
+        
+        self.qr_code.save(
+            f"{self.user.id}_qr_code.png",
+            ContentFile(buffer.read()),
+            save=False)
+        
+    def verify_otp(self, otp_code):
+        totp = pyotp.TOTP(self.secret_key)
+        return totp.verify(otp_code)
+        

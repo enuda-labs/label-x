@@ -3,9 +3,24 @@ from rest_framework import serializers
 from django.contrib.auth import authenticate
 
 
-from .models import CustomUser, Project
+from .models import CustomUser, OTPVerification, Project
 
 
+class OtpVerificationSerializer(serializers.ModelSerializer):
+    otp_code = serializers.CharField(write_only=True)
+    
+    class Meta:
+        model = OTPVerification
+        fields = ['otp_code', 'is_verified']
+        read_only_fields = ['is_verified']
+        
+    def validate(self, attrs):
+        otp_code = attrs.pop("otp_code")
+        if not self.instance.verify_otp(otp_code):
+            raise serializers.ValidationError("Invalid otp code")
+        return attrs
+    
+    
 class UserSerializer(serializers.ModelSerializer):
     """Serializer for the user model"""
     roles = serializers.SerializerMethodField()
@@ -64,6 +79,7 @@ class LoginSerializer(serializers.Serializer):
 
     username = serializers.CharField()
     password = serializers.CharField(write_only=True)
+    otp_code = serializers.CharField(required=False)
 
     def validate(self, data):
         user = authenticate(username=data["username"], password=data["password"])

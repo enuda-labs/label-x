@@ -11,11 +11,14 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenRefreshView
 
+from common.responses import ErrorResponse, SuccessResponse, format_first_error, get_first_error
+
 from .utils import IsAdminUser, IsSuperAdmin
 from .serializers import (
     LoginSerializer,
     MakeAdminSerializer,
     MakeReviewerSerializer,
+    OtpVerificationSerializer,
     ProjectCreateSerializer,
     ProjectListResponseSerializer,
     RegisterSerializer,
@@ -35,10 +38,56 @@ from .utils import (
     IsAdminUser,
     IsSuperAdmin,
 )
-from .models import CustomUser, Project
+from .models import CustomUser, OTPVerification, Project
 
 # Set up logger
 logger = logging.getLogger('account.apis')
+
+
+class Setup2faView(generics.GenericAPIView):
+    permission_classes = [IsAuthenticated]
+    
+    @extend_schema(
+        summary="Get all the details required to setup 2fa for a user"
+    )
+    def get(self, request):
+        otp_verification, created = OTPVerification.objects.get_or_create(user=request.user)
+        
+        #regenerate the qr code if otp was not newly created
+        if not created:
+            otp_verification.generate_qr_code()
+            otp_verification.save()
+        
+        return SuccessResponse(data={
+            "qr_code_url": request.build_absolute_uri(otp_verification.qr_code.url),
+            "secret_key": otp_verification.secret_key,
+            "is_verified": otp_verification.is_verified
+        })
+    
+    
+    @extend_schema(
+        request=OtpVerificationSerializer,
+        summary="Verify the otp code from an authenticator app"
+    )
+    def post(self, request):
+        try:
+            otp_verification = OTPVerification.objects.get(user=request.user)
+        except OTPVerification.DoesNotExist:
+            return ErrorResponse(
+                message="2FA not setup yet",
+                status= status.HTTP_400_BAD_REQUEST
+            )
+        
+        serializer = OtpVerificationSerializer(otp_verification, data=request.data)
+        if not serializer.is_valid():
+            return ErrorResponse(message=format_first_error(serializer.errors, with_key=False))
+        
+        otp_verification.is_verified = True
+        otp_verification.save()
+        
+        return SuccessResponse(
+            message="2fa Verified successfully",
+        )
 
 class LoginView(APIView):
     """User login view to generate JWT token"""
@@ -98,8 +147,32 @@ class LoginView(APIView):
         serializer = LoginSerializer(data=request.data)
         if serializer.is_valid():
             user = serializer.validated_data
-            refresh = RefreshToken.for_user(user)
             
+            #check if 2fa is enabled 
+            try:
+                otp_verification = OTPVerification.objects.get(user=user, is_verified=True)
+                otp_code = request.data.get('otp_code')
+                
+                if not otp_code:
+                    #2FA is enabled but the user has not provided their otp code during login
+                    return ErrorResponse(
+                        message="2fa verification required",
+                        data={
+                            "requires_2fa": True
+                        },
+                        status=status.HTTP_401_UNAUTHORIZED
+                    )
+                
+                if not otp_verification.verify_otp(otp_code):
+                    #The 2FA otp provided by the user during login is not valid
+                    logger.warning(f"Failed login attempt for username '{request.data.get('username')}' at {datetime.now()}, Invalid 2fa otp code")
+                    return ErrorResponse(message="Invalid 2FA code", status=status.HTTP_401_UNAUTHORIZED)
+                
+            except OTPVerification.DoesNotExist:
+                #this means 2FA is not enabled, so we continue with normal login
+                pass
+            
+            refresh = RefreshToken.for_user(user)
             logger.info(f"User '{user.username}' logged in successfully at {datetime.now()}")
             
             return Response(
