@@ -1,34 +1,43 @@
 from rest_framework import serializers
-from .models import SubscriptionPlan, UserSubscription, Wallet
+from .models import SubscriptionPlan, UserPaymentHistory, UserSubscription, Wallet
+
+
+class UserPaymentHistorySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = UserPaymentHistory
+        fields = "__all__"
+
 
 class SubscriptionPlanSerializer(serializers.ModelSerializer):
     class Meta:
         model = SubscriptionPlan
-        fields = ['id', 'name', 'monthly_fee', 'cost_per_extra_request']
+        fields = ["id", "name", "monthly_fee", "cost_per_extra_request"]
+
 
 class UserSubscriptionSerializer(serializers.ModelSerializer):
     plan = SubscriptionPlanSerializer()
+
     class Meta:
         model = UserSubscription
-        fields = ['plan', 'subscribed_at', 'expires_at', 'request_balance']
+        fields = ["plan", "subscribed_at", "expires_at", "request_balance"]
 
 
 class InitializerSubscriptionSerializer(serializers.Serializer):
     subscription_plan = serializers.IntegerField()
-    
+
     def validate_subscription_plan(self, value):
         try:
             plan = SubscriptionPlan.objects.get(id=value)
         except SubscriptionPlan.DoesNotExist:
             raise serializers.ValidationError("Invalid subscription plan")
         return plan
-        
+
 
 class WalletSerializer(serializers.ModelSerializer):
     class Meta:
         model = Wallet
-        fields = ['balance']
-        
+        fields = ["balance"]
+
 
 class SubscribeRequestSerializer(serializers.Serializer):
     plan_id = serializers.IntegerField()
@@ -40,6 +49,7 @@ class SubscribeRequestSerializer(serializers.Serializer):
         except SubscriptionPlan.DoesNotExist:
             raise serializers.ValidationError({"plan_id": "Plan not found."})
         return data
+
 
 class SubscriptionStatusSerializer(serializers.Serializer):
     plan = SubscriptionPlanSerializer()

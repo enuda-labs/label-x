@@ -1,4 +1,5 @@
 from datetime import timedelta
+import decimal
 from django.utils import timezone
 
 from rest_framework import generics, permissions, status
@@ -9,37 +10,57 @@ import stripe.error
 from account.models import CustomUser
 from common.responses import ErrorResponse, SuccessResponse, format_first_error
 
-from .models import SubscriptionPlan, UserSubscription, Wallet
+from .models import (
+    SubscriptionPlan,
+    UserPaymentHistory,
+    UserPaymentStatus,
+    UserSubscription,
+    Wallet,
+)
 from .serializers import (
     InitializerSubscriptionSerializer,
     SubscriptionPlanSerializer,
     SubscribeRequestSerializer,
     SubscriptionStatusSerializer,
+    UserPaymentHistorySerializer,
 )
 
 import stripe
 import json
 from django.conf import settings
 
+
+class GetUserPaymentHistoryView(generics.ListAPIView):
+    permission_classes = [permissions.IsAuthenticated]
+    serializer_class = UserPaymentHistorySerializer
+
+    @extend_schema(
+        summary="Get the payment history list for the currently logged in user"
+    )
+    def get_queryset(self):
+        return UserPaymentHistory.objects.filter(user=self.request.user)
+
+
 class StripeWebhookListener(generics.GenericAPIView):
     permission_classes = [permissions.AllowAny]
-    
+
     def get_user_and_plan_from_event(self, event):
-        event_object = event.get('data', {}).get('object', {})
-        
-        customer_email = event_object.get('customer_email')
-        
-        price_id = event_object.get('lines').get('data')[0].get('plan').get('id')
+        event_object = event.get("data", {}).get("object", {})
+
+        customer_email = event_object.get("customer_email")
+
+        price_id = event_object.get("lines").get("data")[0].get("plan").get("id")
         try:
             customer = CustomUser.objects.get(email=customer_email)
         except CustomUser.DoesNotExist:
-            customer= None
-        
-        subscription_plan = SubscriptionPlan.objects.filter(stripe_monthly_plan_id=price_id).first()
-        
+            customer = None
+
+        subscription_plan = SubscriptionPlan.objects.filter(
+            stripe_monthly_plan_id=price_id
+        ).first()
+
         return customer, subscription_plan
 
-        
     def post(self, request):
         payload = request.body
         sig_header = request.META.get("HTTP_STRIPE_SIGNATURE")
@@ -53,23 +74,30 @@ class StripeWebhookListener(generics.GenericAPIView):
             return ErrorResponse(status=400)
 
         event_type = event.get("type")
-                
-        if event_type == "invoice.payment_succeeded":            
+
+        if event_type == "invoice.payment_succeeded":
             customer, subscription_plan = self.get_user_and_plan_from_event(event)
-            
+
             if customer and subscription_plan:
-                #grant user permissions
+                # grant user permissions
                 expires_at = timezone.now() + timedelta(days=30)
                 UserSubscription.objects.update_or_create(
-                    user=customer, defaults={
+                    user=customer,
+                    defaults={
                         "plan": subscription_plan,
                         "expires_at": expires_at,
-                        "renews_at": expires_at
-                    }
+                        "renews_at": expires_at,
+                    },
                 )
-                print('user subscribed successfully')
-                
-            
+
+                UserPaymentHistory.objects.create(
+                    user=customer,
+                    amount=subscription_plan.monthly_fee,
+                    description=f"Subscription for {subscription_plan.name}",
+                    status=UserPaymentStatus.SUCCESS,
+                )
+                print("user subscribed successfully")
+
         if event_type == "customer.subscription.deleted":
             # TODO: revoke user permissions
             pass
@@ -164,7 +192,7 @@ class SubscribeToPlanView(generics.CreateAPIView):
 class InitializeStripeSubscription(generics.GenericAPIView):
     permission_classes = [permissions.IsAuthenticated]
     serializer_class = InitializerSubscriptionSerializer
-    
+
     @extend_schema(
         summary="Get the payment url for a stripe subscription",
     )
@@ -172,22 +200,26 @@ class InitializeStripeSubscription(generics.GenericAPIView):
         stripe.api_key = settings.STRIPE_SECRET_KEY
         serializer = self.get_serializer(data=request.data)
         if not serializer.is_valid():
-            return ErrorResponse(message=format_first_error(serializer.errors), data=serializer.errors)
-        
-        
-        subscription_plan = serializer.validated_data.get('subscription_plan')
-        
-        #checking if admin has set a price id for the chosen plan
-        stripe_monthly_price_id= getattr(subscription_plan, "stripe_monthly_plan_id", None)
-        if not stripe_monthly_price_id:
-            return ErrorResponse(message="A price id has not been configured for this plan, please contact admin support")
-            
+            return ErrorResponse(
+                message=format_first_error(serializer.errors), data=serializer.errors
+            )
 
-        # TODO: use correct redirect urls and price id
+        subscription_plan = serializer.validated_data.get("subscription_plan")
+
+        # checking if admin has set a price id for the chosen plan
+        stripe_monthly_price_id = getattr(
+            subscription_plan, "stripe_monthly_plan_id", None
+        )
+        if not stripe_monthly_price_id:
+            return ErrorResponse(
+                message="A price id has not been configured for this plan, please contact admin support"
+            )
+
+        client_base_url = f"{request.scheme}://{request.get_host()}"
         try:
             session = stripe.checkout.Session.create(
-                success_url="https://google.com",
-                cancel_url="https://google.com",
+                success_url=f"{client_base_url}/dashboard/profile/",
+                cancel_url=f"{client_base_url}/dashboard/profile/",
                 mode="subscription",
                 customer_email=request.user.email,
                 line_items=[{"price": stripe_monthly_price_id, "quantity": 1}],
@@ -211,8 +243,8 @@ class CurrentSubscriptionView(generics.RetrieveAPIView):
     )
     def get(self, request):
         try:
-            subscription = UserSubscription.objects.get(user=request.user)
-            wallet = Wallet.objects.get(user=request.user)
+            subscription = UserSubscription.objects.filter(user=request.user).order_by('-subscribed_at').first()
+            wallet, created = Wallet.objects.get_or_create(user=request.user)
             return Response(
                 {
                     "plan": SubscriptionPlanSerializer(subscription.plan).data,
