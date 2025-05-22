@@ -21,7 +21,6 @@ import stripe
 import json
 from django.conf import settings
 
-
 class StripeWebhookListener(generics.GenericAPIView):
     permission_classes = [permissions.AllowAny]
     

@@ -21,13 +21,14 @@ import sentry_sdk
 from sentry_sdk.integrations.django import DjangoIntegration
 from sentry_sdk.integrations.logging import LoggingIntegration
 from sentry_sdk.integrations.redis import RedisIntegration
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 import dj_database_url
 
 
 # env_file = BASE_DIR / ".env"
-# if env_file.exists(): 
+# if env_file.exists():
 #     load_dotenv(env_file, override=True)
 # else:
 #     print("No env file detected.")
@@ -37,6 +38,7 @@ import dj_database_url
 env_file = BASE_DIR / ".env"
 if env_file.exists():
     from dotenv import load_dotenv
+
     load_dotenv(env_file, override=True)
 else:
     # Log a warning instead of exiting
@@ -52,15 +54,21 @@ SECRET_KEY = os.getenv("SECRET_KEY_VALUE", default="default")
 DEBUG = os.getenv("DEBUG_VALUE", "true").lower() == "true"
 # DEBUG = True
 
-ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS_VALUE", "127.0.0.1").split(",") # Use commas to seperate muliple host values
-CSRF_TRUSTED_ORIGINS = os.getenv("CSRF_TRUSTED_ORIGINS_VALUE", "http://127.0.0.1").split(",") # Same comma-value-seperation as above
+ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS_VALUE", "127.0.0.1").split(
+    ","
+)  # Use commas to seperate muliple host values
+CSRF_TRUSTED_ORIGINS = os.getenv(
+    "CSRF_TRUSTED_ORIGINS_VALUE", "http://127.0.0.1"
+).split(
+    ","
+)  # Same comma-value-seperation as above
 
 
 # Application definition
 
 INSTALLED_APPS = [
     "daphne",
-    'account',
+    "account",
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
@@ -68,20 +76,19 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "rest_framework",
-    'rest_framework_api_key',
+    "rest_framework_api_key",
     "rest_framework_simplejwt",
-    'rest_framework_simplejwt.token_blacklist',
-    'drf_spectacular',
-    'task',
+    "rest_framework_simplejwt.token_blacklist",
+    "drf_spectacular",
+    "task",
     "corsheaders",
-    'api_auth',
-    'common',
-    'subscription',
-
+    "api_auth",
+    "common",
+    "subscription",
 ]
 
 MIDDLEWARE = [
-    'corsheaders.middleware.CorsMiddleware',
+    "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -89,7 +96,7 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
-    "whitenoise.middleware.WhiteNoiseMiddleware"
+    "whitenoise.middleware.WhiteNoiseMiddleware",
 ]
 
 ROOT_URLCONF = "label_x.urls"
@@ -114,7 +121,6 @@ WSGI_APPLICATION = "label_x.wsgi.application"
 ASGI_APPLICATION = "label_x.asgi.application"
 
 
-
 # Database
 # https://docs.djangoproject.com/en/5.1/ref/settings/#databases
 
@@ -126,7 +132,7 @@ if DEBUG:
         }
     }
 else:
-    DATABASE_URL = os.getenv('DATABASE_URL')
+    DATABASE_URL = os.getenv("DATABASE_URL")
     DATABASES = {
         "default": dj_database_url.config(default=DATABASE_URL, conn_max_age=1800),
     }
@@ -167,11 +173,13 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/5.1/howto/static-files/
 
 STATIC_URL = "static/"
-STATIC_FILES_DIR = [BASE_DIR / 'main'/ 'static', ]
+STATIC_FILES_DIR = [
+    BASE_DIR / "main" / "static",
+]
 STATIC_ROOT = BASE_DIR / "staticfiles"
 
-MEDIA_URL = 'media/'
-MEDIA_ROOT = BASE_DIR / 'media'
+MEDIA_URL = "media/"
+MEDIA_ROOT = BASE_DIR / "media"
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field
@@ -179,7 +187,7 @@ MEDIA_ROOT = BASE_DIR / 'media'
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 # custom user model for authentication
-AUTH_USER_MODEL = 'account.CustomUser'
+AUTH_USER_MODEL = "account.CustomUser"
 
 # setting for logging of errors
 # LOGGING = {
@@ -199,7 +207,7 @@ AUTH_USER_MODEL = 'account.CustomUser'
 #         "file": {
 #             "level": "ERROR",
 #             "class": "logging.FileHandler",
-#             "filename": "logs/errors.log", 
+#             "filename": "logs/errors.log",
 #             "formatter": "verbose",
 #         },
 #         "console": {
@@ -248,7 +256,6 @@ REST_FRAMEWORK = {
         "user": "30/min",
     },
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
-
     "DEFAULT_PERMISSION_CLASSES": [
         "rest_framework.permissions.IsAuthenticated",
         # "rest_framework.permissions.AllowAny"
@@ -260,21 +267,21 @@ REST_FRAMEWORK = {
 
 # JWT Timeout settings
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(hours=24),
-    'REFRESH_TOKEN_LIFETIME': timedelta(days=2),
-    'ROTATE_REFRESH_TOKENS': True,
-    'BLACKLIST_AFTER_ROTATION': True,
-    'AUTH_HEADER_TYPES': ('Bearer',),
+    "ACCESS_TOKEN_LIFETIME": timedelta(hours=24),
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=2),
+    "ROTATE_REFRESH_TOKENS": True,
+    "BLACKLIST_AFTER_ROTATION": True,
+    "AUTH_HEADER_TYPES": ("Bearer",),
 }
 
 # celery settings
 CELERY_TASK_TRACK_STARTED = True
 CELERY_TASK_TIME_LIMIT = 30 * 60
-CELERY_RESULT_BACKEND = os.getenv('CELERY_RESULT_BACKEND')
-CELERY_BROKER_URL = os.getenv('CELERY_BROKER_URL')
-CELERY_ACCEPT_CONTENT = ['json']
-CELERY_TASK_SERIALIZER = 'json'
-CELERY_RESULT_SERIALIZER = 'json'
+CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND")
+CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL")
+CELERY_ACCEPT_CONTENT = ["json"]
+CELERY_TASK_SERIALIZER = "json"
+CELERY_RESULT_SERIALIZER = "json"
 
 CORS_ALLOW_ALL_ORIGINS = True
 
@@ -290,7 +297,7 @@ sentry_sdk.init(
 )
 
 
-# CHANNEL_LAYERS = {"default": {"BACKEND": "channels.layers.InMemoryChannelLayer"}} 
+# CHANNEL_LAYERS = {"default": {"BACKEND": "channels.layers.InMemoryChannelLayer"}}
 REDIS_URL = os.getenv("CELERY_RESULT_BACKEND", "redis://localhost:6379/0")
 CHANNEL_LAYERS = {
     "default": {
@@ -303,5 +310,11 @@ CHANNEL_LAYERS = {
 
 API_KEY_CUSTOM_HEADER = "HTTP_X_API_KEY"
 STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY")
-STRIPE_WEBHOOK_SECRET= os.getenv("STRIPE_WEBHOOK_SECRET")
+STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET")
 
+SPECTACULAR_SETTINGS = {
+    "TITLE": "Label x api",
+    "VERSION": "1.0.0",
+    "DESCRIPTION": "Official documentation for Enuda labs Label_x AI classifier",
+    "SCHEMA_PATH_PREFIX": r"/api/v[0-9]",
+}
