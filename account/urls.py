@@ -15,5 +15,9 @@ urlpatterns = [
     path('users/in-project/<int:project_id>/', apis.UsersInProjectView.as_view(), name='users-in-project'),
     path("projects/create/", apis.CreateProjectView.as_view(), name="create-project"),
     path("organization/project/", apis.CreateUserProject.as_view(), name='create-user-project'),
-    path("organization/project/list/", apis.ListUserProjectView.as_view(), name='list-user-project'),   
+    path("organization/project/list/", apis.ListUserProjectView.as_view(), name='list-user-project'),  
+    path('2fa/setup/', apis.Setup2faView.as_view(), name='setup-2fa'),
+    path("2fa/disable/", apis.Disable2FAView.as_view(), name='disable-2fa'),
+    path('logout/', apis.LogoutView.as_view(), name='logout-user')
+     
 ]
