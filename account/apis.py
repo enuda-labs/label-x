@@ -1,4 +1,6 @@
-
+import logging
+from datetime import datetime
+from tokenize import TokenError
 from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiExample, OpenApiResponse
 from drf_spectacular.utils import extend_schema
 from rest_framework import generics
@@ -10,11 +12,16 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenRefreshView
 
+from common.responses import ErrorResponse, SuccessResponse, format_first_error, get_first_error
+
 from .utils import IsAdminUser, IsSuperAdmin
 from .serializers import (
+    Disable2faSerializer,
     LoginSerializer,
+    LogoutSerializer,
     MakeAdminSerializer,
     MakeReviewerSerializer,
+    OtpVerificationSerializer,
     ProjectCreateSerializer,
     ProjectListResponseSerializer,
     RegisterSerializer,
@@ -34,8 +41,112 @@ from .utils import (
     IsAdminUser,
     IsSuperAdmin,
 )
-from .models import CustomUser, Project
+from .models import CustomUser, OTPVerification, Project
+from django.contrib.auth import logout
+# Set up logger
+logger = logging.getLogger('account.apis')
 
+
+class LogoutView(generics.GenericAPIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = LogoutSerializer
+    
+    @extend_schema(
+        summary="Logout a user by blacklisting the refresh token"
+    )
+    def post(self, request):
+        serializer = self.get_serializer(data=request.data)
+        if not serializer.is_valid():
+            return ErrorResponse(message=format_first_error(serializer.errors))
+        
+        refresh_token = serializer.validated_data.get('refresh_token')
+        
+        try:
+            token = RefreshToken(refresh_token)
+            token.blacklist()
+            
+            logout(request)
+            return SuccessResponse(message="Logout successful")
+        except TokenError as e:
+            return ErrorResponse(message="Invalid token")
+        except Exception as e:
+            return ErrorResponse(message="An error occurred during logout", status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
+        
+
+
+class Disable2FAView(generics.GenericAPIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = Disable2faSerializer
+    
+    def post(self, request):
+        serializer = self.get_serializer(data=request.data)
+        
+        if not serializer.is_valid():
+            return ErrorResponse(message=format_first_error(serializer.errors))
+        
+        user = request.user
+        
+        try:
+            otp_verification = OTPVerification.objects.get(user=user)
+            password = serializer.validated_data.get('password')
+            
+            if not user.check_password(password):
+                return ErrorResponse(message="Invalid password")
+            
+            
+            otp_verification.is_verified = False
+            otp_verification.save()
+            
+            return SuccessResponse(message="2FA disabled successfully")
+        except OTPVerification.DoesNotExist:
+            return ErrorResponse(message="2FA not setup yet.", status=status.HTTP_400_BAD_REQUEST)
+
+
+class Setup2faView(generics.GenericAPIView):
+    permission_classes = [IsAuthenticated]
+    
+    @extend_schema(
+        summary="Get all the details required to setup 2fa for a user"
+    )
+    def get(self, request):
+        otp_verification, created = OTPVerification.objects.get_or_create(user=request.user)
+        
+        #regenerate the qr code if otp was not newly created
+        if not created:
+            otp_verification.generate_qr_code()
+            otp_verification.save()
+        
+        return SuccessResponse(data={
+            "qr_code_url": request.build_absolute_uri(otp_verification.qr_code.url),
+            "secret_key": otp_verification.secret_key,
+            "is_verified": otp_verification.is_verified
+        })
+    
+    
+    @extend_schema(
+        request=OtpVerificationSerializer,
+        summary="Verify the otp code from an authenticator app"
+    )
+    def post(self, request):
+        try:
+            otp_verification = OTPVerification.objects.get(user=request.user)
+        except OTPVerification.DoesNotExist:
+            return ErrorResponse(
+                message="2FA not setup yet",
+                status= status.HTTP_400_BAD_REQUEST
+            )
+        
+        serializer = OtpVerificationSerializer(otp_verification, data=request.data)
+        if not serializer.is_valid():
+            return ErrorResponse(message=format_first_error(serializer.errors, with_key=False))
+        
+        otp_verification.is_verified = True
+        otp_verification.save()
+        
+        return SuccessResponse(
+            message="2fa Verified successfully",
+        )
 
 class LoginView(APIView):
     """User login view to generate JWT token"""
@@ -44,27 +155,95 @@ class LoginView(APIView):
 
     @extend_schema(
         summary="User Login",
-        description="Authenticate user and return access & refresh tokens.",
-        request=LoginSerializer,  # This tells Swagger the expected request format
+        description="Authenticate user and return access & refresh tokens along with user roles and permissions.",
+        request=LoginSerializer,
         responses={
-            200: UserSerializer,  # Document the response structure
-            401: {"status": "error", "error": "Invalid credentials....."},
-        },
+            200: OpenApiResponse(
+                response=None,
+                description="Successful login response with tokens and user data",
+                examples=[
+                    OpenApiExample(
+                        "Login Success",
+                        value={
+                            "status": "success",
+                            "refresh": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...",
+                            "access": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...",
+                            "user_data": {
+                                "id": 1,
+                                "username": "john_doe",
+                                "email": "john@example.com",
+                                "is_reviewer": True,
+                                "is_admin": False,
+                                "roles": ["reviewer"],
+                                "permissions": [
+                                    "can_review_tasks",
+                                    "can_create_tasks",
+                                    "can_view_assigned_tasks"
+                                ]
+                            }
+                        },
+                        response_only=True
+                    )
+                ]
+            ),
+            401: OpenApiResponse(
+                response=None,
+                description="Invalid credentials",
+                examples=[
+                    OpenApiExample(
+                        "Login Failed",
+                        value={
+                            "status": "error",
+                            "error": "Invalid credentials"
+                        },
+                        response_only=True
+                    )
+                ]
+            )
+        }
     )
     def post(self, request):
         serializer = LoginSerializer(data=request.data)
         if serializer.is_valid():
             user = serializer.validated_data
+            
+            #check if 2fa is enabled 
+            try:
+                otp_verification = OTPVerification.objects.get(user=user, is_verified=True)
+                otp_code = request.data.get('otp_code')
+                
+                if not otp_code:
+                    #2FA is enabled but the user has not provided their otp code during login
+                    return ErrorResponse(
+                        message="2fa verification required",
+                        data={
+                            "requires_2fa": True
+                        },
+                        status=status.HTTP_401_UNAUTHORIZED
+                    )
+                
+                if not otp_verification.verify_otp(otp_code):
+                    #The 2FA otp provided by the user during login is not valid
+                    logger.warning(f"Failed login attempt for username '{request.data.get('username')}' at {datetime.now()}, Invalid 2fa otp code")
+                    return ErrorResponse(message="Invalid 2FA code", status=status.HTTP_401_UNAUTHORIZED)
+                
+            except OTPVerification.DoesNotExist:
+                #this means 2FA is not enabled, so we continue with normal login
+                pass
+            
             refresh = RefreshToken.for_user(user)
-
+            logger.info(f"User '{user.username}' logged in successfully at {datetime.now()}")
+            
             return Response(
                 {
+                    "status": "success",
                     "refresh": str(refresh),
                     "access": str(refresh.access_token),
                     "user_data": UserSerializer(user).data,
                 }
             )
 
+        logger.warning(f"Failed login attempt for username '{request.data.get('username')}' at {datetime.now()}")
         return Response(
             {"status": "error", "error": "Invalid Credentials"},
             status=status.HTTP_401_UNAUTHORIZED,
@@ -87,6 +266,7 @@ class RegisterView(APIView):
 
         if serializer.is_valid():
             user = serializer.save()
+            logger.info(f"New user '{user.username}' registered successfully at {datetime.now()}")
             return Response(
                 {"status": "success", "user_data": RegisterSerializer(user).data},
                 status=status.HTTP_201_CREATED,
@@ -104,6 +284,7 @@ class RegisterView(APIView):
         else:
             error_message = "Invalid data provided"
 
+        logger.warning(f"Failed registration attempt for username '{request.data.get('username')}' at {datetime.now()}. Error: {error_message}")
         return Response(
             {"status": "error", "error": error_message},
             status=status.HTTP_400_BAD_REQUEST,
@@ -154,11 +335,13 @@ class MakeUserAdminView(APIView):
         serializer.is_valid(raise_exception=True)
 
         user = serializer.validated_data["user_id"]
+        admin_user = request.user
 
         user.is_admin = True
         user.is_staff = True
         user.save()
 
+        logger.info(f"User '{admin_user.username}' promoted '{user.username}' to admin at {datetime.now()}")
         return Response(
             {"status": "success", "detail": f"User '{user.username}' is now an admin."},
             status=status.HTTP_200_OK,
@@ -212,12 +395,13 @@ class MakeUserReviewerView(APIView):
 
         user = serializer.validated_data["user_id"]
         project = serializer.validated_data["group_id"]
+        admin_user = request.user
 
         user.is_reviewer = True
         user.project = project
         user.save()
-        
 
+        logger.info(f"Admin '{admin_user.username}' promoted '{user.username}' to reviewer in project '{project.name}' at {datetime.now()}")
         return Response({
             "status": "success",
             "detail": f"User '{user.username}' is now a reviewer in project '{project.name}'."
@@ -261,10 +445,14 @@ class RemoveUserReviewerView(APIView):
         serializer.is_valid(raise_exception=True)
 
         user = serializer.validated_data['user_id']
+        admin_user = request.user
+        project_name = user.project.name if user.project else "No Project"
+
         user.is_reviewer = False
         user.project = None
         user.save()
 
+        logger.info(f"Admin '{admin_user.username}' removed reviewer status from '{user.username}' (previously in project '{project_name}') at {datetime.now()}")
         return Response({
             "status": "success",
             "detail": f"User '{user.username}' is no longer a reviewer."
@@ -285,19 +473,26 @@ class ListUserProjectView(generics.ListAPIView):
     permission_classes =[IsAuthenticated | HasUserAPIKey]
     serializer_class = UserProjectSerializer
     
+    
     def get_queryset(self):
         return Project.objects.filter(created_by=self.request.user)
+    
+    @extend_schema(
+        summary="Get the list of projects owned by the currently logged in user"
+    )
+    def get(self, request, *args, **kwargs):
+        return super().get(request, *args, **kwargs)
 
 class CreateUserProject(generics.CreateAPIView):
-    """
-    Create a project for the currently logged in user 
-    
-    ---
-    """
     queryset = Project.objects.all()
     permission_classes =[IsAuthenticated | HasUserAPIKey]
     serializer_class = UserProjectSerializer
     
+    @extend_schema(
+        summary="Create a project for the currently logged in user "
+    )
+    def post(self, request, *args, **kwargs):
+        return super().post(request, *args, **kwargs)
     
 
 
@@ -327,13 +522,17 @@ class CreateProjectView(generics.CreateAPIView):
         examples=[
             OpenApiExample(
                 'Create Project Example',
-                value={"name": "New Project X"},
+                value={"name": "New Project X", "description": "For a new project"},
                 request_only=True
             )
         ]
     )
     def post(self, request, *args, **kwargs):
-        return super().post(request, *args, **kwargs)
+        response = super().post(request, *args, **kwargs)
+        if response.status_code == 201:
+            project_name = request.data.get('name')
+            logger.info(f"Admin '{request.user.username}' created new project '{project_name}' at {datetime.now()}")
+        return response
     
     
     
@@ -394,6 +593,7 @@ class CustomTokenRefreshView(TokenRefreshView):
     def post(self, request, *args, **kwargs):
         try:
             response = super().post(request, *args, **kwargs)
+            logger.info(f"Token refresh successful at {datetime.now()}")
             return Response(
                 {
                     "status": "success",
@@ -404,6 +604,7 @@ class CustomTokenRefreshView(TokenRefreshView):
             )
 
         except AuthenticationFailed as e:  # Catch invalid token error
+            logger.warning(f"Failed token refresh attempt at {datetime.now()}")
             return Response(
                 {
                     "status": "error",
