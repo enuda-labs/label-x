@@ -59,6 +59,9 @@ class JWTAuthMiddleWare(BaseMiddleware):
 
 
 class ApiKeyMiddleware(BaseMiddleware):
+    """
+    Authentication middleware for websockets that checks for the presence of an api key
+    """
     async def __call__(self, scope, receive, send):
         query_string = scope["query_string"].decode()
         query_params = parse_qs(query_string)
@@ -76,6 +79,9 @@ class ApiKeyMiddleware(BaseMiddleware):
     
 
 class HybridAuthentication(BaseMiddleware):
+    """
+    Authentication middleware for websockets that checks for the presence of a valid api key or authentication token
+    """
     async def __call__(self, scope, receive, send):
         query_string = scope['query_string'].decode()
         query_params = parse_qs(query_string)
