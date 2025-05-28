@@ -260,6 +260,8 @@ class CurrentSubscriptionView(generics.RetrieveAPIView):
     def get(self, request):
         try:
             subscription = UserSubscription.objects.filter(user=request.user).order_by('-subscribed_at').first()
+            if not subscription:
+                return ErrorResponse(message="No subscription found", status=status.HTTP_404_NOT_FOUND)
             wallet, created = Wallet.objects.get_or_create(user=request.user)
             logger.info(f"User '{request.user.username}' fetched current subscription status at {datetime.now()}")
             return Response(
