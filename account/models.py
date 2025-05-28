@@ -68,12 +68,19 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
         return self.username
 
 
+
+class ApiKeyTypeChoices(models.TextChoices):
+    PRODUCTION = 'production', 'Production',
+    TEST = 'test', 'Test'
+
 class UserAPIKey(AbstractAPIKey):
     user = models.ForeignKey(
         CustomUser,
         on_delete=models.CASCADE,
         related_name="api_keys"
     )
+    key_type = models.CharField(choices=ApiKeyTypeChoices.choices, default=ApiKeyTypeChoices.PRODUCTION, max_length=20)
+    
 
     class Meta(AbstractAPIKey.Meta):
         verbose_name = "User API key"

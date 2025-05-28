@@ -2,7 +2,7 @@ from httpx import delete
 from rest_framework import generics
 from account.serializers import LoginSerializer
 from rest_framework.response import Response
-from account.models import UserAPIKey
+from account.models import ApiKeyTypeChoices, UserAPIKey
 from account.utils import create_api_key_for_uer, HasUserAPIKey
 from rest_framework import status
 import logging
@@ -12,7 +12,7 @@ from api_auth.serializers import APIKeySerializer, ApiKeyActionSerializer
 from rest_framework.permissions import IsAuthenticated, AllowAny
 
 from common.responses import ErrorResponse, SuccessResponse
-from drf_spectacular.utils import extend_schema
+from drf_spectacular.utils import extend_schema, OpenApiParameter
 
 logger = logging.getLogger('api_auth.apis')
 
@@ -77,7 +77,7 @@ class RollApiKey(generics.GenericAPIView):
                     return ErrorResponse(message="You can only roll active API keys")
                 api_key.revoked = True
                 api_key.save()
-                new_api_key, key = create_api_key_for_uer(user, user.username)
+                new_api_key, key = create_api_key_for_uer(user, user.username, api_key.key_type)
                 logger.info(f"User '{user.username}' rolled API key {key_id} to new key {new_api_key.id} at {datetime.now()}")
                 return SuccessResponse(
                     data={
@@ -100,16 +100,31 @@ class GenerateApiKeyView(generics.GenericAPIView):
     permission_classes = [AllowAny]
     
     @extend_schema(
-        summary="Generate a new api key for the currently logged in user"
+        summary="Generate a new api key for the user",
+        description="This endpoint generates either a production or development api key for the user after they have provided their username and password",
+        parameters=[
+            OpenApiParameter(
+                name="key_type",
+                location=OpenApiParameter.PATH,
+                required=True,
+                enum=ApiKeyTypeChoices.values,
+                description="The type of api key to be generated (either production or test)"
+            )
+        ]
     )
-    def post(self, request, *args, **kwargs):
+    def post(self, request, key_type, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         if serializer.is_valid():
+            
+            if key_type not in ApiKeyTypeChoices.values:
+                return ErrorResponse(message="Invalid key type")
+            
+            
             user = serializer.validated_data
-            if UserAPIKey.objects.filter(user=user, revoked=False).exists():
-                logger.warning(f"User '{user.username}' attempted to generate new API key while having active keys at {datetime.now()}")
-                return ErrorResponse(message="You already have an active api key")
-            api_key, key = create_api_key_for_uer(user, user.username)
+            if UserAPIKey.objects.filter(user=user, revoked=False, key_type=key_type).exists():
+                logger.warning(f"User '{user.username}' attempted to generate new {key_type} API key while having active keys at {datetime.now()}")
+                return ErrorResponse(message=f"You already have an active {key_type} api key")
+            api_key, key = create_api_key_for_uer(user, user.username, key_type)
             logger.info(f"User '{user.username}' generated new API key {api_key.id} at {datetime.now()}")
 
             return SuccessResponse(
