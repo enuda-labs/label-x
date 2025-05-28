@@ -7,7 +7,7 @@ import jwt
 from cryptography.fernet import Fernet
 import base64
 import json
-from .models import UserAPIKey
+from .models import ApiKeyTypeChoices, UserAPIKey
 from rest_framework_api_key.permissions import BaseHasAPIKey
 
 class IsSuperAdmin(BasePermission):
@@ -49,6 +49,7 @@ class HasUserAPIKey(BaseHasAPIKey):
 
         api_key = self.model.objects.get_from_key(key)
         request.user = api_key.user
+        request.is_test_key = api_key.key_type == ApiKeyTypeChoices.DEVELOPMENT
         return True
 
 def generate_stateless_api_key(user, expiry_days=30):
@@ -68,6 +69,6 @@ def generate_stateless_api_key(user, expiry_days=30):
     return {"key": token, "expires_at": expiry_date}
 
 
-def create_api_key_for_uer(user, name="Default"):
-    api_key, key = UserAPIKey.objects.create_key(name=name, user=user)
+def create_api_key_for_uer(user, name="Default", key_type="production"):
+    api_key, key = UserAPIKey.objects.create_key(name=name, user=user, key_type=key_type)
     return api_key, key

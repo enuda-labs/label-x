@@ -6,7 +6,7 @@ from account.models import UserAPIKey
 class APIKeySerializer(serializers.ModelSerializer):
     class Meta:
         model = UserAPIKey
-        fields = ['id', 'name', 'created', 'revoked']
+        fields = ['id', 'name', 'created', 'revoked', 'key_type']
         read_only_fields = fields
 
 
