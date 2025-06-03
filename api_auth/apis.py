@@ -13,46 +13,36 @@ from rest_framework.permissions import IsAuthenticated, AllowAny
 
 from common.responses import ErrorResponse, SuccessResponse
 from drf_spectacular.utils import extend_schema, OpenApiParameter
+from rest_framework.views import APIView
 
 logger = logging.getLogger('api_auth.apis')
 
 class ViewApiKeyView(generics.GenericAPIView):
-    serializer_class = LoginSerializer
-    permission_classes = [AllowAny]
+    permission_classes = [IsAuthenticated]
     def post(self, request, *args, **kwargs):
-        serializer = self.get_serializer(data=request.data)
-        if serializer.is_valid():
-            user = serializer.validated_data
-            api_keys = UserAPIKey.objects.filter(user=user)
-            api_key_serializer = APIKeySerializer(api_keys, many=True)
-            logger.info(f"User '{user.username}' viewed their API keys at {datetime.now()}")
-            return SuccessResponse(data=api_key_serializer.data)
-
-        logger.warning(f"Failed API key view attempt with invalid credentials at {datetime.now()}")
-        return ErrorResponse(message="Invalid login credentials")
+        user = request.user
+        api_keys = UserAPIKey.objects.filter(user=user)
+        api_key_serializer = APIKeySerializer(api_keys, many=True)
+        logger.info(f"User '{user.username}' viewed their API keys at {datetime.now()}")
+        return SuccessResponse(data=api_key_serializer.data)
 
 
 class DeleteApiKey(generics.DestroyAPIView):
-    serializer_class = ApiKeyActionSerializer
-    permission_classes = [AllowAny]
+    permission_classes = [IsAuthenticated]
     def destroy(self, request, *args, **kwargs):
-        serializer = self.get_serializer(data=request.data)
-        if serializer.is_valid():
-            user = serializer.validated_data.get('user')
-            key_id = serializer.validated_data.get('key_id')
-            
-            try:
-                api_key = UserAPIKey.objects.get(id=key_id, user=user)
-                api_key.revoked = True
-                api_key.save()
-                logger.info(f"User '{user.username}' revoked API key {key_id} at {datetime.now()}")
-                return SuccessResponse(message="API key revoked successfully")
-            except UserAPIKey.DoesNotExist:
-                logger.warning(f"User '{user.username}' attempted to revoke non-existent API key {key_id} at {datetime.now()}")
-                return ErrorResponse(message="API key not found")
+        user = request.user
+        key_id = kwargs.get('key_id')
         
-        logger.warning(f"Failed API key revocation attempt with invalid credentials at {datetime.now()}")
-        return ErrorResponse(message="Invalid credentials")
+        try:
+            api_key = UserAPIKey.objects.get(id=key_id, user=user)
+            api_key.revoked = True
+            api_key.save()
+            logger.info(f"User '{user.username}' revoked API key {key_id} at {datetime.now()}")
+            return SuccessResponse(message="API key revoked successfully")
+        except UserAPIKey.DoesNotExist:
+            logger.warning(f"User '{user.username}' attempted to revoke non-existent API key {key_id} at {datetime.now()}")
+            return ErrorResponse(message="API key not found")
+        
 
 
 class RollApiKey(generics.GenericAPIView):
@@ -63,11 +53,11 @@ class RollApiKey(generics.GenericAPIView):
     """
 
     serializer_class = ApiKeyActionSerializer
-    permission_classes = [AllowAny]
+    permission_classes = [IsAuthenticated]
     def post(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         if serializer.is_valid():
-            user = serializer.validated_data.get('user')
+            user = request.user
             key_id = serializer.validated_data.get('key_id')
 
             try:
@@ -96,8 +86,7 @@ class RollApiKey(generics.GenericAPIView):
 
 class GenerateApiKeyView(generics.GenericAPIView):
     permission_classes = []
-    serializer_class = LoginSerializer
-    permission_classes = [AllowAny]
+    permission_classes = [IsAuthenticated]
     
     @extend_schema(
         summary="Generate a new api key for the user",
@@ -113,32 +102,26 @@ class GenerateApiKeyView(generics.GenericAPIView):
         ]
     )
     def post(self, request, key_type, *args, **kwargs):
-        serializer = self.get_serializer(data=request.data)
-        if serializer.is_valid():
-            
-            if key_type not in ApiKeyTypeChoices.values:
-                return ErrorResponse(message="Invalid key type")
-            
-            
-            user = serializer.validated_data
-            if UserAPIKey.objects.filter(user=user, revoked=False, key_type=key_type).exists():
-                logger.warning(f"User '{user.username}' attempted to generate new {key_type} API key while having active keys at {datetime.now()}")
-                return ErrorResponse(message=f"You already have an active {key_type} api key")
-            api_key, key = create_api_key_for_uer(user, user.username, key_type)
-            logger.info(f"User '{user.username}' generated new API key {api_key.id} at {datetime.now()}")
+        if key_type not in ApiKeyTypeChoices.values:
+            return ErrorResponse(message="Invalid key type")
+        
+        
+        user = request.user
+        if UserAPIKey.objects.filter(user=user, revoked=False, key_type=key_type).exists():
+            logger.warning(f"User '{user.username}' attempted to generate new {key_type} API key while having active keys at {datetime.now()}")
+            return ErrorResponse(message=f"You already have an active {key_type} api key")
+        api_key, key = create_api_key_for_uer(user, user.username, key_type)
+        logger.info(f"User '{user.username}' generated new API key {api_key.id} at {datetime.now()}")
 
-            return SuccessResponse(
-                data={
-                    "id": api_key.id,
-                    "name": api_key.name,
-                    "api_key": key,
-                    "created": api_key.created,
-                    "message": "Please keep your api key safe, you will not be able to retrieve it again",
-                },
-                status=status.HTTP_201_CREATED,
-            )
-
-        logger.warning(f"Failed API key generation attempt with invalid credentials at {datetime.now()}")
-        return ErrorResponse(
-            message="Invalid credentials", status=status.HTTP_401_UNAUTHORIZED
+        return SuccessResponse(
+            data={
+                "id": api_key.id,
+                "name": api_key.name,
+                "api_key": key,
+                "created": api_key.created,
+                "message": "Please keep your api key safe, you will not be able to retrieve it again",
+            },
+            status=status.HTTP_201_CREATED,
         )
+
+
