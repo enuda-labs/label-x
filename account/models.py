@@ -80,6 +80,7 @@ class UserAPIKey(AbstractAPIKey):
         related_name="api_keys"
     )
     key_type = models.CharField(choices=ApiKeyTypeChoices.choices, default=ApiKeyTypeChoices.PRODUCTION, max_length=20)
+    plain_api_key = models.CharField(max_length=255, null=True, blank=True)
     
 
     class Meta(AbstractAPIKey.Meta):
