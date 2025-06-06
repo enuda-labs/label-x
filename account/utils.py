@@ -71,4 +71,6 @@ def generate_stateless_api_key(user, expiry_days=30):
 
 def create_api_key_for_uer(user, name="Default", key_type="production"):
     api_key, key = UserAPIKey.objects.create_key(name=name, user=user, key_type=key_type)
+    api_key.plain_api_key = key
+    api_key.save(update_fields=["plain_api_key"])
     return api_key, key
