@@ -8,10 +8,10 @@ from rest_framework import status
 import logging
 from datetime import datetime
 
-from api_auth.serializers import APIKeySerializer, ApiKeyActionSerializer
+from api_auth.serializers import APIKeySerializer, ApiKeyActionSerializer, GenerateApiKeySerializer
 from rest_framework.permissions import IsAuthenticated, AllowAny
 
-from common.responses import ErrorResponse, SuccessResponse
+from common.responses import ErrorResponse, SuccessResponse, format_first_error
 from drf_spectacular.utils import extend_schema, OpenApiParameter
 from rest_framework.views import APIView
 
@@ -21,7 +21,7 @@ class ViewApiKeyView(generics.GenericAPIView):
     permission_classes = [IsAuthenticated]
     def post(self, request, *args, **kwargs):
         user = request.user
-        api_keys = UserAPIKey.objects.filter(user=user)
+        api_keys = UserAPIKey.objects.filter(user=user, revoked=False)
         api_key_serializer = APIKeySerializer(api_keys, many=True)
         logger.info(f"User '{user.username}' viewed their API keys at {datetime.now()}")
         return SuccessResponse(data=api_key_serializer.data)
@@ -85,8 +85,8 @@ class RollApiKey(generics.GenericAPIView):
 
 
 class GenerateApiKeyView(generics.GenericAPIView):
-    permission_classes = []
     permission_classes = [IsAuthenticated]
+    serializer_class= GenerateApiKeySerializer
     
     @extend_schema(
         summary="Generate a new api key for the user",
@@ -102,6 +102,12 @@ class GenerateApiKeyView(generics.GenericAPIView):
         ]
     )
     def post(self, request, key_type, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        if not serializer.is_valid():
+            return ErrorResponse(message=format_first_error(serializer.errors))
+        
+        key_name = serializer.validated_data.get('key_name')
+        
         if key_type not in ApiKeyTypeChoices.values:
             return ErrorResponse(message="Invalid key type")
         
@@ -110,7 +116,7 @@ class GenerateApiKeyView(generics.GenericAPIView):
         if UserAPIKey.objects.filter(user=user, revoked=False, key_type=key_type).exists():
             logger.warning(f"User '{user.username}' attempted to generate new {key_type} API key while having active keys at {datetime.now()}")
             return ErrorResponse(message=f"You already have an active {key_type} api key")
-        api_key, key = create_api_key_for_uer(user, user.username, key_type)
+        api_key, key = create_api_key_for_uer(user, key_name, key_type)
         logger.info(f"User '{user.username}' generated new API key {api_key.id} at {datetime.now()}")
 
         return SuccessResponse(
