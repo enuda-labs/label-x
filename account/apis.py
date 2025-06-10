@@ -118,10 +118,15 @@ class Setup2faView(generics.GenericAPIView):
             otp_verification.save()
         
         return SuccessResponse(data={
-            "qr_code_url": request.build_absolute_uri(otp_verification.qr_code.url),
+            "qr_code_url": otp_verification.qr_code,
             "secret_key": otp_verification.secret_key,
             "is_verified": otp_verification.is_verified
         })
+        # return SuccessResponse(data={
+        #     "qr_code_url": request.build_absolute_uri(otp_verification.qr_code.url),
+        #     "secret_key": otp_verification.secret_key,
+        #     "is_verified": otp_verification.is_verified
+        # })
     
     
     @extend_schema(
