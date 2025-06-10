@@ -12,6 +12,7 @@ urlpatterns = [
     path('my-tasks/', apis.UserTaskListView.as_view(), name='user_tasks'),
     path('assigned-task', apis.AssignedTaskListView.as_view(), name="assigned_task"),
     path('submit-review', apis.TaskReviewView.as_view(), name="submit-review" ),
-    path('review/complete/', apis.CompleteTaskReviewView.as_view(), name='complete-task-review')
+    path('review/complete/', apis.CompleteTaskReviewView.as_view(), name='complete-task-review'),
+    path('completion-stats/', apis.TaskCompletionStatsView.as_view(), name='task_completion_stats')
     # path('list/', apis.TaskListView.as_view(), name='list-tasks')
 ]
