@@ -402,3 +402,91 @@ class UserTaskListTestCase(APITestCase):
         Task.objects.all().delete()
         User.objects.all().delete()
 
+class TaskCompletionStatsTestCase(APITestCase):
+    def setUp(self):
+        # Create test user
+        self.user = User.objects.create_user(
+            username='testuser', 
+            email='test@example.com', 
+            password='Testp@ssword123'
+        )
+        
+        # Create another user for testing isolation
+        self.other_user = User.objects.create_user(
+            username='otheruser', 
+            email='other@example.com', 
+            password='Testp@ssword123'
+        )
+        
+        # Get token for authentication
+        self.token = str(AccessToken.for_user(user=self.user))
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {self.token}")
+        
+        # Create test group
+        self.group = Project.objects.create(name='testgroup')
+        
+        # Create test tasks for the main user
+        self.create_test_tasks(self.user)
+        
+        # Create test tasks for the other user
+        self.create_test_tasks(self.other_user)
+        
+        # API endpoint
+        self.stats_url = reverse('task:task_completion_stats')
+    
+    def create_test_tasks(self, user):
+        """Helper method to create test tasks for a user"""
+        # Create 10 tasks for the user
+        for i in range(10):
+            task = Task.objects.create(
+                task_type="TEXT",
+                data={"content": f"Test content {i}"},
+                processing_status="COMPLETED" if i < 7 else "PENDING",  # 7 completed, 3 pending
+                group=self.group,
+                user=user
+            )
+    
+    def test_get_completion_stats(self):
+        """Test getting task completion statistics"""
+        response = self.client.get(self.stats_url)
+        
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['status'], 'success')
+        self.assertEqual(response.data['data']['total_tasks'], 10)
+        self.assertEqual(response.data['data']['completed_tasks'], 7)
+        self.assertEqual(response.data['data']['completion_percentage'], 70.0)
+    
+    def test_get_stats_without_tasks(self):
+        """Test getting stats when user has no tasks"""
+        # Delete all tasks for the test user
+        Task.objects.filter(user=self.user).delete()
+        
+        response = self.client.get(self.stats_url)
+        
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['status'], 'success')
+        self.assertEqual(response.data['data']['total_tasks'], 0)
+        self.assertEqual(response.data['data']['completed_tasks'], 0)
+        self.assertEqual(response.data['data']['completion_percentage'], 0)
+    
+    def test_get_stats_without_auth(self):
+        """Test getting stats without authentication"""
+        self.client.credentials()  # Remove auth credentials
+        response = self.client.get(self.stats_url)
+        
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+    
+    def test_stats_isolation(self):
+        """Test that stats only include tasks from the authenticated user"""
+        # Verify that other user's tasks are not included
+        response = self.client.get(self.stats_url)
+        
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['data']['total_tasks'], 10)  # Only user's tasks
+        self.assertEqual(response.data['data']['completed_tasks'], 7)  # Only user's completed tasks
+    
+    def tearDown(self):
+        Task.objects.all().delete()
+        User.objects.all().delete()
+        Project.objects.all().delete()
+

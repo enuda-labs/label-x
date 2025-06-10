@@ -502,3 +502,66 @@ class AssignedTaskListView(generics.ListAPIView):
                 .select_related('assigned_to')
                 .filter(assigned_to=self.request.user)
                 .order_by('-created_at'))
+
+class TaskCompletionStatsView(APIView):
+    """
+    View to get task completion statistics for tasks submitted by the logged-in user
+    """
+    permission_classes = [IsAuthenticated]
+    
+    @extend_schema(
+        summary="Get task completion statistics",
+        description="Returns the percentage of completed tasks out of total tasks submitted by the logged-in user.",
+        responses={
+            200: OpenApiResponse(
+                response=None,
+                description="Task completion statistics",
+                examples=[
+                    OpenApiExample(
+                        "Successful Response",
+                        value={
+                            "status": "success",
+                            "data": {
+                                "total_tasks": 100,
+                                "completed_tasks": 75,
+                                "completion_percentage": 75.0
+                            }
+                        },
+                        response_only=True
+                    )
+                ]
+            )
+        }
+    )
+    
+    def get(self, request):
+        try:
+            # Get total tasks count for the logged-in user
+            total_tasks = Task.objects.filter(user=request.user).count()
+            
+            # Get completed tasks count for the logged-in user
+            completed_tasks = Task.objects.filter(
+                user=request.user,
+                processing_status="COMPLETED"
+            ).count()
+            
+            # Calculate percentage
+            completion_percentage = (completed_tasks / total_tasks * 100) if total_tasks > 0 else 0
+            
+            logger.info(f"User '{request.user.username}' fetched their task completion stats at {datetime.now()}")
+            
+            return Response({
+                "status": "success",
+                "data": {
+                    "total_tasks": total_tasks,
+                    "completed_tasks": completed_tasks,
+                    "completion_percentage": round(completion_percentage, 2)
+                }
+            }, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            logger.error(f"Error calculating task completion stats for user '{request.user.username}': {str(e)}", exc_info=True)
+            return Response({
+                "status": "error",
+                "message": "Failed to calculate task completion statistics"
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
