@@ -25,6 +25,10 @@ from sentry_sdk.integrations.redis import RedisIntegration
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 import dj_database_url
+import cloudinary
+import cloudinary.uploader
+import cloudinary.api
+import cloudinary_storage
 
 
 # env_file = BASE_DIR / ".env"
@@ -85,6 +89,8 @@ INSTALLED_APPS = [
     "api_auth",
     "common",
     "subscription",
+    'cloudinary',
+    'cloudinary_storage',
 ]
 
 MIDDLEWARE = [
@@ -178,8 +184,8 @@ STATIC_FILES_DIR = [
 ]
 STATIC_ROOT = BASE_DIR / "staticfiles"
 
-MEDIA_URL = "media/"
-MEDIA_ROOT = BASE_DIR / "media"
+# MEDIA_URL = "media/"
+# MEDIA_ROOT = BASE_DIR / "media"
 
 
 
@@ -315,3 +321,17 @@ SPECTACULAR_SETTINGS = {
     "DESCRIPTION": "Official documentation for Enuda labs Label_x AI classifier",
     "SCHEMA_PATH_PREFIX": r"/api/v[0-9]",
 }
+
+
+CLOUDINARY_CLOUD_NAME=os.getenv("CLOUDINARY_CLOUD_NAME")
+CLOUDINARY_API_KEY=os.getenv("CLOUDINARY_API_KEY")
+CLOUDINARY_API_SECRET= os.getenv("CLOUDINARY_API_SECRET")
+
+
+CLOUDINARY_STORAGE = {
+    'CLOUD_NAME': CLOUDINARY_CLOUD_NAME,
+    'API_KEY': CLOUDINARY_API_KEY,
+    'API_SECRET': CLOUDINARY_API_SECRET,
+}
+
+DEFAULT_FILE_STORAGE = 'cloudinary_storage.storage.MediaCloudinaryStorage'

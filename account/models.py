@@ -6,6 +6,8 @@ import pyotp
 import qrcode
 from rest_framework_api_key.models import AbstractAPIKey
 from django.core.files.base import ContentFile
+from cloudinary.models import CloudinaryField
+import cloudinary.uploader
 
 
 
@@ -92,9 +94,11 @@ class OTPVerification(models.Model):
     user= models.OneToOneField(CustomUser, on_delete=models.CASCADE, related_name='otp')
     secret_key = models.CharField(max_length=100, blank=True)
     is_verified = models.BooleanField(default=False)
-    qr_code = models.ImageField(upload_to="qr_codes/", blank=True, null=True)    
+    # qr_code = models.ImageField(upload_to="qr_codes/", blank=True, null=True)    
+    qr_code = CloudinaryField("image", null=True, blank=True)    
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    cloudinary_data = models.JSONField(null=True, blank=True, help_text="The full result from gotten when uploading the image to cloudinary")
     
     def __str__(self) -> str:
         return f"Otp for {self.user.email}"
@@ -128,10 +132,21 @@ class OTPVerification(models.Model):
         img.save(buffer, format="PNG")
         buffer.seek(0)
         
-        self.qr_code.save(
-            f"{self.user.id}_qr_code.png",
-            ContentFile(buffer.read()),
-            save=False)
+        result = cloudinary.uploader.upload(
+            buffer,
+            folder="qr_codes",
+            public_id=f"{self.user.id}_qr_code",
+            overwrite=True,
+            resource_type="image"
+        )
+        
+        
+        # self.qr_code.save(
+        #     f"{self.user.id}_qr_code.png",
+        #     ContentFile(buffer.read()),
+        #     save=False)
+        self.qr_code = result["secure_url"]
+        self.cloudinary_data = result
         
     def verify_otp(self, otp_code):
         totp = pyotp.TOTP(self.secret_key)
