@@ -1,6 +1,8 @@
 import json
 from celery import shared_task
 from celery.utils.log import get_task_logger
+import logging
+from datetime import datetime
 
 from account.models import CustomUser
 from task.utils import push_realtime_update
@@ -11,7 +13,7 @@ from .utils import assign_reviewer, dispatch_review_response_message
 
 
 # Set up logger
-logger = get_task_logger(__name__)
+logger = logging.getLogger('task.tasks')
 
 
 @shared_task
@@ -37,7 +39,17 @@ def process_task(task_id):
         # Get priority with fallback to 'NORMAL'
         priority = getattr(task, "priority", "NORMAL")
         logger.info(f"Task {task_id} priority: {priority}")
-
+        if task.task_type == 'TEXT':
+        #    Do some task related processing here
+            pass
+        elif task.task_type == 'IMAGE':
+            pass
+        elif task.task_type == 'AUDIO':
+            pass
+        elif task.task_type == 'VIDEO':
+            pass
+        elif task.task_type == 'MULTIMODAL':
+            pass
         # Next now is Queue priority
         if priority == "URGENT":
             logger.info(f"Task {task_id} is URGENT priority, processing immediately")
@@ -49,7 +61,7 @@ def process_task(task_id):
         return {"status": "success", "task_id": task_id}
 
     except Task.DoesNotExist:
-        logger.error(f"Task {task_id} not found in database")
+        logger.error(f"Task {task_id} not found in database  at {datetime.now()}")
         return {"status": "error", "message": f"Task {task_id} not found"}
     except Exception as e:
         logger.error(f"Error processing task {task_id}: {str(e)}", exc_info=True)

@@ -32,21 +32,11 @@ class TaskSubmissionTestCase(APITestCase):
         self.text_task_data = {
             "task_type": "TEXT",
             "priority": "NORMAL",
-            "ai_output": {
-                "text": "This is some AI output",
-                "classification": "POSITIVE",
-                "confidence": 0.94,
-                "requires_human_review": False,
-                "human_review": {
-                    "correction": None,
-                    "justification": None
-                },},
             "data": {
                 "content": "This is a sample text to analyze for inappropriate content.",
                 "language": "en",
                 "metadata": {
-                    "source": "user_input",
-                    "context": "social_media_post"
+                    "source": "user_input"
                 }
             },
             "group": self.group.id
@@ -55,92 +45,42 @@ class TaskSubmissionTestCase(APITestCase):
         self.image_task_data = {
             "task_type": "IMAGE",
             "priority": "URGENT",
-           "ai_output": {
-                "text": "This is some AI output",
-                "classification": "POSITIVE",
-                "confidence": 0.94,
-                "requires_human_review": False,
-                "human_review": {
-                    "correction": None,
-                    "justification": None
-                },},
-            "group": self.group.id,
             "data": {
-                "image_url": "https://example.com/sample-image.jpg",
-                "file_type": "jpg",
-                "dimensions": {
-                    "width": 1920,
-                    "height": 1080
-                },
+                "image_url": "https://example.com/image.jpg",
                 "metadata": {
-                    "source": "user_upload",
-                    "context": "profile_picture"
+                    "source": "user_upload"
                 }
-            }
+            },
+            "group": self.group.id
         }
         
         self.video_task_data = {
             "task_type": "VIDEO",
             "priority": "NORMAL",
-            "ai_output": {
-                "text": "This is some AI output",
-                "classification": "POSITIVE",
-                "confidence": 0.94,
-                "requires_human_review": False,
-                "human_review": {
-                    "correction": None,
-                    "justification": None
-                },},
-             "group": self.group.id,
             "data": {
-                "video_url": "https://example.com/sample-video.mp4",
+                "video_url": "https://example.com/video.mp4",
                 "duration": "00:02:30",
-                "file_type": "mp4",
                 "resolution": "1080p",
                 "metadata": {
-                    "source": "user_upload",
-                    "context": "social_media_post",
-                    "frames_per_second": 30
+                    "source": "user_upload"
                 }
-            }
+            },
+            "group": self.group.id
         }
         
         self.multimodal_task_data = {
             "task_type": "MULTIMODAL",
             "priority": "URGENT",
-            "ai_output": {
-                "text": "This is some AI output",
-                "classification": "POSITIVE",
-                "confidence": 0.94,
-                "requires_human_review": False,
-                "human_review": {
-                    "correction": None,
-                    "justification": None
-                },},
-             "group": self.group.id,
             "data": {
                 "text_content": "Check this product advertisement",
-                "image_url": "https://example.com/product-image.jpg",
-                "components": {
-                    "text": {
-                        "language": "en",
-                        "type": "product_description"
-                    },
-                    "image": {
-                        "file_type": "jpg",
-                        "dimensions": {
-                            "width": 800,
-                            "height": 600
-                        }
-                    }
-                },
-                
+                "image_url": "https://example.com/image.jpg",
+                "audio_url": "https://example.com/audio.mp3",
+                "video_url": "https://example.com/video.mp4",
                 "metadata": {
-                    "source": "marketing_team",
-                    "context": "advertisement",
-                    "campaign_id": "CAMP123"
+                    "source": "marketing_team"
                 }
-            }
+            },
+            "group": self.group.id
         }
 
     def test_submit_text_task(self):
@@ -152,15 +92,18 @@ class TaskSubmissionTestCase(APITestCase):
         )
         
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data['status'], 'success')
         self.assertIn('task_id', response.data['data'])
         self.assertIn('celery_task_id', response.data['data'])
+        self.assertIn('serial_no', response.data['data'])
+        self.assertIn('processing_status', response.data['data'])
         
         # Verify task in database
         task = Task.objects.get(id=response.data['data']['task_id'])
         self.assertEqual(task.task_type, 'TEXT')
         self.assertEqual(task.processing_status, 'PENDING')
         self.assertEqual(task.user, self.user)
-        print(response.data)
+        self.assertEqual(task.data['content'], self.text_task_data['data']['content'])
 
     def test_submit_image_task(self):
         """Test submitting an image task"""
@@ -171,12 +114,14 @@ class TaskSubmissionTestCase(APITestCase):
         )
         
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data['status'], 'success')
         self.assertIn('task_id', response.data['data'])
+        self.assertIn('celery_task_id', response.data['data'])
         
         task = Task.objects.get(id=response.data['data']['task_id'])
         self.assertEqual(task.task_type, 'IMAGE')
         self.assertEqual(task.priority, 'URGENT')
-        print(response.data)
+        self.assertEqual(task.data['image_url'], self.image_task_data['data']['image_url'])
 
     def test_submit_video_task(self):
         """Test submitting a video task"""
@@ -186,13 +131,15 @@ class TaskSubmissionTestCase(APITestCase):
             format='json'
         )
         
-        # self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        # self.assertIn('task_id', response.data['data'])
-        print(response.data)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data['status'], 'success')
+        self.assertIn('task_id', response.data['data'])
+        self.assertIn('celery_task_id', response.data['data'])
         
-        # task = Task.objects.get(id=response.data['data']['task_id'])
-        # self.assertEqual(task.task_type, 'VIDEO')
-        # self.assertEqual(task.data['duration'], '00:02:30')
+        task = Task.objects.get(id=response.data['data']['task_id'])
+        self.assertEqual(task.task_type, 'VIDEO')
+        self.assertEqual(task.data['video_url'], self.video_task_data['data']['video_url'])
+        self.assertEqual(task.data['duration'], '00:02:30')
 
     def test_submit_multimodal_task(self):
         """Test submitting a multimodal task"""
@@ -203,13 +150,16 @@ class TaskSubmissionTestCase(APITestCase):
         )
         
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data['status'], 'success')
         self.assertIn('task_id', response.data['data'])
+        self.assertIn('celery_task_id', response.data['data'])
         
         task = Task.objects.get(id=response.data['data']['task_id'])
         self.assertEqual(task.task_type, 'MULTIMODAL')
-        self.assertTrue('text_content' in task.data)
-        self.assertTrue('image_url' in task.data)
-        print(response.data)
+        self.assertEqual(task.data['text_content'], self.multimodal_task_data['data']['text_content'])
+        self.assertEqual(task.data['image_url'], self.multimodal_task_data['data']['image_url'])
+        self.assertEqual(task.data['audio_url'], self.multimodal_task_data['data']['audio_url'])
+        self.assertEqual(task.data['video_url'], self.multimodal_task_data['data']['video_url'])
 
     def test_submit_task_without_auth(self):
         """Test submitting without authentication"""
@@ -236,6 +186,7 @@ class TaskSubmissionTestCase(APITestCase):
     def tearDown(self):
         Task.objects.all().delete()
         User.objects.all().delete()
+        Project.objects.all().delete()
 
 class TaskStatusTestCase(APITestCase):
     def setUp(self):
