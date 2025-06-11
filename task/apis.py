@@ -56,6 +56,7 @@ class TaskCreateView(generics.CreateAPIView):
                 task = serializer.save(user=request.user)
                 logger.info(f"User '{request.user.username}' created new task {task.id} (Serial: {task.serial_no}) at {datetime.now()}")
                 
+                # Process the task based on its type
                 celery_task = process_task.delay(task.id)
                 logger.info(f"Task {task.id} submitted to Celery queue. Celery task ID: {celery_task.id} at {datetime.now()}")
 
