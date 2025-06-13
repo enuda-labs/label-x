@@ -35,6 +35,8 @@ from .serializers import (
     UserListResponseSerializer,
     UserProjectSerializer,
     UserSerializer,
+    ChangePasswordSerializer,
+    UpdateNameSerializer,
 )
 from .utils import (
     HasUserAPIKey,
@@ -781,4 +783,115 @@ class UsersInProjectView(APIView):
         }, status=status.HTTP_200_OK)
         return Response(
             {"status": "success", "users": serializer.data}, status=status.HTTP_200_OK
+        )
+
+
+class ChangePasswordView(APIView):
+    """
+    Endpoint to change user password
+    """
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        summary="Change user password",
+        description="Change the password of the currently authenticated user. Requires current password and new password confirmation.",
+        request=ChangePasswordSerializer,
+        responses={
+            200: OpenApiResponse(
+                description="Password changed successfully",
+                examples=[
+                    OpenApiExample(
+                        'Success Response',
+                        value={"status": "success", "message": "Password changed successfully"},
+                        response_only=True
+                    )
+                ]
+            ),
+            400: OpenApiResponse(
+                description="Invalid input",
+                examples=[
+                    OpenApiExample(
+                        'Error Response',
+                        value={"status": "error", "error": "Current password is incorrect"},
+                        response_only=True
+                    )
+                ]
+            )
+        }
+    )
+    def post(self, request):
+        serializer = ChangePasswordSerializer(data=request.data)
+        if serializer.is_valid():
+            user = request.user
+            
+            # Check if current password is correct
+            if not user.check_password(serializer.validated_data['current_password']):
+                return Response(
+                    {"status": "error", "error": "Current password is incorrect"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Set new password
+            user.set_password(serializer.validated_data['new_password'])
+            user.save()
+            
+            return Response(
+                {"status": "success", "message": "Password changed successfully"},
+                status=status.HTTP_200_OK
+            )
+        
+        return Response(
+            {"status": "error", "error": serializer.errors},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+
+class UpdateNameView(APIView):
+    """
+    Endpoint to update user's username
+    """
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        summary="Update username",
+        description="Update the username of the currently authenticated user.",
+        request=UpdateNameSerializer,
+        responses={
+            200: OpenApiResponse(
+                description="Username updated successfully",
+                examples=[
+                    OpenApiExample(
+                        'Success Response',
+                        value={"status": "success", "message": "Username updated successfully"},
+                        response_only=True
+                    )
+                ]
+            ),
+            400: OpenApiResponse(
+                description="Invalid input",
+                examples=[
+                    OpenApiExample(
+                        'Error Response',
+                        value={"status": "error", "error": "This username is already taken"},
+                        response_only=True
+                    )
+                ]
+            )
+        }
+    )
+    def post(self, request):
+        serializer = UpdateNameSerializer(data=request.data, context={'request': request})
+        if serializer.is_valid():
+            user = request.user
+            user.username = serializer.validated_data['username']
+            user.save()
+            
+            return Response(
+                {"status": "success", "message": "Username updated successfully"},
+                status=status.HTTP_200_OK
+            )
+        
+        return Response(
+            {"status": "error", "error": serializer.errors},
+            status=status.HTTP_400_BAD_REQUEST
         )
