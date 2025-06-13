@@ -289,3 +289,29 @@ class UpdateNameSerializer(serializers.Serializer):
         if CustomUser.objects.exclude(pk=user.pk).filter(username=value).exists():
             raise serializers.ValidationError("This username is already taken.")
         return value
+
+
+class ProjectSerializer(serializers.ModelSerializer):
+    created_by = serializers.SerializerMethodField()
+    members = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = Project
+        fields = ['id', 'name', 'description', 'created_by', 'members', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'created_at', 'updated_at']
+    
+    def get_created_by(self, obj):
+        if obj.created_by is None:
+            return None
+        return {
+            'id': obj.created_by.id,
+            'username': obj.created_by.username,
+            'email': obj.created_by.email
+        }
+    
+    def get_members(self, obj):
+        return [{
+            'id': member.id,
+            'username': member.username,
+            'email': member.email
+        } for member in obj.members.all()]
