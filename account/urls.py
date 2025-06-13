@@ -18,6 +18,7 @@ urlpatterns = [
     path("organization/project/list/", apis.ListUserProjectView.as_view(), name='list-user-project'),  
     path('2fa/setup/', apis.Setup2faView.as_view(), name='setup-2fa'),
     path("2fa/disable/", apis.Disable2FAView.as_view(), name='disable-2fa'),
-    path('logout/', apis.LogoutView.as_view(), name='logout-user')
-     
+    path('logout/', apis.LogoutView.as_view(), name='logout-user'),
+    path('change-password/', apis.ChangePasswordView.as_view(), name='change-password'),
+    path('update-username/', apis.UpdateNameView.as_view(), name='update-username')
 ]

@@ -170,3 +170,281 @@ class RefreshTokenTestCase(APITransactionTestCase):
 
     def tearDown(self):
         CustomUser.objects.all().delete()
+
+class ChangePasswordTestCase(APITransactionTestCase):
+    def setUp(self):
+        # Create test user
+        self.user = CustomUser.objects.create_user(
+            username='testuser', 
+            email='test@example.com', 
+            password='Testp@ssword123'
+        )
+        
+        # Get token for authentication
+        refresh = RefreshToken.for_user(self.user)
+        self.token = str(refresh.access_token)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {self.token}")
+        
+        # API endpoint
+        self.change_password_url = reverse('account:change-password')
+        
+        # Test data
+        self.valid_password_data = {
+            "current_password": "Testp@ssword123",
+            "new_password": "Newp@ssword123",
+            "confirm_password": "Newp@ssword123"
+        }
+        
+        self.invalid_current_password_data = {
+            "current_password": "WrongPassword123",
+            "new_password": "Newp@ssword123",
+            "confirm_password": "Newp@ssword123"
+        }
+        
+        self.mismatched_passwords_data = {
+            "current_password": "Testp@ssword123",
+            "new_password": "Newp@ssword123",
+            "confirm_password": "DifferentPassword123"
+        }
+        
+        self.short_password_data = {
+            "current_password": "Testp@ssword123",
+            "new_password": "short",
+            "confirm_password": "short"
+        }
+
+    def test_change_password_success(self):
+        """Test successful password change"""
+        response = self.client.post(
+            self.change_password_url,
+            self.valid_password_data,
+            format='json'
+        )
+        
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['status'], 'success')
+        self.assertEqual(response.data['message'], 'Password changed successfully')
+        
+        # Refresh user from database
+        self.user.refresh_from_db()
+        
+        # Verify new password works
+        self.assertTrue(self.user.check_password("Newp@ssword123"))
+        
+        # Verify old password doesn't work
+        self.assertFalse(self.user.check_password("Testp@ssword123"))
+
+    def test_change_password_wrong_current_password(self):
+        """Test password change with incorrect current password"""
+        response = self.client.post(
+            self.change_password_url,
+            self.invalid_current_password_data,
+            format='json'
+        )
+        
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data['status'], 'error')
+        self.assertEqual(response.data['error'], 'Current password is incorrect')
+        
+        # Verify password hasn't changed
+        self.assertTrue(self.user.check_password("Testp@ssword123"))
+
+    def test_change_password_mismatched_passwords(self):
+        """Test password change with mismatched new passwords"""
+        response = self.client.post(
+            self.change_password_url,
+            self.mismatched_passwords_data,
+            format='json'
+        )
+        
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data['status'], 'error')
+        self.assertIn('confirm_password', response.data['error'])
+        
+        # Verify password hasn't changed
+        self.assertTrue(self.user.check_password("Testp@ssword123"))
+
+    def test_change_password_short_password(self):
+        """Test password change with password shorter than minimum length"""
+        response = self.client.post(
+            self.change_password_url,
+            self.short_password_data,
+            format='json'
+        )
+        
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data['status'], 'error')
+        
+        # Verify password hasn't changed
+        self.assertTrue(self.user.check_password("Testp@ssword123"))
+
+    def test_change_password_without_auth(self):
+        """Test password change without authentication"""
+        self.client.credentials()  # Remove auth credentials
+        response = self.client.post(
+            self.change_password_url,
+            self.valid_password_data,
+            format='json'
+        )
+        
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+        
+        # Verify password hasn't changed
+        self.assertTrue(self.user.check_password("Testp@ssword123"))
+
+    def test_change_password_missing_fields(self):
+        """Test password change with missing required fields"""
+        # Test missing current password
+        data = self.valid_password_data.copy()
+        del data['current_password']
+        response = self.client.post(
+            self.change_password_url,
+            data,
+            format='json'
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        
+        # Test missing new password
+        data = self.valid_password_data.copy()
+        del data['new_password']
+        response = self.client.post(
+            self.change_password_url,
+            data,
+            format='json'
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        
+        # Test missing confirm password
+        data = self.valid_password_data.copy()
+        del data['confirm_password']
+        response = self.client.post(
+            self.change_password_url,
+            data,
+            format='json'
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        
+        # Verify password hasn't changed in any case
+        self.assertTrue(self.user.check_password("Testp@ssword123"))
+
+    def tearDown(self):
+        CustomUser.objects.all().delete()
+
+class UpdateUsernameTestCase(APITransactionTestCase):
+    def setUp(self):
+        # Create test user
+        self.user = CustomUser.objects.create_user(
+            username='testuser', 
+            email='test@example.com', 
+            password='Testp@ssword123'
+        )
+        
+        # Create another user to test username uniqueness
+        self.other_user = CustomUser.objects.create_user(
+            username='existinguser',
+            email='other@example.com',
+            password='Testp@ssword123'
+        )
+        
+        # Get token for authentication
+        refresh = RefreshToken.for_user(self.user)
+        self.token = str(refresh.access_token)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {self.token}")
+        
+        # API endpoint
+        self.update_username_url = reverse('account:update-username')
+        
+        # Test data
+        self.valid_username_data = {
+            "username": "newusername"
+        }
+        
+        self.existing_username_data = {
+            "username": "existinguser"
+        }
+        
+        self.empty_username_data = {
+            "username": ""
+        }
+
+    def test_update_username_success(self):
+        """Test successful username update"""
+        response = self.client.post(
+            self.update_username_url,
+            self.valid_username_data,
+            format='json'
+        )
+        
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['status'], 'success')
+        self.assertEqual(response.data['message'], 'Username updated successfully')
+        
+        # Refresh user from database
+        self.user.refresh_from_db()
+        
+        # Verify username has changed
+        self.assertEqual(self.user.username, "newusername")
+
+    def test_update_username_already_exists(self):
+        """Test username update with existing username"""
+        response = self.client.post(
+            self.update_username_url,
+            self.existing_username_data,
+            format='json'
+        )
+        
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data['status'], 'error')
+        self.assertEqual(response.data['error'], 'This username is already taken')
+        
+        # Verify username hasn't changed
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.username, "testuser")
+
+    def test_update_username_empty(self):
+        """Test username update with empty username"""
+        response = self.client.post(
+            self.update_username_url,
+            self.empty_username_data,
+            format='json'
+        )
+        
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data['status'], 'error')
+        
+        # Verify username hasn't changed
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.username, "testuser")
+
+    def test_update_username_without_auth(self):
+        """Test username update without authentication"""
+        self.client.credentials()  # Remove auth credentials
+        response = self.client.post(
+            self.update_username_url,
+            self.valid_username_data,
+            format='json'
+        )
+        
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+        
+        # Verify username hasn't changed
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.username, "testuser")
+
+    def test_update_username_missing_field(self):
+        """Test username update with missing username field"""
+        response = self.client.post(
+            self.update_username_url,
+            {},
+            format='json'
+        )
+        
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data['status'], 'error')
+        
+        # Verify username hasn't changed
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.username, "testuser")
+
+    def tearDown(self):
+        CustomUser.objects.all().delete()
