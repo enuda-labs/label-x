@@ -267,3 +267,25 @@ class UserListResponseSerializer(serializers.Serializer):
 class ProjectListResponseSerializer(serializers.Serializer):
     status = serializers.CharField()
     projects = ProjectCreateSerializer(many=True)
+
+
+class ChangePasswordSerializer(serializers.Serializer):
+    """Serializer for password change endpoint"""
+    current_password = serializers.CharField(required=True)
+    new_password = serializers.CharField(required=True, min_length=8)
+    confirm_password = serializers.CharField(required=True, min_length=8)
+
+    def validate(self, data):
+        if data['new_password'] != data['confirm_password']:
+            raise serializers.ValidationError({"confirm_password": "The two password fields didn't match."})
+        return data
+
+class UpdateNameSerializer(serializers.Serializer):
+    """Serializer for name update endpoint"""
+    username = serializers.CharField(required=True, max_length=255)
+
+    def validate_username(self, value):
+        user = self.context['request'].user
+        if CustomUser.objects.exclude(pk=user.pk).filter(username=value).exists():
+            raise serializers.ValidationError("This username is already taken.")
+        return value
