@@ -6,7 +6,7 @@ from rest_framework.test import APITransactionTestCase
 from rest_framework import status
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from account.models import CustomUser
+from account.models import CustomUser, Project
 
 class RegisterTestCase(APITransactionTestCase):
     def setUp(self):
@@ -446,4 +446,111 @@ class UpdateUsernameTestCase(APITransactionTestCase):
         self.assertEqual(self.user.username, "testuser")
 
     def tearDown(self):
+        CustomUser.objects.all().delete()
+
+class ListProjectsTestCase(APITransactionTestCase):
+    def setUp(self):
+        # Create users with different roles
+        self.admin_user = CustomUser.objects.create_user(
+            username='admin',
+            email='admin@example.com',
+            password='Testp@ssword123',
+            is_staff=True,
+            is_superuser=True
+        )
+        
+        self.reviewer_user = CustomUser.objects.create_user(
+            username='reviewer',
+            email='reviewer@example.com',
+            password='Testp@ssword123',
+            is_reviewer=True
+        )
+        
+        self.organization_user = CustomUser.objects.create_user(
+            username='org',
+            email='org@example.com',
+            password='Testp@ssword123'
+        )
+        
+        # Create projects
+        self.project1 = Project.objects.create(
+            name='Project 1',
+            description='Test project 1',
+            created_by=self.organization_user
+        )
+        
+        self.project2 = Project.objects.create(
+            name='Project 2',
+            description='Test project 2',
+            created_by=self.organization_user
+        )
+        
+        self.project3 = Project.objects.create(
+            name='Project 3',
+            description='Test project 3',
+            created_by=self.admin_user
+        )
+        
+        # Assign reviewer to project1
+        self.project1.members.add(self.reviewer_user)
+        
+        # Get tokens for authentication
+        self.admin_token = str(RefreshToken.for_user(self.admin_user).access_token)
+        self.reviewer_token = str(RefreshToken.for_user(self.reviewer_user).access_token)
+        self.org_token = str(RefreshToken.for_user(self.organization_user).access_token)
+        
+        # API endpoint
+        self.list_projects_url = reverse('account:list-project')
+
+    def test_admin_list_all_projects(self):
+        """Test admin can list all projects"""
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {self.admin_token}")
+        response = self.client.get(self.list_projects_url)
+        
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['status'], 'success')
+        self.assertEqual(len(response.data['projects']), 3)  # Should see all projects
+        
+        # Verify project details
+        project_names = [p['name'] for p in response.data['projects']]
+        self.assertIn('Project 1', project_names)
+        self.assertIn('Project 2', project_names)
+        self.assertIn('Project 3', project_names)
+
+    def test_reviewer_list_assigned_projects(self):
+        """Test reviewer can only list assigned projects"""
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {self.reviewer_token}")
+        response = self.client.get(self.list_projects_url)
+        
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['status'], 'success')
+        self.assertEqual(len(response.data['projects']), 1)  # Should only see assigned project
+        
+        # Verify project details
+        self.assertEqual(response.data['projects'][0]['name'], 'Project 1')
+
+    def test_organization_list_own_projects(self):
+        """Test organization can only list their own projects"""
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {self.org_token}")
+        response = self.client.get(self.list_projects_url)
+        
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['status'], 'success')
+        self.assertEqual(len(response.data['projects']), 2)  # Should only see own projects
+        
+        # Verify project details
+        project_names = [p['name'] for p in response.data['projects']]
+        self.assertIn('Project 1', project_names)
+        self.assertIn('Project 2', project_names)
+        self.assertNotIn('Project 3', project_names)
+
+    def test_list_projects_without_auth(self):
+        """Test listing projects without authentication"""
+        self.client.credentials()  # Remove auth credentials
+        response = self.client.get(self.list_projects_url)
+        
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def tearDown(self):
+        Project.objects.all().delete()
         CustomUser.objects.all().delete()

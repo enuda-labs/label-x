@@ -24,6 +24,7 @@ from .serializers import (
     OtpVerificationSerializer,
     ProjectCreateSerializer,
     ProjectListResponseSerializer,
+    ProjectSerializer,
     RegisterSerializer,
     RevokeReviewerSerializer,
     SimpleUserSerializer,
@@ -543,27 +544,140 @@ class CreateProjectView(generics.CreateAPIView):
     
     
     
-class ProjectListView(APIView):
-    """
-    Endpoint to list all tasks submitted by the user
-    """
-    permission_classes = [IsAdminUser]
+class ListProjectsView(APIView):
+    permission_classes = [IsAuthenticated]
     
     @extend_schema(
-        summary="List all projects",
-        description="Returns a list of all projects in the system. Admin access required.",
+        summary="List projects based on user role",
+        description="""
+        Returns a list of projects based on the user's role:
+        - Admin/Staff: Can see all projects
+        - Reviewer: Can only see projects they are assigned to
+        - Organization: Can only see their own projects
+        """,
         responses={
             200: OpenApiResponse(
-                response=ProjectListResponseSerializer,
+                response=ProjectSerializer,
                 examples=[
                     OpenApiExample(
-                        'Project List',
+                        'Admin Response',
                         value={
                             "status": "success",
                             "projects": [
-                                {"id": 1, "name": "Alpha"},
-                                {"id": 2, "name": "Beta"}
+                                {
+                                    "id": 1,
+                                    "name": "Project 1",
+                                    "description": "Test project 1",
+                                    "created_by": {
+                                        "id": 1,
+                                        "username": "org",
+                                        "email": "org@example.com"
+                                    },
+                                    "members": [
+                                        {
+                                            "id": 2,
+                                            "username": "reviewer",
+                                            "email": "reviewer@example.com"
+                                        }
+                                    ],
+                                    "created_at": "2024-03-13T12:00:00Z",
+                                    "updated_at": "2024-03-13T12:00:00Z"
+                                },
+                                {
+                                    "id": 2,
+                                    "name": "Project 2",
+                                    "description": "Test project 2",
+                                    "created_by": {
+                                        "id": 1,
+                                        "username": "org",
+                                        "email": "org@example.com"
+                                    },
+                                    "members": [],
+                                    "created_at": "2024-03-13T12:00:00Z",
+                                    "updated_at": "2024-03-13T12:00:00Z"
+                                }
                             ]
+                        },
+                        response_only=True
+                    ),
+                    OpenApiExample(
+                        'Reviewer Response',
+                        value={
+                            "status": "success",
+                            "projects": [
+                                {
+                                    "id": 1,
+                                    "name": "Project 1",
+                                    "description": "Test project 1",
+                                    "created_by": {
+                                        "id": 1,
+                                        "username": "org",
+                                        "email": "org@example.com"
+                                    },
+                                    "members": [
+                                        {
+                                            "id": 2,
+                                            "username": "reviewer",
+                                            "email": "reviewer@example.com"
+                                        }
+                                    ],
+                                    "created_at": "2024-03-13T12:00:00Z",
+                                    "updated_at": "2024-03-13T12:00:00Z"
+                                }
+                            ]
+                        },
+                        response_only=True
+                    ),
+                    OpenApiExample(
+                        'Organization Response',
+                        value={
+                            "status": "success",
+                            "projects": [
+                                {
+                                    "id": 1,
+                                    "name": "Project 1",
+                                    "description": "Test project 1",
+                                    "created_by": {
+                                        "id": 1,
+                                        "username": "org",
+                                        "email": "org@example.com"
+                                    },
+                                    "members": [
+                                        {
+                                            "id": 2,
+                                            "username": "reviewer",
+                                            "email": "reviewer@example.com"
+                                        }
+                                    ],
+                                    "created_at": "2024-03-13T12:00:00Z",
+                                    "updated_at": "2024-03-13T12:00:00Z"
+                                },
+                                {
+                                    "id": 2,
+                                    "name": "Project 2",
+                                    "description": "Test project 2",
+                                    "created_by": {
+                                        "id": 1,
+                                        "username": "org",
+                                        "email": "org@example.com"
+                                    },
+                                    "members": [],
+                                    "created_at": "2024-03-13T12:00:00Z",
+                                    "updated_at": "2024-03-13T12:00:00Z"
+                                }
+                            ]
+                        },
+                        response_only=True
+                    )
+                ]
+            ),
+            401: OpenApiResponse(
+                description="Unauthorized - Authentication credentials were not provided",
+                examples=[
+                    OpenApiExample(
+                        'Unauthorized Response',
+                        value={
+                            "detail": "Authentication credentials were not provided."
                         },
                         response_only=True
                     )
@@ -571,15 +685,25 @@ class ProjectListView(APIView):
             )
         }
     )
-
-    def get(self, request, *args, **kwargs):
-        projects = Project.objects.all()
-        serializer = ProjectCreateSerializer(projects, many=True)
-        return Response({
-            "status": "success",
-            "projects": serializer.data,
-        }, status=status.HTTP_200_OK)
+    def get(self, request):
+        user = request.user
         
+        if user.is_staff or user.is_superuser:
+            # Admin can see all projects
+            projects = Project.objects.all()
+        elif user.is_reviewer:
+            # Reviewer can only see projects they are assigned to
+            projects = Project.objects.filter(members=user)
+        else:
+            # Organization can only see their own projects
+            projects = Project.objects.filter(created_by=user)
+        
+        serializer = ProjectSerializer(projects, many=True)
+        return Response({
+            'status': 'success',
+            'projects': serializer.data
+        })
+
         
 
 
@@ -620,25 +744,6 @@ class CustomTokenRefreshView(TokenRefreshView):
                 status=status.HTTP_401_UNAUTHORIZED,
             )
 
-
-
-class ProjectListView(APIView):
-    """
-    Endpoint to list all tasks submitted by the user
-    """
-
-    permission_classes = [IsAdminUser]
-
-    def get(self, request, *args, **kwargs):
-        projects = Project.objects.all()
-        serializer = ProjectCreateSerializer(projects, many=True)
-        return Response(
-            {
-                "status": "success",
-                "projects": serializer.data,
-            },
-            status=status.HTTP_200_OK,
-        )
 
 
 class UserDetailView(APIView):
