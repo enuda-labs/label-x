@@ -467,15 +467,6 @@ class RemoveUserReviewerView(APIView):
         }, status=status.HTTP_200_OK)
 
 
-        return Response(
-            {
-                "status": "success",
-                "detail": f"User '{user.username}' is now a reviewer in project '{project.name}'.",
-            },
-            status=status.HTTP_200_OK,
-        )
-
-
 
 class ListUserProjectView(generics.ListAPIView):
     permission_classes =[IsAuthenticated | HasUserAPIKey]
@@ -794,13 +785,17 @@ class UsersNotInProjectView(APIView):
     
     @extend_schema(
         summary="Get users not in a project",
-        description="Returns a list of users who are not assigned to any project.",
+        description="""
+        Returns a list of users who are not assigned to any project or not in a specific project.
+        - If project_id query parameter is provided: Returns users not in that specific project
+        - If no project_id is provided: Returns users not assigned to any project
+        """,
         parameters=[
             OpenApiParameter(
                 name="project_id",
-                location=OpenApiParameter.PATH,
-                required=True,
-                description="ID of the project (not used in logic but required in URL).",
+                location=OpenApiParameter.QUERY,
+                required=False,
+                description="ID of the project to exclude users from. If not provided, returns users not in any project.",
                 type=int,
             )
         ],
@@ -809,14 +804,53 @@ class UsersNotInProjectView(APIView):
                 response=UserListResponseSerializer,
                 examples=[
                     OpenApiExample(
-                        'Users Not In Project',
+                        'Users Not In Specific Project',
                         value={
                             "status": "success",
                             "users": [
-                                {"id": 3, 
-                                 'email':"example@mail.com", 
-                                 "username": "charlie"}
+                                {
+                                    "id": 3,
+                                    "email": "user3@example.com",
+                                    "username": "user3"
+                                },
+                                {
+                                    "id": 4,
+                                    "email": "user4@example.com",
+                                    "username": "user4"
+                                }
                             ]
+                        },
+                        response_only=True
+                    ),
+                    OpenApiExample(
+                        'Users Not In Any Project',
+                        value={
+                            "status": "success",
+                            "users": [
+                                {
+                                    "id": 5,
+                                    "email": "user5@example.com",
+                                    "username": "user5"
+                                },
+                                {
+                                    "id": 6,
+                                    "email": "user6@example.com",
+                                    "username": "user6"
+                                }
+                            ]
+                        },
+                        response_only=True
+                    )
+                ]
+            ),
+            400: OpenApiResponse(
+                description="Invalid project ID",
+                examples=[
+                    OpenApiExample(
+                        'Invalid Project ID',
+                        value={
+                            "status": "error",
+                            "error": "Invalid project ID"
                         },
                         response_only=True
                     )
@@ -824,16 +858,30 @@ class UsersNotInProjectView(APIView):
             )
         }
     )
+    def get(self, request):
+        project_id = request.query_params.get('project_id')
+        
+        try:
+            if project_id is not None:
+                # Get users not in the specific project
+                project = Project.objects.get(id=project_id)
+                users = CustomUser.objects.exclude(project=project)
+            else:
+                # Get users not in any project
+                users = CustomUser.objects.filter(project__isnull=True)
+            
+            serializer = SimpleUserSerializer(users, many=True)
+            return Response({
+                "status": "success",
+                "users": serializer.data
+            }, status=status.HTTP_200_OK)
+            
+        except Project.DoesNotExist:
+            return Response({
+                "status": "error",
+                "error": "Invalid project ID"
+            }, status=status.HTTP_400_BAD_REQUEST)
 
-    def get(self, request, project_id=None):
-        users = CustomUser.objects.filter(project__isnull=True)
-        serializer = SimpleUserSerializer(users, many=True)
-        return Response({
-            "status": "success",
-            "users": serializer.data
-        }, status=status.HTTP_200_OK)
-        
-        
 
 class UsersInProjectView(APIView):
     permission_classes = [IsAdminUser]
