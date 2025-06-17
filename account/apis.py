@@ -618,12 +618,15 @@ class ListProjectsView(APIView):
             pending_review = project.created_tasks.filter(processing_status="REVIEW_NEEDED").count()
             in_progress = project.created_tasks.filter(processing_status="PROCESSING").count()
             
+            completion_percentage = (completed_tasks / total_tasks * 100) if total_tasks > 0 else 0
+            
             # Add task statistics to project data
             project_dict['task_stats'] = {
                 'total_tasks': total_tasks,
                 'completed_tasks': completed_tasks,
                 'pending_review': pending_review,
-                'in_progress': in_progress
+                'in_progress': in_progress,
+                "completion_percentage": round(completion_percentage)
             }
             
             project_data.append(project_dict)
