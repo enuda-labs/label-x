@@ -545,6 +545,12 @@ class ListProjectsView(APIView):
         - Admin/Staff: Can see all projects
         - Reviewer: Can only see projects they are assigned to
         - Organization: Can only see their own projects
+        
+        Each project includes task completion statistics:
+        - total_tasks: Total number of tasks in the project
+        - completed_tasks: Number of completed tasks
+        - pending_review: Number of tasks pending review
+        - in_progress: Number of tasks currently being processed
         """,
         responses={
             200: OpenApiResponse(
@@ -572,103 +578,15 @@ class ListProjectsView(APIView):
                                         }
                                     ],
                                     "created_at": "2024-03-13T12:00:00Z",
-                                    "updated_at": "2024-03-13T12:00:00Z"
-                                },
-                                {
-                                    "id": 2,
-                                    "name": "Project 2",
-                                    "description": "Test project 2",
-                                    "created_by": {
-                                        "id": 1,
-                                        "username": "org",
-                                        "email": "org@example.com"
-                                    },
-                                    "members": [],
-                                    "created_at": "2024-03-13T12:00:00Z",
-                                    "updated_at": "2024-03-13T12:00:00Z"
+                                    "updated_at": "2024-03-13T12:00:00Z",
+                                    "task_stats": {
+                                        "total_tasks": 100,
+                                        "completed_tasks": 75,
+                                        "pending_review": 15,
+                                        "in_progress": 10
+                                    }
                                 }
                             ]
-                        },
-                        response_only=True
-                    ),
-                    OpenApiExample(
-                        'Reviewer Response',
-                        value={
-                            "status": "success",
-                            "projects": [
-                                {
-                                    "id": 1,
-                                    "name": "Project 1",
-                                    "description": "Test project 1",
-                                    "created_by": {
-                                        "id": 1,
-                                        "username": "org",
-                                        "email": "org@example.com"
-                                    },
-                                    "members": [
-                                        {
-                                            "id": 2,
-                                            "username": "reviewer",
-                                            "email": "reviewer@example.com"
-                                        }
-                                    ],
-                                    "created_at": "2024-03-13T12:00:00Z",
-                                    "updated_at": "2024-03-13T12:00:00Z"
-                                }
-                            ]
-                        },
-                        response_only=True
-                    ),
-                    OpenApiExample(
-                        'Organization Response',
-                        value={
-                            "status": "success",
-                            "projects": [
-                                {
-                                    "id": 1,
-                                    "name": "Project 1",
-                                    "description": "Test project 1",
-                                    "created_by": {
-                                        "id": 1,
-                                        "username": "org",
-                                        "email": "org@example.com"
-                                    },
-                                    "members": [
-                                        {
-                                            "id": 2,
-                                            "username": "reviewer",
-                                            "email": "reviewer@example.com"
-                                        }
-                                    ],
-                                    "created_at": "2024-03-13T12:00:00Z",
-                                    "updated_at": "2024-03-13T12:00:00Z"
-                                },
-                                {
-                                    "id": 2,
-                                    "name": "Project 2",
-                                    "description": "Test project 2",
-                                    "created_by": {
-                                        "id": 1,
-                                        "username": "org",
-                                        "email": "org@example.com"
-                                    },
-                                    "members": [],
-                                    "created_at": "2024-03-13T12:00:00Z",
-                                    "updated_at": "2024-03-13T12:00:00Z"
-                                }
-                            ]
-                        },
-                        response_only=True
-                    )
-                ]
-            ),
-            401: OpenApiResponse(
-                description="Unauthorized - Authentication credentials were not provided",
-                examples=[
-                    OpenApiExample(
-                        'Unauthorized Response',
-                        value={
-                            "detail": "Authentication credentials were not provided."
                         },
                         response_only=True
                     )
@@ -689,10 +607,30 @@ class ListProjectsView(APIView):
             # Organization can only see their own projects
             projects = Project.objects.filter(created_by=user)
         
-        serializer = ProjectSerializer(projects, many=True)
+        # Get task statistics for each project
+        project_data = []
+        for project in projects:
+            project_dict = ProjectSerializer(project).data
+            
+            # Get task statistics
+            total_tasks = project.created_tasks.count()
+            completed_tasks = project.created_tasks.filter(processing_status="COMPLETED").count()
+            pending_review = project.created_tasks.filter(processing_status="REVIEW_NEEDED").count()
+            in_progress = project.created_tasks.filter(processing_status="PROCESSING").count()
+            
+            # Add task statistics to project data
+            project_dict['task_stats'] = {
+                'total_tasks': total_tasks,
+                'completed_tasks': completed_tasks,
+                'pending_review': pending_review,
+                'in_progress': in_progress
+            }
+            
+            project_data.append(project_dict)
+        
         return Response({
             'status': 'success',
-            'projects': serializer.data
+            'projects': project_data
         })
 
         
