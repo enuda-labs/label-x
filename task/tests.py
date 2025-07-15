@@ -3,8 +3,11 @@ from rest_framework.test import APITestCase
 from rest_framework import status
 from rest_framework_simplejwt.tokens import AccessToken
 from django.contrib.auth import get_user_model
+from django.utils import timezone
+from datetime import timedelta
 
 from account.models import Project
+from subscription.models import SubscriptionPlan, UserSubscription
 from .models import Task
 
 User = get_user_model()
@@ -18,6 +21,10 @@ class TaskSubmissionTestCase(APITestCase):
             password='Testp@ssword123'
         )
         
+        plan = SubscriptionPlan.objects.create(name="starter", included_data_points=4000, monthly_fee=19, included_requests=10, cost_per_extra_request=10)
+        
+        expires_at = timezone.now() + timedelta(days=30)
+        UserSubscription.objects.create(user=self.user, plan=plan, remaining_data_points=plan.included_data_points, renews_at=expires_at, expires_at=expires_at)
         # Get token for authentication
         self.token = str(AccessToken.for_user(user=self.user))
         self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {self.token}")
@@ -236,6 +243,8 @@ class TaskSubmissionTestCase(APITestCase):
     def tearDown(self):
         Task.objects.all().delete()
         User.objects.all().delete()
+        SubscriptionPlan.objects.all().delete()
+        UserSubscription.objects.all().delete()
 
 class TaskStatusTestCase(APITestCase):
     def setUp(self):

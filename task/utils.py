@@ -75,6 +75,7 @@ def assign_reviewer(task):
     return True
 
 def calculate_required_data_points(task_type, text_data=None, image_data=None, video_data=None):
+    
     if task_type == 'TEXT' and text_data:
         text_length = len(text_data)
         if text_length <= 100:
@@ -85,4 +86,4 @@ def calculate_required_data_points(task_type, text_data=None, image_data=None, v
             return round(0.035 * text_length)
             
     # TODO: handle cases for other file types
-    return None
+    return 20
