@@ -73,3 +73,16 @@ def assign_reviewer(task):
     dispatch_task_message(reviewer.id, serialize_task(task), action='task_created')
 
     return True
+
+def calculate_required_data_points(task_type, text_data=None, image_data=None, video_data=None):
+    if task_type == 'TEXT' and text_data:
+        text_length = len(text_data)
+        if text_length <= 100:
+            return 4
+        elif text_length >100 and text_length <= 500:
+            return 10
+        else:
+            return round(0.035 * text_length)
+            
+    # TODO: handle cases for other file types
+    return None
