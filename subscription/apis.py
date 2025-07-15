@@ -240,8 +240,8 @@ class InitializeStripeSubscription(generics.GenericAPIView):
         client_base_url = f"{request.scheme}://{request.get_host()}"
         try:
             session = stripe.checkout.Session.create(
-                success_url=f"{client_base_url}/dashboard/profile/",
-                cancel_url=f"{client_base_url}/dashboard/profile/",
+                success_url="https://label-x-website.onrender.com/dashboard",
+                cancel_url=f"https://label-x-website.onrender.com/dashboard",
                 mode="subscription",
                 customer_email=request.user.email,
                 line_items=[{"price": stripe_monthly_price_id, "quantity": 1}],
