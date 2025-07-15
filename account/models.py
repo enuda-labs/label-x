@@ -9,6 +9,7 @@ from django.core.files.base import ContentFile
 from cloudinary.models import CloudinaryField
 import cloudinary.uploader
 
+from account.choices import ProjectStatusChoices
 
 
 class Project(models.Model):
@@ -18,6 +19,7 @@ class Project(models.Model):
     created_by = models.ForeignKey('CustomUser', related_name='tasks', blank=True, on_delete=models.CASCADE, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    status = models.CharField(max_length=20, choices=ProjectStatusChoices.choices, default=ProjectStatusChoices.PENDING)
     
 
     def __str__(self):
