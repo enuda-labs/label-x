@@ -141,11 +141,13 @@ def process_with_ai_model(task_id):
                 task.processing_status = "REVIEW_NEEDED"
                 task.review_status = "PENDING_REVIEW"
                 task.save()
+                task.create_log(f"Task {task.id} status changed to REVIEW_NEEDED ")
                 push_realtime_update(task, action="task_status_changed")
             else:
                 task.processing_status = "COMPLETED"
                 task.final_label = classification.get("classification", None)
                 task.save()
+                task.create_log(f"Task {task.id} successfully reviewed by AI status: COMPLETED")
                 push_realtime_update(task, action="task_status_changed")
                 logger.info(f"Task {task_id} completed automatically")
 

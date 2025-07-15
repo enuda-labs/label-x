@@ -24,6 +24,7 @@ from .serializers import (
     MakeReviewerSerializer,
     OtpVerificationSerializer,
     ProjectCreateSerializer,
+    ProjectDetailSerializer,
     ProjectListResponseSerializer,
     ProjectSerializer,
     RegisterSerializer,
@@ -50,6 +51,18 @@ from django.contrib.auth import logout
 # Set up logger
 logger = logging.getLogger('account.apis')
 from .choices import ProjectStatusChoices
+
+
+class ProjectDetailView(generics.RetrieveAPIView):
+    serializer_class = ProjectDetailSerializer
+    lookup_field = 'id'
+    permission_classes = [IsAuthenticated | HasUserAPIKey]
+    
+    def get_queryset(self):
+        if self.request.user.is_admin or self.request.user.is_staff:
+            return Project.objects.all()
+        else:
+            return Project.objects.filter(created_by=self.request.user)
 
 
 @extend_schema_view(
@@ -85,7 +98,7 @@ from .choices import ProjectStatusChoices
 )
 class EditProjectView(generics.UpdateAPIView):
     serializer_class = ProjectUpdateSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated | HasUserAPIKey]
     lookup_field = 'id'
     def get_queryset(self):
         if self.request.user.is_admin or self.request.user.is_staff:
@@ -95,7 +108,16 @@ class EditProjectView(generics.UpdateAPIView):
     
 
     def patch(self, request, *args, **kwargs):
-        return super().patch(request, *args, **kwargs)
+        project = self.get_object()
+        
+        
+        response = super().patch(request, *args, **kwargs)
+        if response.status_code == 200:
+            updated_fields= list(request.data.keys())
+            project.create_log(
+                message=f"Project details updated by {request.user.username}. Fields changed: {', '.join(updated_fields)}"
+            )
+        return response
 
 
 class LogoutView(generics.GenericAPIView):

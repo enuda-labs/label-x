@@ -14,6 +14,11 @@ class SubscriptionPlanSerializer(serializers.ModelSerializer):
         fields = ["id", "name", "monthly_fee", "cost_per_extra_request", 'included_data_points']
 
 
+class UserSubscriptionSimpleSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = UserSubscription
+        fields ="__all__"
+        depth =1
 class UserSubscriptionSerializer(serializers.ModelSerializer):
     plan = SubscriptionPlanSerializer()
 

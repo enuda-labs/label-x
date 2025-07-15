@@ -90,6 +90,8 @@ class TaskCreateView(generics.CreateAPIView):
 
                 task = Task.objects.select_related('group').get(id=task.id)
                 user_subscription.deduct_data_points(required_dp)
+                
+                task.create_log(f"Queued task {str(task.id)}, serial no: {task.serial_no}")
                 return Response({
                     'status': 'success',
                     'data': {

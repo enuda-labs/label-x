@@ -2,9 +2,39 @@ import re
 from rest_framework import serializers
 from django.contrib.auth import authenticate
 
+from subscription.models import UserSubscription
+from subscription.serializers import UserSubscriptionSerializer, UserSubscriptionSimpleSerializer
 
-from .models import CustomUser, OTPVerification, Project
 
+from .models import CustomUser, OTPVerification, Project, ProjectLog
+
+
+class ProjectLogSerializer(serializers.ModelSerializer):
+    class Meta:
+        fields ="__all__"
+        model = ProjectLog
+        depth = 1
+
+class ProjectDetailSerializer(serializers.ModelSerializer):
+    project_logs = serializers.SerializerMethodField()
+    user_subscription = serializers.SerializerMethodField()
+    class Meta:
+        fields = "__all__"
+        model = Project
+        
+    def get_project_logs(self, obj):
+        logs = ProjectLog.objects.filter(project=obj)
+        return ProjectLogSerializer(logs, many=True).data
+    
+    def get_user_subscription(self, obj):
+        request = self.context.get('request')
+        if request and request.user:
+            try:
+                user_subscription = UserSubscription.objects.get(user=request.user)
+                return UserSubscriptionSimpleSerializer(user_subscription).data
+            except UserSubscription.DoesNotExist:
+                return None
+        return None
 
 class LogoutSerializer(serializers.Serializer):
     refresh_token = serializers.CharField()
