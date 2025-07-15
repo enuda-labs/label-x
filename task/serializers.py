@@ -1,8 +1,14 @@
 from rest_framework import serializers
 
+from account.models import Project
 from account.serializers import UserSerializer
 from .models import Task, TaskClassificationChoices
 
+
+class ProjectUpdateSerializer(serializers.ModelSerializer):
+    class Meta:
+        fields = ['name', 'description', 'status']
+        model = Project
 
 
 class HumanReviewSerializer(serializers.Serializer):

@@ -1,7 +1,7 @@
 from datetime import timezone
 from django.db import models
 from account.models import CustomUser
-
+from django.db.models import F
 
 class SubscriptionPlan(models.Model):
     PLAN_CHOICES = (
@@ -11,6 +11,8 @@ class SubscriptionPlan(models.Model):
     )
     name = models.CharField(max_length=50, choices=PLAN_CHOICES, unique=True)
     monthly_fee = models.DecimalField(max_digits=8, decimal_places=2)
+    included_data_points = models.IntegerField(help_text="Number of data points user gets when they subscribe to this plan", default=0)
+    
     included_requests = models.IntegerField()  # number of included API calls
     cost_per_extra_request = models.DecimalField(max_digits=6, decimal_places=4)
     stripe_monthly_plan_id = models.CharField(max_length=100, null=True, blank=True)
@@ -43,10 +45,19 @@ class UserSubscription(models.Model):
     subscribed_at = models.DateTimeField(auto_now_add=True)
     expires_at = models.DateTimeField(null=True, blank=True)
     renews_at = models.DateTimeField()
+    remaining_data_points = models.IntegerField(default=0)
 
     def is_active(self):
         return self.expires_at and self.expires_at > timezone.now()
+    
+    def deduct_data_points(self, amount:int):
+        if self.remaining_data_points > int(amount):
+            self.remaining_data_points = F("remaining_data_points") - amount
+            self.save(update_fields=['remaining_data_points'])
+        return self.remaining_data_points
 
+    def __str__(self) -> str:
+        return f"{self.plan.name} plan for {self.user.username}"
 
 class WalletTransaction(models.Model):
     wallet = models.ForeignKey(Wallet, on_delete=models.CASCADE)

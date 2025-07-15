@@ -19,5 +19,7 @@ urlpatterns = [
     path("2fa/disable/", apis.Disable2FAView.as_view(), name='disable-2fa'),
     path('logout/', apis.LogoutView.as_view(), name='logout-user'),
     path('change-password/', apis.ChangePasswordView.as_view(), name='change-password'),
-    path('update-username/', apis.UpdateNameView.as_view(), name='update-username')
+    path('update-username/', apis.UpdateNameView.as_view(), name='update-username'),
+    path('projects/edit/<int:id>/', apis.EditProjectView.as_view(), name='edit-project'),
+    path('projects/<int:id>/', apis.ProjectDetailView.as_view(), name="project-detail-view")
 ]

@@ -171,3 +171,5 @@ cython_debug/
 .pypirc
 media/
 logs/
+docker-compose.override.yml
+Procfile.dev

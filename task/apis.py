@@ -10,7 +10,8 @@ from rest_framework.views import APIView
 
 from account.models import Project
 from common.responses import ErrorResponse, SuccessResponse
-from task.utils import dispatch_task_message, push_realtime_update
+from subscription.models import UserSubscription
+from task.utils import calculate_required_data_points, dispatch_task_message, push_realtime_update
 from .models import Task, UserReviewChatHistory
 from .serializers import AssignedTaskSerializer, FullTaskSerializer, TaskIdSerializer, TaskSerializer, TaskStatusSerializer, TaskReviewSerializer, AssignTaskSerializer
 from .tasks import process_task, provide_feedback_to_ai_model
@@ -52,6 +53,34 @@ class TaskCreateView(generics.CreateAPIView):
         serializer = self.get_serializer(data=request.data)
 
         if serializer.is_valid():
+            
+            task_type = serializer.validated_data.get("task_type")
+            required_dp = calculate_required_data_points(task_type, text_data=serializer.validated_data.get("data"))
+            if not required_dp:
+                return Response({
+                    "status": "error",
+                    "data": {
+                        "message": "Error calculating required data points"
+                    }
+                }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            
+            try:
+                user_subscription = UserSubscription.objects.get(user=request.user)
+                if user_subscription.remaining_data_points < required_dp:
+                    return Response({
+                        "status": "error",
+                        "data": {
+                            "message": "You do not have enough data points left to satisfy this request"
+                        }
+                    }, status=status.HTTP_402_PAYMENT_REQUIRED)
+            except UserSubscription.DoesNotExist:
+                return Response({
+                    "status": "error",
+                    "data": {
+                        "message": "You have not subscribed to any plans"
+                    }
+                }, status=status.HTTP_403_FORBIDDEN)
+            
             try:
                 task = serializer.save(user=request.user)
                 logger.info(f"User '{request.user.username}' created new task {task.id} (Serial: {task.serial_no}) at {datetime.now()}")
@@ -60,7 +89,9 @@ class TaskCreateView(generics.CreateAPIView):
                 logger.info(f"Task {task.id} submitted to Celery queue. Celery task ID: {celery_task.id} at {datetime.now()}")
 
                 task = Task.objects.select_related('group').get(id=task.id)
+                user_subscription.deduct_data_points(required_dp)
                 
+                task.create_log(f"Queued task {str(task.id)}, serial no: {task.serial_no}")
                 return Response({
                     'status': 'success',
                     'data': {
