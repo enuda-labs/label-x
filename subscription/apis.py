@@ -94,7 +94,8 @@ class StripeWebhookListener(generics.GenericAPIView):
                     user_subscription.expires_at = expires_at
                     user_subscription.renews_at = expires_at
                     user_subscription.remaining_data_points = F("remaining_data_points") + subscription_plan.included_data_points
-                    user_subscription.save(update_fields=['expires_at', 'renews_at', "remaining_data_points"])
+                    user_subscription.plan = subscription_plan
+                    user_subscription.save(update_fields=['expires_at', 'renews_at', "remaining_data_points", "plan"])
                 except UserSubscription.DoesNotExist:
                     # create a new subscription for the user
                     user_subscription= UserSubscription.objects.create(

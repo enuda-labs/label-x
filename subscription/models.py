@@ -1,7 +1,7 @@
 from datetime import timezone
 from django.db import models
 from account.models import CustomUser
-
+from django.db.models import F
 
 class SubscriptionPlan(models.Model):
     PLAN_CHOICES = (
@@ -49,7 +49,15 @@ class UserSubscription(models.Model):
 
     def is_active(self):
         return self.expires_at and self.expires_at > timezone.now()
+    
+    def deduct_data_points(self, amount:int):
+        if self.remaining_data_points > int(amount):
+            self.remaining_data_points = F("remaining_data_points") - amount
+            self.save(update_fields=['remaining_data_points'])
+        return self.remaining_data_points
 
+    def __str__(self) -> str:
+        return f"{self.plan.name} plan for {self.user.username}"
 
 class WalletTransaction(models.Model):
     wallet = models.ForeignKey(Wallet, on_delete=models.CASCADE)

@@ -89,7 +89,7 @@ class TaskCreateView(generics.CreateAPIView):
                 logger.info(f"Task {task.id} submitted to Celery queue. Celery task ID: {celery_task.id} at {datetime.now()}")
 
                 task = Task.objects.select_related('group').get(id=task.id)
-                
+                user_subscription.deduct_data_points(required_dp)
                 return Response({
                     'status': 'success',
                     'data': {

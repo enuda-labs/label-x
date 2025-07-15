@@ -132,7 +132,7 @@ def process_with_ai_model(task_id):
             task.ai_output = classification
             task.save()
 
-            push_realtime_update(task)
+            # push_realtime_update(task)
             logger.info(f"Completed AI processing for task {task_id}")
 
             # If human review is needed, try to assign a reviewer
