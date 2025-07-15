@@ -1,7 +1,7 @@
 from django.db import models
 import string
 import random
-from account.models import CustomUser, Project
+from account.models import CustomUser, Project, ProjectLog
 
 
 def generate_serial_no():
@@ -131,6 +131,9 @@ class Task(models.Model):
 
     def __str__(self):
         return f"{self.serial_no} - {self.task_type}"
+    
+    def create_log(self, message:str):
+        return ProjectLog.objects.create(project=self.group, message=message, task=self)
 
     def save(self, *args, **kwargs):
         # Generate serial_no if not set
@@ -152,4 +155,3 @@ class UserReviewChatHistory(models.Model):
     human_confidence_score = models.FloatField()
     human_justification = models.TextField()
     human_classification = models.CharField(max_length=25, choices=TaskClassificationChoices.choices)
-    

@@ -32,7 +32,7 @@ import json
 from django.conf import settings
 
 logger = logging.getLogger('subscription.apis')
-
+from django.db.models import F
 
 class GetUserPaymentHistoryView(generics.ListAPIView):
     permission_classes = [permissions.IsAuthenticated]
@@ -89,14 +89,23 @@ class StripeWebhookListener(generics.GenericAPIView):
             if customer and subscription_plan:
                 # grant user permissions
                 expires_at = timezone.now() + timedelta(days=30)
-                UserSubscription.objects.update_or_create(
-                    user=customer,
-                    defaults={
-                        "plan": subscription_plan,
-                        "expires_at": expires_at,
-                        "renews_at": expires_at,
-                    },
-                )
+                try:
+                    user_subscription = UserSubscription.objects.get(user=customer)
+                    user_subscription.expires_at = expires_at
+                    user_subscription.renews_at = expires_at
+                    user_subscription.remaining_data_points = F("remaining_data_points") + subscription_plan.included_data_points
+                    user_subscription.plan = subscription_plan
+                    user_subscription.save(update_fields=['expires_at', 'renews_at', "remaining_data_points", "plan"])
+                except UserSubscription.DoesNotExist:
+                    # create a new subscription for the user
+                    user_subscription= UserSubscription.objects.create(
+                        user=customer,
+                        plan = subscription_plan,
+                        expires_at=expires_at,
+                        renews_at = expires_at,
+                        remaining_data_points = subscription_plan.included_data_points
+                    )
+   
 
                 UserPaymentHistory.objects.create(
                     user=customer,
@@ -272,6 +281,7 @@ class CurrentSubscriptionView(generics.RetrieveAPIView):
                     "expires_at": subscription.expires_at,
                     "request_balance": subscription.plan.included_requests
                     - subscription.requests_used,
+                    "remaining_data_points": subscription.remaining_data_points
                 }
             )
         except UserSubscription.DoesNotExist:

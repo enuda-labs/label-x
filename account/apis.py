@@ -1,7 +1,7 @@
 import logging
 from datetime import datetime
 from tokenize import TokenError
-from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiExample, OpenApiResponse
+from drf_spectacular.utils import extend_schema, extend_schema_view, OpenApiParameter, OpenApiExample, OpenApiResponse
 from drf_spectacular.utils import extend_schema
 from rest_framework import generics
 from rest_framework.response import Response
@@ -13,6 +13,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenRefreshView
 
 from common.responses import ErrorResponse, SuccessResponse, format_first_error, get_first_error
+from task.serializers import ProjectUpdateSerializer
 
 from .utils import IsAdminUser, IsSuperAdmin
 from .serializers import (
@@ -23,6 +24,7 @@ from .serializers import (
     MakeReviewerSerializer,
     OtpVerificationSerializer,
     ProjectCreateSerializer,
+    ProjectDetailSerializer,
     ProjectListResponseSerializer,
     ProjectSerializer,
     RegisterSerializer,
@@ -48,6 +50,74 @@ from .models import CustomUser, OTPVerification, Project
 from django.contrib.auth import logout
 # Set up logger
 logger = logging.getLogger('account.apis')
+from .choices import ProjectStatusChoices
+
+
+class ProjectDetailView(generics.RetrieveAPIView):
+    serializer_class = ProjectDetailSerializer
+    lookup_field = 'id'
+    permission_classes = [IsAuthenticated | HasUserAPIKey]
+    
+    def get_queryset(self):
+        if self.request.user.is_admin or self.request.user.is_staff:
+            return Project.objects.all()
+        else:
+            return Project.objects.filter(created_by=self.request.user)
+
+
+@extend_schema_view(
+    patch=extend_schema(
+        summary="Update a project",
+        description=(
+            "Partially update a project’s **name**, **description**, or **status**.\n\n"
+            "#### Permission rules\n"
+            "- **Admins/staff** can edit any project.\n"
+            "- **Regular users** can only edit projects they created.\n\n"
+            "#### Allowed `status` values:\n"
+            f"- `{ProjectStatusChoices.PENDING}` — {ProjectStatusChoices.PENDING.label}\n"
+            f"- `{ProjectStatusChoices.IN_PROGRESS}` — {ProjectStatusChoices.IN_PROGRESS.label}\n"
+            f"- `{ProjectStatusChoices.COMPLETED}` — {ProjectStatusChoices.COMPLETED.label}"
+        ),
+        request=ProjectUpdateSerializer,
+        responses={
+            200: ProjectUpdateSerializer,
+            403: None,
+            404: None,
+        },
+        parameters=[
+            OpenApiParameter(
+                name="id",
+                description="Primary key of the project to update",
+                required=True,
+                type=int,
+                location=OpenApiParameter.PATH,
+            )
+        ],
+        tags=["Projects"],
+    )
+)
+class EditProjectView(generics.UpdateAPIView):
+    serializer_class = ProjectUpdateSerializer
+    permission_classes = [IsAuthenticated | HasUserAPIKey]
+    lookup_field = 'id'
+    def get_queryset(self):
+        if self.request.user.is_admin or self.request.user.is_staff:
+            return Project.objects.all()
+        else:
+            return Project.objects.filter(created_by=self.request.user)
+    
+
+    def patch(self, request, *args, **kwargs):
+        project = self.get_object()
+        
+        
+        response = super().patch(request, *args, **kwargs)
+        if response.status_code == 200:
+            updated_fields= list(request.data.keys())
+            project.create_log(
+                message=f"Project details updated by {request.user.username}. Fields changed: {', '.join(updated_fields)}"
+            )
+        return response
 
 
 class LogoutView(generics.GenericAPIView):

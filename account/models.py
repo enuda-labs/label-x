@@ -1,3 +1,4 @@
+from email import message
 from io import BytesIO
 import uuid
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
@@ -9,6 +10,7 @@ from django.core.files.base import ContentFile
 from cloudinary.models import CloudinaryField
 import cloudinary.uploader
 
+from account.choices import ProjectStatusChoices
 
 
 class Project(models.Model):
@@ -18,10 +20,28 @@ class Project(models.Model):
     created_by = models.ForeignKey('CustomUser', related_name='tasks', blank=True, on_delete=models.CASCADE, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    status = models.CharField(max_length=20, choices=ProjectStatusChoices.choices, default=ProjectStatusChoices.PENDING)
+    
+    def create_log(self, message, task=None):
+        return ProjectLog.objects.create(project=self, message=message, task=task)
     
 
     def __str__(self):
         return self.name
+    
+    class Meta:
+        ordering= ['-created_at']
+
+
+class ProjectLog(models.Model):
+    project = models.ForeignKey(Project, on_delete=models.CASCADE)
+    task = models.ForeignKey("task.Task", on_delete=models.CASCADE, null=True, blank=True, help_text="Null if this log is not related to a specific task/annotation")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    message= models.TextField()
+    
+    def __str__(self) -> str:
+        return self.message
 
 
 class CustomUserManager(BaseUserManager):

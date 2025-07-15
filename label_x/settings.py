@@ -335,3 +335,7 @@ CLOUDINARY_STORAGE = {
 }
 
 DEFAULT_FILE_STORAGE = 'cloudinary_storage.storage.MediaCloudinaryStorage'
+
+if not DEBUG:    
+    CSRF_TRUSTED_ORIGINS = [
+        "https://label-x-dock.onrender.com"]

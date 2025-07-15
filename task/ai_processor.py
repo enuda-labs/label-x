@@ -131,6 +131,8 @@ def text_classification(text, max_retries=3):
                 }
             }
             ```
+            
+            5. Respond with only JSON, dont ask questions, classify whatever text you get
                         
             """
 
@@ -160,6 +162,8 @@ def text_classification(text, max_retries=3):
                         "confidence_score": 0.0,
                         "need_human_intervention": True,
                         "justification": f"No JSON found in response",
+                        "classification": None,
+                        "requires_human_review": True
                     }
 
             except json.JSONDecodeError:
@@ -174,6 +178,9 @@ def text_classification(text, max_retries=3):
                     "confidence_score": 0.0,
                     "need_human_intervention": True,
                     "justification": f"Error: Connection timeout after {max_retries} attempts",
+                    "classification": None,
+                    "requires_human_review": True
+
                 }
             logger.warning(f"Attempt {attempt + 1} failed, retrying... Error: {str(e)}")
             time.sleep(2**attempt)  # Exponential backoff
@@ -185,4 +192,8 @@ def text_classification(text, max_retries=3):
                 "confidence_score": 0.0,
                 "need_human_intervention": True,
                 "justification": f"Error: {str(e)}",
+                "classification": None,
+                "requires_human_review": True
+
+
             }
