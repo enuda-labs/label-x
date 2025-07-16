@@ -8,9 +8,10 @@ import logging
 from datetime import datetime
 from rest_framework.views import APIView
 
+from account.choices import ProjectStatusChoices
 from account.models import Project
 from common.responses import ErrorResponse, SuccessResponse
-from subscription.models import UserSubscription
+from subscription.models import UserDataPoints, UserSubscription
 from task.utils import calculate_required_data_points, dispatch_task_message, push_realtime_update
 from .models import Task, UserReviewChatHistory
 from .serializers import AssignedTaskSerializer, FullTaskSerializer, TaskIdSerializer, TaskSerializer, TaskStatusSerializer, TaskReviewSerializer, AssignTaskSerializer
@@ -19,6 +20,7 @@ from rest_framework_api_key.permissions import HasAPIKey
 
 # import custom permissions
 from account.utils import HasUserAPIKey, IsReviewer
+from django.db.models import Q
 
 
 
@@ -65,8 +67,8 @@ class TaskCreateView(generics.CreateAPIView):
                 }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
             
             try:
-                user_subscription = UserSubscription.objects.get(user=request.user)
-                if user_subscription.remaining_data_points < required_dp:
+                user_data_points, created = UserDataPoints.objects.get_or_create(user=request.user)
+                if user_data_points.data_points_balance < required_dp:
                     return Response({
                         "status": "error",
                         "data": {
@@ -89,7 +91,8 @@ class TaskCreateView(generics.CreateAPIView):
                 logger.info(f"Task {task.id} submitted to Celery queue. Celery task ID: {celery_task.id} at {datetime.now()}")
 
                 task = Task.objects.select_related('group').get(id=task.id)
-                user_subscription.deduct_data_points(required_dp)
+                
+                user_data_points.deduct_data_points(required_dp)
                 
                 task.create_log(f"Queued task {str(task.id)}, serial no: {task.serial_no}")
                 return Response({
@@ -567,8 +570,12 @@ class TaskCompletionStatsView(APIView):
     
     def get(self, request):
         try:
+            user_tasks = Task.objects.filter(user=request.user)
+            user_projects = Project.objects.filter(created_by=request.user)
+            
+            
             # Get total tasks count for the logged-in user
-            total_tasks = Task.objects.filter(user=request.user).count()
+            total_tasks = user_tasks.count()
             
             # Get completed tasks count for the logged-in user
             completed_tasks = Task.objects.filter(
@@ -578,7 +585,7 @@ class TaskCompletionStatsView(APIView):
             
             # Calculate percentage
             completion_percentage = (completed_tasks / total_tasks * 100) if total_tasks > 0 else 0
-            
+        
             logger.info(f"User '{request.user.username}' fetched their task completion stats at {datetime.now()}")
             
             return Response({
@@ -586,7 +593,9 @@ class TaskCompletionStatsView(APIView):
                 "data": {
                     "total_tasks": total_tasks,
                     "completed_tasks": completed_tasks,
-                    "completion_percentage": round(completion_percentage, 2)
+                    "completion_percentage": round(completion_percentage, 2),
+                    "pending_projects": user_projects.filter(Q(status=ProjectStatusChoices.PENDING) | Q(status=ProjectStatusChoices.COMPLETED)).count()
+                    
                 }
             }, status=status.HTTP_200_OK)
             
