@@ -1,6 +1,12 @@
 from rest_framework import serializers
-from .models import SubscriptionPlan, UserPaymentHistory, UserSubscription, Wallet
+from .models import SubscriptionPlan, UserDataPoints, UserPaymentHistory, UserSubscription, Wallet
 
+
+
+class UserDataPointsSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = UserDataPoints
+        fields = '__all__'
 
 class UserPaymentHistorySerializer(serializers.ModelSerializer):
     class Meta:

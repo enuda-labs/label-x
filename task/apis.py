@@ -11,7 +11,7 @@ from rest_framework.views import APIView
 from account.choices import ProjectStatusChoices
 from account.models import Project
 from common.responses import ErrorResponse, SuccessResponse
-from subscription.models import UserSubscription
+from subscription.models import UserDataPoints, UserSubscription
 from task.utils import calculate_required_data_points, dispatch_task_message, push_realtime_update
 from .models import Task, UserReviewChatHistory
 from .serializers import AssignedTaskSerializer, FullTaskSerializer, TaskIdSerializer, TaskSerializer, TaskStatusSerializer, TaskReviewSerializer, AssignTaskSerializer
@@ -67,8 +67,8 @@ class TaskCreateView(generics.CreateAPIView):
                 }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
             
             try:
-                user_subscription = UserSubscription.objects.get(user=request.user)
-                if user_subscription.remaining_data_points < required_dp:
+                user_data_points, created = UserDataPoints.objects.get_or_create(user=request.user)
+                if user_data_points.data_points_balance < required_dp:
                     return Response({
                         "status": "error",
                         "data": {
@@ -91,7 +91,8 @@ class TaskCreateView(generics.CreateAPIView):
                 logger.info(f"Task {task.id} submitted to Celery queue. Celery task ID: {celery_task.id} at {datetime.now()}")
 
                 task = Task.objects.select_related('group').get(id=task.id)
-                user_subscription.deduct_data_points(required_dp)
+                
+                user_data_points.deduct_data_points(required_dp)
                 
                 task.create_log(f"Queued task {str(task.id)}, serial no: {task.serial_no}")
                 return Response({

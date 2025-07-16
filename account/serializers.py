@@ -2,8 +2,8 @@ import re
 from rest_framework import serializers
 from django.contrib.auth import authenticate
 
-from subscription.models import UserSubscription
-from subscription.serializers import UserSubscriptionSerializer, UserSubscriptionSimpleSerializer
+from subscription.models import UserDataPoints, UserSubscription
+from subscription.serializers import UserDataPointsSerializer, UserSubscriptionSerializer, UserSubscriptionSimpleSerializer
 
 
 from .models import CustomUser, OTPVerification, Project, ProjectLog
@@ -18,6 +18,7 @@ class ProjectLogSerializer(serializers.ModelSerializer):
 class ProjectDetailSerializer(serializers.ModelSerializer):
     project_logs = serializers.SerializerMethodField()
     user_subscription = serializers.SerializerMethodField()
+    user_data_points = serializers.SerializerMethodField()
     class Meta:
         fields = "__all__"
         model = Project
@@ -25,6 +26,11 @@ class ProjectDetailSerializer(serializers.ModelSerializer):
     def get_project_logs(self, obj):
         logs = ProjectLog.objects.filter(project=obj)
         return ProjectLogSerializer(logs, many=True).data
+    
+    def get_user_data_points(self, obj):
+        request = self.context.get('request')
+        data_points, created = UserDataPoints.objects.get_or_create(user=request.user)
+        return UserDataPointsSerializer(data_points).data
     
     def get_user_subscription(self, obj):
         request = self.context.get('request')

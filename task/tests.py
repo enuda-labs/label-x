@@ -7,7 +7,7 @@ from django.utils import timezone
 from datetime import timedelta
 
 from account.models import Project
-from subscription.models import SubscriptionPlan, UserSubscription
+from subscription.models import SubscriptionPlan, UserDataPoints, UserSubscription
 from .models import Task
 
 User = get_user_model()
@@ -24,7 +24,11 @@ class TaskSubmissionTestCase(APITestCase):
         plan = SubscriptionPlan.objects.create(name="starter", included_data_points=4000, monthly_fee=19, included_requests=10, cost_per_extra_request=10)
         
         expires_at = timezone.now() + timedelta(days=30)
-        UserSubscription.objects.create(user=self.user, plan=plan, remaining_data_points=plan.included_data_points, renews_at=expires_at, expires_at=expires_at)
+        
+        user_data_points, created = UserDataPoints.objects.get_or_create(user=self.user)
+        user_data_points.topup_data_points(plan.included_data_points)
+        
+        UserSubscription.objects.create(user=self.user, plan=plan, renews_at=expires_at, expires_at=expires_at)
         # Get token for authentication
         self.token = str(AccessToken.for_user(user=self.user))
         self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {self.token}")
