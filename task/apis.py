@@ -8,6 +8,7 @@ import logging
 from datetime import datetime
 from rest_framework.views import APIView
 
+from account.choices import ProjectStatusChoices
 from account.models import Project
 from common.responses import ErrorResponse, SuccessResponse
 from subscription.models import UserSubscription
@@ -19,6 +20,7 @@ from rest_framework_api_key.permissions import HasAPIKey
 
 # import custom permissions
 from account.utils import HasUserAPIKey, IsReviewer
+from django.db.models import Q
 
 
 
@@ -567,8 +569,12 @@ class TaskCompletionStatsView(APIView):
     
     def get(self, request):
         try:
+            user_tasks = Task.objects.filter(user=request.user)
+            user_projects = Project.objects.filter(created_by=request.user)
+            
+            
             # Get total tasks count for the logged-in user
-            total_tasks = Task.objects.filter(user=request.user).count()
+            total_tasks = user_tasks.count()
             
             # Get completed tasks count for the logged-in user
             completed_tasks = Task.objects.filter(
@@ -578,7 +584,7 @@ class TaskCompletionStatsView(APIView):
             
             # Calculate percentage
             completion_percentage = (completed_tasks / total_tasks * 100) if total_tasks > 0 else 0
-            
+        
             logger.info(f"User '{request.user.username}' fetched their task completion stats at {datetime.now()}")
             
             return Response({
@@ -586,7 +592,9 @@ class TaskCompletionStatsView(APIView):
                 "data": {
                     "total_tasks": total_tasks,
                     "completed_tasks": completed_tasks,
-                    "completion_percentage": round(completion_percentage, 2)
+                    "completion_percentage": round(completion_percentage, 2),
+                    "pending_projects": user_projects.filter(Q(status=ProjectStatusChoices.PENDING) | Q(status=ProjectStatusChoices.COMPLETED)).count()
+                    
                 }
             }, status=status.HTTP_200_OK)
             
