@@ -45,19 +45,38 @@ class UserSubscription(models.Model):
     subscribed_at = models.DateTimeField(auto_now_add=True)
     expires_at = models.DateTimeField(null=True, blank=True)
     renews_at = models.DateTimeField()
-    remaining_data_points = models.IntegerField(default=0)
 
     def is_active(self):
         return self.expires_at and self.expires_at > timezone.now()
     
-    def deduct_data_points(self, amount:int):
-        if self.remaining_data_points > int(amount):
-            self.remaining_data_points = F("remaining_data_points") - amount
-            self.save(update_fields=['remaining_data_points'])
-        return self.remaining_data_points
 
     def __str__(self) -> str:
         return f"{self.plan.name} plan for {self.user.username}"
+
+
+class UserDataPoints(models.Model):
+    user = models.OneToOneField(CustomUser, on_delete=models.CASCADE)
+    used_data_points = models.IntegerField(default=0)
+    data_points_balance = models.IntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def deduct_data_points(self, amount:int):
+        if self.data_points_balance > int(amount):
+            self.data_points_balance = F("data_points_balance") - amount
+            
+            self.used_data_points = F('used_data_points') + amount
+            self.save(update_fields=['data_points_balance', 'used_data_points'])     
+
+        return self.data_points_balance
+    
+    def topup_data_points(self, amount:int):
+        self.data_points_balance = F("data_points_balance") + amount
+        self.save(update_fields=['data_points_balance'])
+        return self.data_points_balance
+
+    def __str__(self) -> str:
+        return f"Data points for {self.user.username} - {self.data_points_balance} points"
 
 class WalletTransaction(models.Model):
     wallet = models.ForeignKey(Wallet, on_delete=models.CASCADE)

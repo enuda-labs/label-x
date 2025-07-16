@@ -14,6 +14,7 @@ from common.responses import ErrorResponse, SuccessResponse, format_first_error
 
 from .models import (
     SubscriptionPlan,
+    UserDataPoints,
     UserPaymentHistory,
     UserPaymentStatus,
     UserSubscription,
@@ -24,6 +25,7 @@ from .serializers import (
     SubscriptionPlanSerializer,
     SubscribeRequestSerializer,
     SubscriptionStatusSerializer,
+    UserDataPointsSerializer,
     UserPaymentHistorySerializer,
 )
 
@@ -93,9 +95,8 @@ class StripeWebhookListener(generics.GenericAPIView):
                     user_subscription = UserSubscription.objects.get(user=customer)
                     user_subscription.expires_at = expires_at
                     user_subscription.renews_at = expires_at
-                    user_subscription.remaining_data_points = F("remaining_data_points") + subscription_plan.included_data_points
                     user_subscription.plan = subscription_plan
-                    user_subscription.save(update_fields=['expires_at', 'renews_at', "remaining_data_points", "plan"])
+                    user_subscription.save(update_fields=['expires_at', 'renews_at', "plan"])
                 except UserSubscription.DoesNotExist:
                     # create a new subscription for the user
                     user_subscription= UserSubscription.objects.create(
@@ -103,9 +104,10 @@ class StripeWebhookListener(generics.GenericAPIView):
                         plan = subscription_plan,
                         expires_at=expires_at,
                         renews_at = expires_at,
-                        remaining_data_points = subscription_plan.included_data_points
                     )
-   
+
+                user_data_points, created = UserDataPoints.objects.get_or_create(user=customer)
+                user_data_points.topup_data_points(subscription_plan.included_data_points)        
 
                 UserPaymentHistory.objects.create(
                     user=customer,
@@ -273,6 +275,8 @@ class CurrentSubscriptionView(generics.RetrieveAPIView):
                 return ErrorResponse(message="No subscription found", status=status.HTTP_404_NOT_FOUND)
             wallet, created = Wallet.objects.get_or_create(user=request.user)
             logger.info(f"User '{request.user.username}' fetched current subscription status at {datetime.now()}")
+            
+            user_data_points, created = UserDataPoints.objects.get_or_create(user=request.user)
             return Response(
                 {
                     "plan": SubscriptionPlanSerializer(subscription.plan).data,
@@ -281,7 +285,7 @@ class CurrentSubscriptionView(generics.RetrieveAPIView):
                     "expires_at": subscription.expires_at,
                     "request_balance": subscription.plan.included_requests
                     - subscription.requests_used,
-                    "remaining_data_points": subscription.remaining_data_points
+                    "user_data_points": UserDataPointsSerializer(user_data_points).data
                 }
             )
         except UserSubscription.DoesNotExist:

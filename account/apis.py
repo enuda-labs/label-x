@@ -13,6 +13,8 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenRefreshView
 
 from common.responses import ErrorResponse, SuccessResponse, format_first_error, get_first_error
+from subscription.models import UserDataPoints
+from subscription.serializers import UserDataPointsSerializer
 from task.serializers import ProjectUpdateSerializer
 
 from .utils import IsAdminUser, IsSuperAdmin
@@ -52,6 +54,17 @@ from django.contrib.auth import logout
 logger = logging.getLogger('account.apis')
 from .choices import ProjectStatusChoices
 
+
+class GetUserDataPointsView(generics.GenericAPIView):
+    permission_classes = [IsAuthenticated | HasUserAPIKey]
+    serializer_class = UserDataPointsSerializer
+    
+    @extend_schema(
+        summary="Get the used and remaining data points for the currently logged in user"
+    )
+    def get(self, request):
+        user_data_points, created = UserDataPoints.objects.get_or_create(user=request.user)
+        return SuccessResponse(data=self.get_serializer(user_data_points).data)
 
 class ProjectDetailView(generics.RetrieveAPIView):
     serializer_class = ProjectDetailSerializer
