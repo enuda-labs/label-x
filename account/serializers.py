@@ -255,7 +255,7 @@ class ProjectCreateSerializer(serializers.ModelSerializer):
 class UserProjectSerializer(serializers.ModelSerializer):
     class Meta:
         model = Project
-        fields = ["id", "name", "created_by", "description", 'created_at']
+        fields = ["id", "name", "created_by", "description", 'created_at', 'status']
         read_only_fields = ["created_by", 'created_at']
 
     def create(self, validated_data):
@@ -340,7 +340,7 @@ class ProjectSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = Project
-        fields = ['id', 'name', 'description', 'created_by', 'members', 'created_at', 'updated_at']
+        fields = ['id', 'name', 'description', 'created_by', 'members', 'created_at', 'updated_at', 'status']
         read_only_fields = ['id', 'created_at', 'updated_at']
     
     def get_created_by(self, obj):
