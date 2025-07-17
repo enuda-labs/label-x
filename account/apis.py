@@ -58,9 +58,86 @@ from .choices import ProjectStatusChoices
 from django.utils import timezone
 from datetime import datetime
 from django.db.models.functions import TruncDate
-from django.db.models import Sum, Count, Q
+from django.db.models import Sum, Count, Q, Avg 
+from drf_spectacular.openapi import OpenApiTypes
+
 
 class GetProjectChart(generics.GenericAPIView):
+    @extend_schema(
+        summary='Get Project Chart Data',
+        description='''
+        Get analytics data for a project over a specified time period.
+        
+        **Time Period Calculation:**
+        The API looks back from today by the specified time_period in the given time_unit.
+        
+        **Examples:**
+        - `time_unit=day, time_period=7` → Data from 7 days ago to today
+        - `time_unit=week, time_period=2` → Data from 2 weeks ago to today  
+        - `time_unit=month, time_period=3` → Data from 3 months ago to today
+        - `time_unit=year, time_period=1` → Data from 1 year ago to today
+        ''',
+        parameters=[
+            OpenApiParameter(
+                name='project_id',
+                type=OpenApiTypes.INT,
+                location=OpenApiParameter.PATH,
+                description='ID of the project to get chart data for',
+                required=True
+            ),
+            OpenApiParameter(
+                name='time_unit',
+                type=OpenApiTypes.STR,
+                location=OpenApiParameter.PATH,
+                description='Time unit for the period (day, week, month, year, hour, seconds)',
+                required=True,
+                enum=['day', 'week', 'month', 'year', 'hour', 'seconds']
+            ),
+            OpenApiParameter(
+                name='time_period',
+                type=OpenApiTypes.INT,
+                location=OpenApiParameter.PATH,
+                description='Number of time units to look back from today',
+                required=True
+            ),
+        ],
+        responses={
+            200: {
+                'description': 'Project chart data retrieved successfully',
+                'example': {
+                    'message': 'Project charts',
+                    'data': {
+                        'daily_progress': [
+                            {
+                                'date': '2025-07-15',
+                                'task_count': 10,
+                                'total_data_points': 250,
+                                'human_reviewed_count': 6
+                            }
+                        ],
+                        'pie_chart_data': {
+                            'completed': 45,
+                            'pending': 12,
+                            'in_progress': 8
+                        },
+                        'accuracy_trend': [
+                            {
+                                'date': '2025-07-15',
+                                'average_ai_confidence': 87.5
+                            }
+                        ]
+                    }
+                }
+            },
+            404: {
+                'description': 'Project not found',
+                'example': {
+                    'message': 'Project not found'
+                }
+            }
+        },
+        tags=['Projects']
+    )
     def get(self, request, *args, **kwargs):
         time_unit = kwargs.get('time_unit')
         time_period = kwargs.get('time_period')
@@ -88,11 +165,16 @@ class GetProjectChart(generics.GenericAPIView):
             pending = Count('id', filter=Q(processing_status='PENDING')),
             in_progress = Count('id', filter=Q(processing_status='PROCESSING')),
         )
+        
+        accuracy_trend = queryset.annotate(date=TruncDate('created_at')).values('date').annotate(
+            average_ai_confidence = Avg('ai_confidence') * 100
+        )
 
 
         return SuccessResponse(message="Project charts", data={
             'daily_progress': daily_stats,
-            "pie_chart_data": pie_chart_data
+            "pie_chart_data": pie_chart_data,
+            'accuracy_trend': accuracy_trend
         })
         
         
