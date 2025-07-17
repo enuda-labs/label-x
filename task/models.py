@@ -66,6 +66,8 @@ class Task(models.Model):
     ai_output = models.JSONField(
         null=True, blank=True, help_text="The full json output of the ai model"
     )
+    
+    ai_confidence= models.FloatField(default=0.0)
 
     final_label = models.JSONField(
         null=True, blank=True, help_text="Human-reviewed final label"
