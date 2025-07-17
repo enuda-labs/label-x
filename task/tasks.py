@@ -146,6 +146,7 @@ def process_with_ai_model(task_id):
             else:
                 task.processing_status = "COMPLETED"
                 task.final_label = classification.get("classification", None)
+                task.ai_confidence = float(classification.get('confidence', classification.get('confidence_score', 0.0)))
                 task.save()
                 task.create_log(f"Task {task.id} successfully reviewed by AI status: COMPLETED")
                 push_realtime_update(task, action="task_status_changed")
