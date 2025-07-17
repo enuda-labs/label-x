@@ -22,5 +22,6 @@ urlpatterns = [
     path('update-username/', apis.UpdateNameView.as_view(), name='update-username'),
     path('projects/edit/<int:id>/', apis.EditProjectView.as_view(), name='edit-project'),
     path('projects/<int:id>/', apis.ProjectDetailView.as_view(), name="project-detail-view"),
-    path('datapoints/', apis.GetUserDataPointsView.as_view(), name='get-user-data-points')
+    path('datapoints/', apis.GetUserDataPointsView.as_view(), name='get-user-data-points'),
+    path('project/chart/<int:project_id>/<str:time_unit>/<int:time_period>/', apis.GetProjectChart.as_view(), name='get-project-chart')
 ]
