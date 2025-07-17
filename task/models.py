@@ -119,6 +119,7 @@ class Task(models.Model):
     # Timestamps
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    used_data_points = models.IntegerField(default=0)
 
     class Meta:
         ordering = ["-created_at"]
