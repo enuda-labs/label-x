@@ -4,7 +4,8 @@ from django.contrib.auth import authenticate
 
 from subscription.models import UserDataPoints, UserSubscription
 from subscription.serializers import UserDataPointsSerializer, UserSubscriptionSerializer, UserSubscriptionSimpleSerializer
-
+from task.models import Task
+from django.db.models import Sum
 
 from .models import CustomUser, OTPVerification, Project, ProjectLog
 
@@ -19,6 +20,7 @@ class ProjectDetailSerializer(serializers.ModelSerializer):
     project_logs = serializers.SerializerMethodField()
     user_subscription = serializers.SerializerMethodField()
     user_data_points = serializers.SerializerMethodField()
+    total_used_data_points = serializers.SerializerMethodField()
     class Meta:
         fields = "__all__"
         model = Project
@@ -41,6 +43,11 @@ class ProjectDetailSerializer(serializers.ModelSerializer):
             except UserSubscription.DoesNotExist:
                 return None
         return None
+
+    def get_total_used_data_points(self, obj):
+        tasks = Task.objects.filter(group=obj)
+        total_dp = tasks.aggregate(data_points=Sum('used_data_points'))
+        return total_dp.get('data_points', 0)
 
 class LogoutSerializer(serializers.Serializer):
     refresh_token = serializers.CharField()

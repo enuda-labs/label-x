@@ -84,7 +84,7 @@ class TaskCreateView(generics.CreateAPIView):
                 }, status=status.HTTP_403_FORBIDDEN)
             
             try:
-                task = serializer.save(user=request.user)
+                task = serializer.save(user=request.user, used_data_points=required_dp)
                 logger.info(f"User '{request.user.username}' created new task {task.id} (Serial: {task.serial_no}) at {datetime.now()}")
                 
                 celery_task = process_task.delay(task.id)

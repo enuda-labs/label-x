@@ -13,9 +13,11 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenRefreshView
 
 from common.responses import ErrorResponse, SuccessResponse, format_first_error, get_first_error
+from common.utils import get_duration
 from subscription.models import UserDataPoints
 from subscription.serializers import UserDataPointsSerializer
-from task.serializers import ProjectUpdateSerializer
+from task.models import Task
+from task.serializers import ProjectUpdateSerializer, TaskSerializer
 
 from .utils import IsAdminUser, IsSuperAdmin
 from .serializers import (
@@ -53,6 +55,47 @@ from django.contrib.auth import logout
 # Set up logger
 logger = logging.getLogger('account.apis')
 from .choices import ProjectStatusChoices
+from django.utils import timezone
+from datetime import datetime
+from django.db.models.functions import TruncDate
+from django.db.models import Sum, Count, Q
+
+class GetProjectChart(generics.GenericAPIView):
+    def get(self, request, *args, **kwargs):
+        time_unit = kwargs.get('time_unit')
+        time_period = kwargs.get('time_period')
+        project_id = kwargs.get('project_id')
+        
+        try:
+            project = Project.objects.get(id=int(project_id))
+        except Project.DoesNotExist:
+            return ErrorResponse(message='Project not found', status=status.HTTP_404_NOT_FOUND)
+        
+        duration = get_duration(time_unit, time_period)
+        
+        queryset = Task.objects.filter(created_at__date__gte=duration.date(), created_at__date__lte=datetime.today().date(), group=project)
+        
+        daily_stats = queryset.annotate(
+            date=TruncDate('created_at')
+        ).values('date').annotate(
+            task_count=Count('id'),
+            total_data_points=Sum('used_data_points'),
+            human_reviewed_count = Count('id', filter=Q(human_reviewed=True))
+        ).order_by('date')
+        
+        pie_chart_data= queryset.aggregate(
+            completed = Count('id', filter= ~Q(final_label__isnull=False)),
+            pending = Count('id', filter=Q(processing_status='PENDING')),
+            in_progress = Count('id', filter=Q(processing_status='PROCESSING')),
+        )
+
+
+        return SuccessResponse(message="Project charts", data={
+            'daily_progress': daily_stats,
+            "pie_chart_data": pie_chart_data
+        })
+        
+        
 
 
 class GetUserDataPointsView(generics.GenericAPIView):
