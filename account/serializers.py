@@ -1,4 +1,5 @@
 import re
+from httpx import request
 from rest_framework import serializers
 from django.contrib.auth import authenticate
 
@@ -20,7 +21,8 @@ class ProjectDetailSerializer(serializers.ModelSerializer):
     project_logs = serializers.SerializerMethodField()
     user_subscription = serializers.SerializerMethodField()
     user_data_points = serializers.SerializerMethodField()
-    total_used_data_points = serializers.SerializerMethodField()
+    task_stats = serializers.SerializerMethodField()
+    # total_used_data_points = serializers.SerializerMethodField()
     class Meta:
         fields = "__all__"
         model = Project
@@ -44,11 +46,26 @@ class ProjectDetailSerializer(serializers.ModelSerializer):
                 return None
         return None
 
-    def get_total_used_data_points(self, obj):
-        tasks = Task.objects.filter(group=obj)
-        total_dp = tasks.aggregate(data_points=Sum('used_data_points'))
-        return total_dp.get('data_points', 0)
+    # def get_total_used_data_points(self, obj):
+    #     tasks = Task.objects.filter(group=obj)
+    #     total_dp = tasks.aggregate(data_points=Sum('used_data_points'))
+    #     return total_dp.get('data_points', 0)
 
+    def get_task_stats(self, obj):
+        tasks = Task.objects.filter(group=obj)
+        
+        completed_tasks = tasks.filter(processing_status='COMPLETED').count()
+        total_data_points = tasks.aggregate(data_points=Sum('used_data_points'))
+        
+        total_tasks = tasks.count()
+        completion_percentage = (completed_tasks / total_tasks * 100) if total_tasks > 0 else 0
+
+        return {
+            "completion_percentage": round(completion_percentage, 2),
+            "total_used_data_points": total_data_points.get('data_points', 0)
+        }
+        
+        
 class LogoutSerializer(serializers.Serializer):
     refresh_token = serializers.CharField()
 
