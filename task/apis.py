@@ -594,7 +594,7 @@ class TaskCompletionStatsView(APIView):
                     "total_tasks": total_tasks,
                     "completed_tasks": completed_tasks,
                     "completion_percentage": round(completion_percentage, 2),
-                    "pending_projects": user_projects.filter(Q(status=ProjectStatusChoices.PENDING) | Q(status=ProjectStatusChoices.COMPLETED)).count()
+                    "pending_projects": user_projects.filter(Q(status=ProjectStatusChoices.PENDING) | Q(status=ProjectStatusChoices.IN_PROGRESS)).count()
                     
                 }
             }, status=status.HTTP_200_OK)
