@@ -60,9 +60,10 @@ class ProjectDetailSerializer(serializers.ModelSerializer):
         total_tasks = tasks.count()
         completion_percentage = (completed_tasks / total_tasks * 100) if total_tasks > 0 else 0
 
+        print(total_data_points)
         return {
             "completion_percentage": round(completion_percentage, 2),
-            "total_used_data_points": total_data_points.get('data_points', 0)
+            "total_used_data_points": total_data_points.get('data_points', 0) or 0
         }
         
         
