@@ -167,18 +167,23 @@ class RegisterSerializer(serializers.ModelSerializer):
         write_only=True,
         min_length=8,
     )
+    role = serializers.CharField(
+        write_only=True,
+        min_length=8,
+    )
 
     class Meta:
         model = CustomUser
-        fields = ["id", "username", "email", "password"]
+        fields = ["id", "username", "email", "password", "role"]
         extra_kwargs = {
             "username": {"error_messages": {"unique": "Username already exists"}},
             "email": {"error_messages": {"unique": "Email already exists"}},
         }
 
     def create(self, validated_data):
-        # Pop the password from validated_data
+        # Pop the password and role from validated_data
         password = validated_data.pop("password")
+        role = validated_data.pop("role")
 
         # Create user instance
         user = CustomUser.objects.create(**validated_data)
@@ -187,7 +192,7 @@ class RegisterSerializer(serializers.ModelSerializer):
         user.set_password(password)
         user.save()
 
-        return user
+        return user, role
 
     def validate_email(self, value):
         if CustomUser.objects.filter(email=value).exists():
