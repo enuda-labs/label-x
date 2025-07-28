@@ -5,6 +5,7 @@ from django.db.models import F
 
 class SubscriptionPlan(models.Model):
     PLAN_CHOICES = (
+        ("free", "Free"),
         ("starter", "Starter"),
         ("pro", "Pro"),
         ("enterprise", "Enterprise"),

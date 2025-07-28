@@ -19,7 +19,7 @@ from subscription.serializers import UserDataPointsSerializer
 from task.models import Task
 from task.serializers import ProjectUpdateSerializer, TaskSerializer
 
-from .utils import IsAdminUser, IsSuperAdmin
+from .utils import IsAdminUser, IsSuperAdmin, assign_default_plan
 from .serializers import (
     Disable2faSerializer,
     LoginSerializer,
@@ -481,7 +481,10 @@ class RegisterView(APIView):
         serializer = RegisterSerializer(data=request.data)
 
         if serializer.is_valid():
-            user = serializer.save()
+            user, role = serializer.save()
+            if role == "organization":
+                assign_default_plan(user)
+                logger.info(f"Organization '{user.username}' has been assign the default free plan {datetime.now()}")
             logger.info(f"New user '{user.username}' registered successfully at {datetime.now()}")
             return Response(
                 {"status": "success", "user_data": RegisterSerializer(user).data},
