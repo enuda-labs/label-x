@@ -161,7 +161,7 @@ class GetProjectChart(generics.GenericAPIView):
         ).order_by('date')
         
         pie_chart_data= queryset.aggregate(
-            completed = Count('id', filter= ~Q(final_label__isnull=False)),
+            completed = Count('id', filter=Q(final_label__isnull=False)),
             pending = Count('id', filter=Q(processing_status='PENDING')),
             in_progress = Count('id', filter=Q(processing_status='PROCESSING')),
         )
