@@ -14,9 +14,18 @@ class RegisterTestCase(APITransactionTestCase):
         self.login_path = reverse('account:login')
         CustomUser.objects.create_user(username='dama', email="test@gmail.com")
 
-    def test_register_success(self):
+    def test_register_individual_success(self):
         response = self.client.post(
-            self.register_path, data={'username': 'dama1', "email": "test1@gmail.com", 'password': '123456789ASas@'}
+            self.register_path, data={'username': 'dama1', "email": "test1@gmail.com", 
+            'password': '123456789ASas@', 'role': "individual"}
+        )
+        for field in {"status", "user_data"}:
+            self.assertTrue(field in response.data)
+    
+    def test_register_organization_success(self):
+        response = self.client.post(
+            self.register_path, data={'username': 'dama2', "email": "test2@gmail.com", 
+            'password': '123456789ASas@', 'role': "organization"}
         )
         for field in {"status", "user_data"}:
             self.assertTrue(field in response.data)

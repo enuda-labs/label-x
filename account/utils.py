@@ -1,6 +1,7 @@
 import uuid
 from rest_framework.permissions import BasePermission
 from django.utils import timezone
+from datetime import timedelta
 from django.conf import settings
 import datetime
 import jwt
@@ -9,6 +10,8 @@ import base64
 import json
 from .models import ApiKeyTypeChoices, UserAPIKey
 from rest_framework_api_key.permissions import BaseHasAPIKey
+
+from subscription.models import UserDataPoints, SubscriptionPlan, UserSubscription
 
 class IsSuperAdmin(BasePermission):
     """Allow access to only users mark as admin"""
@@ -74,3 +77,24 @@ def create_api_key_for_uer(user, name="Default", key_type="production"):
     api_key.plain_api_key = key
     api_key.save(update_fields=["plain_api_key"])
     return api_key, key
+
+def assign_default_plan(new_user):
+   
+    subscription_plan, created = SubscriptionPlan.objects.get_or_create(
+        name="free",
+        defaults={
+            'monthly_fee': 0.0,
+            'included_data_points': 50,
+            'included_requests': 50,
+            'cost_per_extra_request': 0.0,
+        }
+    )
+    expires_at = timezone.now() + timedelta(days=7)
+    user_subscription= UserSubscription.objects.create(
+        user=new_user,
+        plan = subscription_plan,
+        expires_at=expires_at,
+        renews_at = expires_at,
+    )
+    user_data_points, created = UserDataPoints.objects.get_or_create(user=new_user)
+    user_data_points.topup_data_points(50)        

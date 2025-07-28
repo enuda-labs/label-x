@@ -19,7 +19,7 @@ from subscription.serializers import UserDataPointsSerializer
 from task.models import Task
 from task.serializers import ProjectUpdateSerializer, TaskSerializer
 
-from .utils import IsAdminUser, IsSuperAdmin
+from .utils import IsAdminUser, IsSuperAdmin, assign_default_plan
 from .serializers import (
     Disable2faSerializer,
     LoginSerializer,
@@ -161,7 +161,7 @@ class GetProjectChart(generics.GenericAPIView):
         ).order_by('date')
         
         pie_chart_data= queryset.aggregate(
-            completed = Count('id', filter= ~Q(final_label__isnull=False)),
+            completed = Count('id', filter=Q(final_label__isnull=False)),
             pending = Count('id', filter=Q(processing_status='PENDING')),
             in_progress = Count('id', filter=Q(processing_status='PROCESSING')),
         )
@@ -481,7 +481,10 @@ class RegisterView(APIView):
         serializer = RegisterSerializer(data=request.data)
 
         if serializer.is_valid():
-            user = serializer.save()
+            user, role = serializer.save()
+            if role == "organization":
+                assign_default_plan(user)
+                logger.info(f"Organization '{user.username}' has been assign the default free plan {datetime.now()}")
             logger.info(f"New user '{user.username}' registered successfully at {datetime.now()}")
             return Response(
                 {"status": "success", "user_data": RegisterSerializer(user).data},
