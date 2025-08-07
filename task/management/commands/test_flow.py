@@ -238,7 +238,7 @@ class FlowTest:
             "fail_count": self.fail_count,
             "success_count": self.success_count
         }
-        self.log(f"Statistics report {stats}")
+        self.log(f"🪼🪼🪼🪼🪼🪼🪼 Statistics report {stats}")
 
     def teardown(self):
         print(f"Deleting {self.user_data.get('email')}...")
