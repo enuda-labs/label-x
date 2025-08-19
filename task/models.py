@@ -2,6 +2,8 @@ from django.db import models
 import string
 import random
 from account.models import CustomUser, Project, ProjectLog
+import io
+import json
 
 
 def generate_serial_no():
@@ -11,9 +13,14 @@ def generate_serial_no():
 
 
 class TaskClassificationChoices(models.TextChoices):
-    SAFE = 'Safe', 'Safe',
-    MILDLY_OFFENSIVE = 'Mildly Offensive', 'Mildly Offensive'
-    HIGHLY_OFFENSIVE = 'Highly Offensive', 'Highly Offensive'
+    SAFE = (
+        "Safe",
+        "Safe",
+    )
+    MILDLY_OFFENSIVE = "Mildly Offensive", "Mildly Offensive"
+    HIGHLY_OFFENSIVE = "Highly Offensive", "Highly Offensive"
+
+
 class Task(models.Model):
     TASK_TYPES = (
         ("TEXT", "Text"),
@@ -66,8 +73,8 @@ class Task(models.Model):
     ai_output = models.JSONField(
         null=True, blank=True, help_text="The full json output of the ai model"
     )
-    
-    ai_confidence= models.FloatField(default=0.0)
+
+    ai_confidence = models.FloatField(default=0.0)
 
     final_label = models.JSONField(
         null=True, blank=True, help_text="Human-reviewed final label"
@@ -134,8 +141,8 @@ class Task(models.Model):
 
     def __str__(self):
         return f"{self.serial_no} - {self.task_type}"
-    
-    def create_log(self, message:str):
+
+    def create_log(self, message: str):
         return ProjectLog.objects.create(project=self.group, message=message, task=self)
 
     def save(self, *args, **kwargs):
@@ -149,12 +156,16 @@ class Task(models.Model):
 
         super().save(*args, **kwargs)
 
+
 class UserReviewChatHistory(models.Model):
+
     reviewer = models.ForeignKey(CustomUser, on_delete=models.CASCADE, null=True)
     ai_output = models.JSONField(null=True, blank=True)
-    created_at =models.DateTimeField(auto_now_add=True)
+    created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     task = models.ForeignKey(Task, on_delete=models.CASCADE)
     human_confidence_score = models.FloatField()
     human_justification = models.TextField()
-    human_classification = models.CharField(max_length=25, choices=TaskClassificationChoices.choices)
+    human_classification = models.CharField(
+        max_length=25, choices=TaskClassificationChoices.choices
+    )

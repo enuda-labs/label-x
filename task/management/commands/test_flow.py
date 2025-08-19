@@ -1,9 +1,16 @@
+import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from re import S
+import threading
+import time
 from typing import Any
 from django.core.management import BaseCommand
 import requests
 import json
+
+import websockets
+import websocket
+
 
 from account.models import CustomUser
 
@@ -17,6 +24,9 @@ class FlowTest:
         self.session = requests.Session()
         self.fail_count = 0
         self.success_count = 0
+        self.ws_listening = False
+        self.ws = None
+        self.ws_thread=None
 
     def log(self, message):
         print(f"ℹ️ INFO {self.user_data['username']}: {message}")
@@ -87,6 +97,86 @@ class FlowTest:
             self.log(f"Failed to get users projects, error code:{response.status_code}")
             self.mark_failure()
             return []
+    
+    def on_ws_message(self, ws, message):
+        self.log(message)
+    
+    def on_ws_error(self, ws, error):
+        self.log(f"WebSocket error: {error}")
+        self.mark_failure()
+        
+    def on_ws_close(self, ws, close_status_code, close_msg):
+        self.log(f"🔌 WebSocket closed - Code: {close_status_code}, Message: {close_msg}")
+        self.ws_listening = False
+    
+    
+    def on_ws_open(self, ws):
+        self.ws_listening = True
+        self.log("WebSocket connection opened")
+        
+    def close_websocket(self):
+        if self.ws:
+            self.log("Closing websocket connection...")
+            self.ws.close()
+            if self.ws_thread and self.ws_thread.is_alive():
+                self.ws_thread.join(timeout=2)
+            self.ws = None
+            self.ws_thread = None
+    
+    def connect_websocket(self):
+        user_api_key = self.session.headers.get("X-Api-Key")
+
+        ws_url = f"ws://localhost:8080/ws/task/?api_key={user_api_key}"
+        try:
+            self.log(f"Connecting to websocket {ws_url}")
+            self.ws = websocket.WebSocketApp(
+                ws_url,
+                on_open=self.on_ws_open,
+                on_message=self.on_ws_message,
+                on_error=self.on_ws_error,
+                on_close=self.on_ws_close
+            )
+            self.ws_thread = threading.Thread(target=self.ws.run_forever, daemon=True)
+            self.ws_thread.start()            
+            time.sleep(1)
+            
+            if self.ws_listening:
+                self.log("Websocket listener started successfully")
+                self.mark_success()
+                
+                # listen_duration = 10
+                # self.log(f"Listening for WebSocket messages for {listen_duration} seconds...")
+                # time.sleep(listen_duration)
+                
+                # self.close_websocket()
+            else:
+                self.log("Failed to establish websocket connection")
+                self.mark_failure()
+        except Exception as e:
+            self.log(f"Failed to connect to websocket {e}")
+            self.mark_failure()
+        
+        
+    async def listen_for_task_updates(self):
+        self.log("Attempting to connect to user websocket")
+        user_api_key = self.session.headers.get("X-Api-Key")
+        async with websockets.connect(f"ws://localhost:8080/ws/task?api_key={user_api_key}") as ws:
+            print(f"Connected to task websocket for user {self.user_data['username']}")
+            try:
+                async for message in ws:
+                    data = json.loads(message)
+                    self.log(f"Task update {data}")
+            except websockets.ConnectionClosed:
+                self.log("Websocket connection closed")
+                
+    async def connect_websocket_task(self):
+        self.log("Connect websocket task")
+        try:
+            await asyncio.wait_for(self.listen_for_task_updates(), timeout=10)
+            self.log("Done listening for websocket messages")
+        except asyncio.TimeoutError:
+            self.log("Timeout reached, closing websocket")
+        
 
     def create_user_task(self):
         user_projects = self.get_user_projects()
@@ -104,8 +194,15 @@ class FlowTest:
             response = self.session.post(url, json=req_data)
             if response.status_code == 200 or response.status_code == 201:
                 self.log("Successfully created dummy task")
+                
+                # threading.Thread(
+                #     target=self.listen_for_task_updates,
+                #     daemon=True
+                # ).start()
+                
+                self.connect_websocket()
                 self.mark_success()
-                self.conclude_flow()
+                # self.conclude_flow()
                 
             else:
                 self.log(
