@@ -137,20 +137,28 @@
                 const taskFile = taskElement.querySelector('input[name="task_file"]').files[0];
                 
                 const task = {};
-                if (taskData) task.data = taskData;
-                if (taskFile) {
-                    // For file upload with FormData, we need to append files separately
-                    formData.append(`tasks[${index}][file]`, taskFile);
-                }
-                if (taskData) {
-                    formData.append(`tasks[${index}][data]`, taskData);
-                }
+                // if (taskData) task.data = taskData;
+
+
+                // if (taskFile) {
+                //     // For file upload with FormData, we need to append files separately
+                //     formData.append(`tasks[${index}][file]`, taskFile);
+
+                //     // task.file = taskFileP
+                // }
+                // if (taskData) {
+                //     formData.append(`tasks[${index}][data]`, taskData);
+                // }
                 
-                tasks.push(task);
+                tasks.push({
+                    "file": taskFile
+                });
             });
+
+            formData.append("tasks", tasks)
             
             try {
-                const response = await fetch('http://localhost:3000/api/task-clusters/', {  // Update this URL to match your endpoint
+                const response = await fetch('http://localhost:8080/api/v1/tasks/cluster/', {  // Update this URL to match your endpoint
                     method: 'POST',
                     body: formData,
                     headers: {

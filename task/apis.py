@@ -3,7 +3,7 @@ from drf_spectacular.utils import extend_schema, OpenApiResponse, OpenApiExample
 from rest_framework import generics
 from rest_framework.response import Response
 from rest_framework import status
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, AllowAny
 import logging
 from datetime import datetime
 from rest_framework.views import APIView
@@ -47,8 +47,8 @@ class TaskListView(generics.ListAPIView):
 
 class TaskClusterCreateView(generics.GenericAPIView):
     serializer_class = TaskClusterCreateSerializer
-    parser_classes = [MultiPartParser, FormParser]
-
+    # parser_classes = [MultiPartParser, FormParser]
+    permission_classes = [AllowAny]
     def post(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         if not serializer.is_valid():

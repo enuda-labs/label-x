@@ -7,13 +7,14 @@ from .models import Task, TaskClassificationChoices, TaskCluster
 
 class ProjectUpdateSerializer(serializers.ModelSerializer):
     class Meta:
-        fields = ['name', 'description', 'status']
+        fields = ["name", "description", "status"]
         model = Project
 
 
 class HumanReviewSerializer(serializers.Serializer):
     correction = serializers.CharField(allow_null=True, required=False)
     justification = serializers.CharField(allow_null=True, required=False)
+
 
 class AIOutputSerializer(serializers.Serializer):
     text = serializers.CharField()
@@ -26,94 +27,143 @@ class AIOutputSerializer(serializers.Serializer):
 class FullTaskSerializer(serializers.ModelSerializer):
     class Meta:
         model = Task
-        fields = '__all__'
+        fields = "__all__"
 
 
 class TaskCreateSerializer(serializers.Serializer):
     file = serializers.FileField(required=False)
     data = serializers.CharField(required=False)
 
+
 class TaskClusterCreateSerializer(serializers.ModelSerializer):
     tasks = TaskCreateSerializer(many=True)
-    
+
     class Meta:
         model = TaskCluster
         fields = "__all__"
         read_only_fields = ["assigned_to"]
-        
+
     def validate(self, attrs):
         attrs = super().validate(attrs)
-        
-        tasks_data = attrs.get('tasks', [])
+
+        print("the attrs", attrs)
+
+        tasks_data = attrs.get("tasks", [])
         if len(tasks_data) == 0:
             raise serializers.ValidationError("Cannot create an empty cluster")
-        
+
         print(attrs.get(""))
         for task in tasks_data:
-            print(task)
-    
+            print("the task is", task)
 
+        return attrs
 
 
 class TaskSerializer(serializers.ModelSerializer):
-    ai_output = AIOutputSerializer(read_only=True) 
+    ai_output = AIOutputSerializer(read_only=True)
+
     class Meta:
         model = Task
         fields = [
-            'id', 'serial_no', 'task_type', 'data', 'ai_output' ,
-            'predicted_label', 'human_reviewed', 'final_label',
-            'processing_status', "review_status", 'assigned_to', 'created_at', 'updated_at',
-            'priority', 'group', 'used_data_points' 
+            "id",
+            "serial_no",
+            "task_type",
+            "data",
+            "ai_output",
+            "predicted_label",
+            "human_reviewed",
+            "final_label",
+            "processing_status",
+            "review_status",
+            "assigned_to",
+            "created_at",
+            "updated_at",
+            "priority",
+            "group",
+            "used_data_points",
         ]
         read_only_fields = [
-            'id', 'serial_no', 'predicted_label', "ai_output",
-            'human_reviewed', 'final_label', 'processing_status',"review_status",
-            'assigned_to', 'created_at', 'updated_at', 'used_data_points',
+            "id",
+            "serial_no",
+            "predicted_label",
+            "ai_output",
+            "human_reviewed",
+            "final_label",
+            "processing_status",
+            "review_status",
+            "assigned_to",
+            "created_at",
+            "updated_at",
+            "used_data_points",
         ]
-        extra_kwargs = {
-            'priority': {'default': 'NORMAL'}
-        }
+        extra_kwargs = {"priority": {"default": "NORMAL"}}
+
+
 class AssignedTaskSerializer(serializers.ModelSerializer):
-    ai_output = AIOutputSerializer(read_only=True) 
+    ai_output = AIOutputSerializer(read_only=True)
     assigned_to = UserSerializer()
+
     class Meta:
         model = Task
         fields = [
-            'id', 'serial_no', 'task_type', 'data', 'ai_output' ,
-            'predicted_label', 'human_reviewed', 'final_label',
-            'processing_status', "review_status", 'assigned_to', 'created_at', 'updated_at',
-            'priority', 'group' 
+            "id",
+            "serial_no",
+            "task_type",
+            "data",
+            "ai_output",
+            "predicted_label",
+            "human_reviewed",
+            "final_label",
+            "processing_status",
+            "review_status",
+            "assigned_to",
+            "created_at",
+            "updated_at",
+            "priority",
+            "group",
         ]
         read_only_fields = [
-            'id', 'serial_no', 'predicted_label', "ai_output",
-            'human_reviewed', 'final_label', 'processing_status',"review_status",
-            'assigned_to', 'created_at', 'updated_at'
+            "id",
+            "serial_no",
+            "predicted_label",
+            "ai_output",
+            "human_reviewed",
+            "final_label",
+            "processing_status",
+            "review_status",
+            "assigned_to",
+            "created_at",
+            "updated_at",
         ]
-        extra_kwargs = {
-            'priority': {'default': 'NORMAL'}
-        }
+        extra_kwargs = {"priority": {"default": "NORMAL"}}
+
 
 class TaskStatusSerializer(serializers.ModelSerializer):
     class Meta:
         model = Task
         fields = [
-            'id', 'serial_no', 'task_type', 'processing_status', "review_status",
-            'human_reviewed', 'created_at', 'updated_at'
+            "id",
+            "serial_no",
+            "task_type",
+            "processing_status",
+            "review_status",
+            "human_reviewed",
+            "created_at",
+            "updated_at",
         ]
         read_only_fields = fields
 
 
 class TaskIdSerializer(serializers.Serializer):
     task_id = serializers.IntegerField()
-    
+
 
 class TaskReviewSerializer(serializers.Serializer):
     task_id = serializers.IntegerField()
     correction = serializers.ChoiceField(choices=TaskClassificationChoices.choices)
     justification = serializers.CharField()
     confidence = serializers.FloatField(min_value=0.0, max_value=1.0)
-    
-    
+
     # ai_output = AIOutputSerializer()
 
     # class Meta:
@@ -122,5 +172,6 @@ class TaskReviewSerializer(serializers.Serializer):
 
 
 class AssignTaskSerializer(serializers.Serializer):
-    task_id = serializers.IntegerField(help_text="ID of the task to assign to the current reviewer")
-    
+    task_id = serializers.IntegerField(
+        help_text="ID of the task to assign to the current reviewer"
+    )
