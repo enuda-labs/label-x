@@ -47,7 +47,7 @@ class TaskListView(generics.ListAPIView):
 
 class TaskClusterCreateView(generics.GenericAPIView):
     serializer_class = TaskClusterCreateSerializer
-    # parser_classes = [MultiPartParser, FormParser]
+    parser_classes = [MultiPartParser, FormParser]
     permission_classes = [AllowAny]
     def post(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
