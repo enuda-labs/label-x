@@ -1,8 +1,12 @@
+import attr
 from rest_framework import serializers
 
 from account.models import Project
 from account.serializers import UserSerializer
-from .models import Task, TaskClassificationChoices, TaskCluster
+from subscription.models import UserDataPoints
+from task.choices import TaskInputTypeChoices, TaskTypeChoices
+from task.utils import calculate_required_data_points
+from .models import MultiChoiceOption, Task, TaskClassificationChoices, TaskCluster
 
 
 class ProjectUpdateSerializer(serializers.ModelSerializer):
@@ -29,14 +33,26 @@ class FullTaskSerializer(serializers.ModelSerializer):
         model = Task
         fields = "__all__"
 
+class FileItemSerializer(serializers.Serializer):
+    file_url = serializers.URLField()
+    file_name = serializers.CharField()
+    file_size_bytes = serializers.FloatField()
+    file_type = serializers.CharField()
+    
 
 class TaskCreateSerializer(serializers.Serializer):
-    file = serializers.FileField(required=False)
+    file = FileItemSerializer(required=False)
     data = serializers.CharField(required=False)
 
 
+class MultiChoiceOptionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = MultiChoiceOption
+        fields = ['option_text']
+
 class TaskClusterCreateSerializer(serializers.ModelSerializer):
     tasks = TaskCreateSerializer(many=True)
+    labelling_choices = MultiChoiceOptionSerializer(many=True, required=False)
 
     class Meta:
         model = TaskCluster
@@ -46,17 +62,44 @@ class TaskClusterCreateSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         attrs = super().validate(attrs)
 
-        print("the attrs", attrs)
-
         tasks_data = attrs.get("tasks", [])
         if len(tasks_data) == 0:
             raise serializers.ValidationError("Cannot create an empty cluster")
+        
+        labelling_choices = attrs.get('labelling_choices', [])
+        print(labelling_choices)
+        if attrs.get('input_type') == TaskInputTypeChoices.MULTIPLE_CHOICE and len(labelling_choices) ==0:
+            raise serializers.ValidationError(f"Must specify at least one labelling choice for a Multiple choice labelling input type")
 
-        print(attrs.get(""))
-        for task in tasks_data:
-            print("the task is", task)
+        task_type = attrs.get('task_type')
+        total_required_dp = 0
+        # loop through the tasks data that were created and ensure accuracy
+        for data in tasks_data:
+            file = data.get('file', None)
+            # dont allow upload of files for a task that is supposed to be a file
+            if file and task_type == TaskTypeChoices.TEXT:
+                raise serializers.ValidationError(f"File uploads are not allowed for tasks of type '{task_type}'.")
+            
+            # ensure file type is supported
+            # TODO: IF THE TASK TYPE IS IMAGE, ENSURE USERS CAN ONLY UPLOAD IMAGES, E.T.C
+            accepted_file_types = ['csv', 'jpg', 'jpeg', 'png']
+            if file and file.get('file_type') not in accepted_file_types:
+                raise serializers.ValidationError(f"Unsupported file type for file `{file.get('file_name')}`")
+            
+            required_data_points = calculate_required_data_points(task_type, text_data=data.get('data'), file_size_bytes=file.get('file_size_bytes'))
+            total_required_dp += required_data_points
+        
 
+        
+        attrs['required_data_points'] = total_required_dp
         return attrs
+    
+    def create(self, validated_data):
+        validated_data.pop('tasks')
+        validated_data.pop('required_data_points')
+        validated_data.pop("labelling_choices")
+        return super().create(validated_data)
+
 
 
 class TaskSerializer(serializers.ModelSerializer):

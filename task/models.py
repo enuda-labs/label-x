@@ -40,6 +40,10 @@ class TaskCluster(models.Model):
     annotation_method = models.CharField(choices=AnnotationMethodChoices.choices, default=AnnotationMethodChoices.AI_AUTOMATED, max_length=20)
     
 
+class MultiChoiceOption(models.Model):
+    cluster = models.ForeignKey(TaskCluster, on_delete=models.CASCADE)
+    option_text = models.CharField(max_length=100)
+    
 
 class Task(models.Model):
     """
@@ -80,7 +84,7 @@ class Task(models.Model):
     )
 
     # JSON fields for data and labels
-    data = models.JSONField(help_text="Task data (text content, file URLs, etc.)")
+    data = models.JSONField(help_text="Task data (text content, file URLs, etc.)", null=True, blank=True)
 
     predicted_label = models.JSONField(
         null=True, blank=True, help_text="AI-generated predictions"
@@ -153,6 +157,7 @@ class Task(models.Model):
     file_name = models.CharField(max_length=100, null=True, blank=True)
     file_type= models.CharField(max_length=10, null=True, blank=True)
     file_url = models.URLField(help_text="The cdn link to the file", null=True, blank=True)
+    file_size_bytes = models.FloatField(null=True, blank=True)
     
     class Meta:
         ordering = ["-created_at"]
