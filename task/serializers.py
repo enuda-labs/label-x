@@ -2,7 +2,7 @@ from rest_framework import serializers
 
 from account.models import Project
 from account.serializers import UserSerializer
-from .models import Task, TaskClassificationChoices
+from .models import Task, TaskClassificationChoices, TaskCluster
 
 
 class ProjectUpdateSerializer(serializers.ModelSerializer):
@@ -27,6 +27,33 @@ class FullTaskSerializer(serializers.ModelSerializer):
     class Meta:
         model = Task
         fields = '__all__'
+
+
+class TaskCreateSerializer(serializers.Serializer):
+    file = serializers.FileField(required=False)
+    data = serializers.CharField(required=False)
+
+class TaskClusterCreateSerializer(serializers.ModelSerializer):
+    tasks = TaskCreateSerializer(many=True)
+    
+    class Meta:
+        model = TaskCluster
+        fields = "__all__"
+        read_only_fields = ["assigned_to"]
+        
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        
+        tasks_data = attrs.get('tasks', [])
+        if len(tasks_data) == 0:
+            raise serializers.ValidationError("Cannot create an empty cluster")
+        
+        print(attrs.get(""))
+        for task in tasks_data:
+            print(task)
+    
+
+
 
 class TaskSerializer(serializers.ModelSerializer):
     ai_output = AIOutputSerializer(read_only=True) 

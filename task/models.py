@@ -2,8 +2,9 @@ from django.db import models
 import string
 import random
 from account.models import CustomUser, Project, ProjectLog
-import io
-import json
+import uuid
+
+from task.choices import AnnotationMethodChoices, TaskInputTypeChoices, TaskTypeChoices
 
 
 def generate_serial_no():
@@ -21,15 +22,30 @@ class TaskClassificationChoices(models.TextChoices):
     HIGHLY_OFFENSIVE = "Highly Offensive", "Highly Offensive"
 
 
-class Task(models.Model):
-    TASK_TYPES = (
-        ("TEXT", "Text"),
-        ("IMAGE", "Image"),
-        ("VIDEO", "Video"),
-        ("AUDIO", "Audio"),
-        ("MULTIMODAL", "Multimodal"),
+class TaskCluster(models.Model):
+    input_type = models.CharField(max_length=25, help_text="The type of input the labeller is to provide for the tasks in this cluster", choices=TaskInputTypeChoices.choices, default=TaskInputTypeChoices.TEXT)
+    labeller_instructions = models.TextField(default="Default")
+    deadline = models.DateField(null=True, blank=True)
+    labeller_per_item_count = models.IntegerField(default=100)
+    project = models.ForeignKey(Project, on_delete=models.CASCADE)
+    assigned_to = models.ForeignKey(
+        CustomUser,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="assigned_clusters",
+        help_text="User assigned to review the tasks in this cluster",
     )
+    task_type = models.CharField(choices=TaskTypeChoices.choices, max_length=25, default=TaskTypeChoices.TEXT)
+    annotation_method = models.CharField(choices=AnnotationMethodChoices.choices, default=AnnotationMethodChoices.AI_AUTOMATED, max_length=20)
+    
 
+
+class Task(models.Model):
+    """
+    A task is a single object to be annotated, it can be a text, a single image, video, csv file, e.t.c
+    """
+   
     PRIORITY_LEVELS = (
         ("URGENT", "Urgent"),
         ("NORMAL", "Normal"),
@@ -60,7 +76,7 @@ class Task(models.Model):
     )
 
     task_type = models.CharField(
-        max_length=10, choices=TASK_TYPES, help_text="Type of content to be processed"
+        max_length=10, choices=TaskTypeChoices.choices, default=TaskTypeChoices.TEXT, help_text="Type of content to be processed"
     )
 
     # JSON fields for data and labels
@@ -92,6 +108,7 @@ class Task(models.Model):
     human_reviewed = models.BooleanField(
         default=False, help_text="Indicates if a human has reviewed this task"
     )
+    
     priority = models.CharField(
         max_length=10,
         choices=PRIORITY_LEVELS,
@@ -106,6 +123,8 @@ class Task(models.Model):
         related_name="created_tasks",
         help_text="Group who created the task",
     )
+    
+    cluster = models.ForeignKey(TaskCluster, on_delete=models.CASCADE, related_name='tasks', null=True, blank=False)
 
     assigned_to = models.ForeignKey(
         CustomUser,
@@ -128,8 +147,13 @@ class Task(models.Model):
     # Timestamps
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-    used_data_points = models.IntegerField(default=0)
-
+    used_data_points = models.IntegerField(default=0, help_text="The amount of data points that was used during the submission of this task") 
+    
+    # this fields will have values if the task type is a file
+    file_name = models.CharField(max_length=100, null=True, blank=True)
+    file_type= models.CharField(max_length=10, null=True, blank=True)
+    file_url = models.URLField(help_text="The cdn link to the file", null=True, blank=True)
+    
     class Meta:
         ordering = ["-created_at"]
         indexes = [
@@ -158,7 +182,6 @@ class Task(models.Model):
 
 
 class UserReviewChatHistory(models.Model):
-
     reviewer = models.ForeignKey(CustomUser, on_delete=models.CASCADE, null=True)
     ai_output = models.JSONField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)

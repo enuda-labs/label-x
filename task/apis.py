@@ -10,13 +10,15 @@ from rest_framework.views import APIView
 
 from account.choices import ProjectStatusChoices
 from account.models import Project
-from common.responses import ErrorResponse, SuccessResponse
+from common.responses import ErrorResponse, SuccessResponse, format_first_error
 from subscription.models import UserDataPoints, UserSubscription
 from task.utils import calculate_required_data_points, dispatch_task_message, push_realtime_update
-from .models import Task, UserReviewChatHistory
-from .serializers import AssignedTaskSerializer, FullTaskSerializer, TaskIdSerializer, TaskSerializer, TaskStatusSerializer, TaskReviewSerializer, AssignTaskSerializer
+from .models import Task, TaskCluster, UserReviewChatHistory
+from .serializers import AssignedTaskSerializer, FullTaskSerializer, TaskClusterCreateSerializer, TaskIdSerializer, TaskSerializer, TaskStatusSerializer, TaskReviewSerializer, AssignTaskSerializer
 from .tasks import process_task, provide_feedback_to_ai_model
 from rest_framework_api_key.permissions import HasAPIKey
+from rest_framework.parsers import MultiPartParser, FormParser
+
 
 # import custom permissions
 from account.utils import HasUserAPIKey, IsReviewer
@@ -42,7 +44,22 @@ class TaskListView(generics.ListAPIView):
         tasks_list = Task.objects.filter(group__in=my_projects, assigned_to=None, processing_status="REVIEW_NEEDED")
         logger.info(f"User '{self.request.user.username}' fetched {tasks_list.count()} available tasks at {datetime.now()}")
         return tasks_list
+
+class TaskClusterCreateView(generics.GenericAPIView):
+    serializer_class = TaskClusterCreateSerializer
+    parser_classes = [MultiPartParser, FormParser]
+
+    def post(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        if not serializer.is_valid():
+            return ErrorResponse(message=format_first_error(serializer.errors))
+        
+        
+        return SuccessResponse(message="Implementation in progress")
+        
     
+    
+
 
 class TaskCreateView(generics.CreateAPIView):
     serializer_class = TaskSerializer
@@ -55,7 +72,6 @@ class TaskCreateView(generics.CreateAPIView):
         serializer = self.get_serializer(data=request.data)
 
         if serializer.is_valid():
-            
             task_type = serializer.validated_data.get("task_type")
             required_dp = calculate_required_data_points(task_type, text_data=serializer.validated_data.get("data"))
             if not required_dp:
@@ -66,25 +82,20 @@ class TaskCreateView(generics.CreateAPIView):
                     }
                 }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
             
-            try:
-                user_data_points, created = UserDataPoints.objects.get_or_create(user=request.user)
-                if user_data_points.data_points_balance < required_dp:
-                    return Response({
-                        "status": "error",
-                        "data": {
-                            "message": "You do not have enough data points left to satisfy this request"
-                        }
-                    }, status=status.HTTP_402_PAYMENT_REQUIRED)
-            except UserSubscription.DoesNotExist:
+            user_data_points, created = UserDataPoints.objects.get_or_create(user=request.user)
+            if user_data_points.data_points_balance < required_dp:
                 return Response({
                     "status": "error",
                     "data": {
-                        "message": "You have not subscribed to any plans"
+                        "message": "You do not have enough data points left to satisfy this request"
                     }
-                }, status=status.HTTP_403_FORBIDDEN)
+                }, status=status.HTTP_402_PAYMENT_REQUIRED)
+
             
             try:
-                task = serializer.save(user=request.user, used_data_points=required_dp)
+                task_cluster = TaskCluster.objects.create() #create a cluster which will contain this single task
+                
+                task = serializer.save(user=request.user, used_data_points=required_dp, cluster=task_cluster)
                 logger.info(f"User '{request.user.username}' created new task {task.id} (Serial: {task.serial_no}) at {datetime.now()}")
                 
                 celery_task = process_task.delay(task.id)

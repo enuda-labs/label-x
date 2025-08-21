@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Task Cluster Creator</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input[type="text"], input[type="file"], textarea {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        .task {
+            border: 1px solid #eee;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 4px;
+        }
+        #response {
+            margin-top: 20px;
+            padding: 10px;
+            border-radius: 4px;
+        }
+        .success { background-color: #d4edda; color: #155724; }
+        .error { background-color: #f8d7da; color: #721c24; }
+    </style>
+</head>
+<body>
+    <h1>Create Task Cluster</h1>
+    
+    <form id="taskClusterForm">
+        <!-- Basic cluster fields -->
+        <!-- <div class="form-group">
+            <label for="title">Cluster Title:</label>
+            <input type="text" id="title" name="title" required>
+        </div>
+        
+        <div class="form-group">
+            <label for="description">Description:</label>
+            <textarea id="description" name="description" rows="3"></textarea>
+        </div> -->
+        
+        <!-- Tasks section -->
+        <h3>Tasks</h3>
+        <div id="tasksContainer">
+            <div class="task">
+                <h4>Task 1</h4>
+                <div class="form-group">
+                    <label>Task Data:</label>
+                    <input type="text" name="task_data" placeholder="Task data/description">
+                </div>
+                <div class="form-group">
+                    <label>Task File:</label>
+                    <input type="file" name="task_file">
+                </div>
+            </div>
+        </div>
+        
+        <button type="button" onclick="addTask()">Add Another Task</button>
+        <button type="submit">Create Task Cluster</button>
+    </form>
+    
+    <div id="response"></div>
+
+    <script>
+        let taskCounter = 1;
+        
+        function addTask() {
+            taskCounter++;
+            const container = document.getElementById('tasksContainer');
+            const taskDiv = document.createElement('div');
+            taskDiv.className = 'task';
+            taskDiv.innerHTML = `
+                <h4>Task ${taskCounter}</h4>
+                <div class="form-group">
+                    <label>Task Data:</label>
+                    <input type="text" name="task_data" placeholder="Task data/description">
+                </div>
+                <div class="form-group">
+                    <label>Task File:</label>
+                    <input type="file" name="task_file">
+                </div>
+                <button type="button" onclick="this.parentElement.remove()">Remove Task</button>
+            `;
+            container.appendChild(taskDiv);
+        }
+        
+        document.getElementById('taskClusterForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const formData = new FormData();
+            
+            // Add basic fields
+
+            formData.append('input_type', "text")
+            formData.append('labeller_instructions', "Default")
+            formData.append('task_type', "TEXT")
+            formData.append('annotation_method', "manual")
+            formData.append('project', "4")
+
+            // formData.append('title', document.getElementById('title').value);
+            // formData.append('description', document.getElementById('description').value);
+            
+            // Collect tasks data
+            const tasks = [];
+            const taskElements = document.querySelectorAll('.task');
+            
+            taskElements.forEach((taskElement, index) => {
+                const taskData = taskElement.querySelector('input[name="task_data"]').value;
+                const taskFile = taskElement.querySelector('input[name="task_file"]').files[0];
+                
+                const task = {};
+                if (taskData) task.data = taskData;
+                if (taskFile) {
+                    // For file upload with FormData, we need to append files separately
+                    formData.append(`tasks[${index}][file]`, taskFile);
+                }
+                if (taskData) {
+                    formData.append(`tasks[${index}][data]`, taskData);
+                }
+                
+                tasks.push(task);
+            });
+            
+            try {
+                const response = await fetch('http://localhost:3000/api/task-clusters/', {  // Update this URL to match your endpoint
+                    method: 'POST',
+                    body: formData,
+                    headers: {
+                        // Don't set Content-Type for FormData, let browser handle it
+                    }
+                });
+                
+                const result = await response.json();
+                const responseDiv = document.getElementById('response');
+                
+                if (response.ok) {
+                    responseDiv.innerHTML = `<div class="success">Success: ${result.message}</div>`;
+                } else {
+                    responseDiv.innerHTML = `<div class="error">Error: ${result.message || 'Something went wrong'}</div>`;
+                }
+            } catch (error) {
+                document.getElementById('response').innerHTML = 
+                    `<div class="error">Network Error: ${error.message}</div>`;
+            }
+        });
+    </script>
+</body>
+</html>

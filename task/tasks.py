@@ -154,8 +154,8 @@ def process_with_ai_model(task_id):
                 push_realtime_update(task, action="task_status_changed")
                 logger.info(f"Task {task_id} completed automatically")
                 
-                cohere_dataset, created = CohereDataset.objects.get_or_create(task=task)
-                cohere_dataset.upload_to_cohere()
+                # cohere_dataset, created = CohereDataset.objects.get_or_create(task=task)
+                # cohere_dataset.upload_to_cohere()
                 
 
         return {"status": "success", "task_id": task.id}
