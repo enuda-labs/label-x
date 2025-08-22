@@ -14,11 +14,12 @@ from account.models import Project
 from common.responses import ErrorResponse, SuccessResponse, format_first_error
 from subscription.models import UserDataPoints, UserSubscription
 from task.utils import calculate_required_data_points, dispatch_task_message, push_realtime_update
-from .models import Task, TaskCluster, UserReviewChatHistory, TaskLabel
+from .models import MultiChoiceOption, Task, TaskCluster, UserReviewChatHistory, TaskLabel
 from .serializers import AssignedTaskSerializer, FullTaskSerializer, TaskClusterCreateSerializer, TaskIdSerializer, TaskSerializer, TaskStatusSerializer, TaskReviewSerializer, AssignTaskSerializer
 from .tasks import process_task, provide_feedback_to_ai_model
 from rest_framework_api_key.permissions import HasAPIKey
 from rest_framework.parsers import MultiPartParser, FormParser
+from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiTypes
 
 
 # import custom permissions
@@ -53,14 +54,52 @@ class TaskListView(generics.ListAPIView):
 
 class TaskClusterCreateView(generics.GenericAPIView):
     serializer_class = TaskClusterCreateSerializer
-    parser_classes = [MultiPartParser, FormParser]
-    permission_classes = [AllowAny]
+    permission_classes = [IsAuthenticated]
+    
     def post(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         if not serializer.is_valid():
-            return ErrorResponse(message=format_first_error(serializer.errors))
+            return ErrorResponse(message=format_first_error(serializer.errors, False))
+        
+        # get the tasks before saving the cluster because they get popped out in the create method of the serializer
+        tasks = serializer.validated_data.get('tasks')
+        required_data_points = serializer.validated_data.get('required_data_points')
+        labelling_choices = serializer.validated_data.get('labelling_choices', [])
+        
+        cluster= serializer.save()
+        
+        user_data_point, created = UserDataPoints.objects.get_or_create(user=request.user)
+        if user_data_point.data_points_balance < required_data_points:
+            return ErrorResponse(message="You do not have enough data points to satisfy this request")
+        task_type = serializer.validated_data.get('task_type')
         
         
+        for task in tasks:
+            if task_type == 'TEXT':
+                extra_kwargs = {
+                    "data": task.get('data')
+                }
+            else:
+                file = task.get('file')
+                extra_kwargs = {
+                    "file_name": file.get('file_name'),
+                    "file_type": file.get('file_type'),
+                    "file_url": file.get('file_url'),
+                    "file_size_bytes": file.get('file_size_bytes')
+                }
+                
+            Task.objects.create(
+                cluster = cluster,
+                user=request.user,
+                group = cluster.project, #TODO: REMOVE THIS LATER,
+                task_type=cluster.task_type,
+                **extra_kwargs
+            )
+        
+        for choice in labelling_choices:
+            MultiChoiceOption.objects.acreate(cluster=cluster, option_text=choice.get('option_text'))
+        
+        user_data_point.deduct_data_points(required_data_points)
         return SuccessResponse(message="Implementation in progress")
         
     

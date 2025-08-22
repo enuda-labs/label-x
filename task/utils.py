@@ -4,11 +4,13 @@ from asgiref.sync import async_to_sync
 from django.db import models
 from django.utils import timezone
 from datetime import timedelta
-from task.serializers import FullTaskSerializer
+from task.choices import TaskTypeChoices
 from account.models import CustomUser
 
 
 def serialize_task(task):
+    from task.serializers import FullTaskSerializer
+
     return FullTaskSerializer(task).data
 
 
@@ -74,7 +76,7 @@ def assign_reviewer(task):
 
     return True
 
-def calculate_required_data_points(task_type, text_data=None, image_data=None, video_data=None):
+def calculate_required_data_points(task_type, text_data=None, file_size_bytes=None)->int:
     
     if task_type == 'TEXT' and text_data:
         text_length = len(text_data)
@@ -84,6 +86,12 @@ def calculate_required_data_points(task_type, text_data=None, image_data=None, v
             return 10
         else:
             return round(0.035 * text_length)
-            
-    # TODO: handle cases for other file types
+        
+    if task_type == TaskTypeChoices.AUDIO:
+        return 90
+    if task_type == TaskTypeChoices.IMAGE:
+        return 70
+    if task_type == TaskTypeChoices.VIDEO:
+        return 200            
+    # TODO: handle cases for other file types properly
     return 20
