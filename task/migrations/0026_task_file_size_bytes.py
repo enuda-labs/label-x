@@ -6,13 +6,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('task', '0025_alter_task_data'),
+        ("task", "0025_alter_task_data"),
     ]
 
-    operations = [
-        migrations.AddField(
-            model_name='task',
-            name='file_size_bytes',
-            field=models.FloatField(blank=True, null=True),
-        ),
-    ]
+    operations = []
