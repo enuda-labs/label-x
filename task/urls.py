@@ -25,6 +25,10 @@ urlpatterns = [
     # Label management endpoints
     path('labels/<int:task_id>/', apis.TaskLabelsView.as_view(), name='task_labels'),
     path('cluster/<int:cluster_id>/labels-summary/', apis.ClusterLabelsSummaryView.as_view(), name='cluster_labels_summary'),
+    path('cluster/assign-to-self/', apis.AssignClusterToSelf.as_view(), name='assign-cluster-to-self'),
+    path('cluster/user/list/', apis.CreatedClusterListView.as_view(), name='get-created-clusters'),
+    path('cluster/<int:id>/', apis.GetClusterDetailView.as_view(), name='get-cluster-details'),
+    path('cluster/available/', apis.GetAvailableClusters.as_view(), name='get-available-clusters')
     
     # path('list/', apis.TaskListView.as_view(), name='list-tasks')
 ]

@@ -13,9 +13,10 @@ from account.choices import ProjectStatusChoices
 from account.models import Project
 from common.responses import ErrorResponse, SuccessResponse, format_first_error
 from subscription.models import UserDataPoints, UserSubscription
+from task.choices import AnnotationMethodChoices, TaskClusterStatusChoices
 from task.utils import calculate_required_data_points, dispatch_task_message, push_realtime_update
 from .models import MultiChoiceOption, Task, TaskCluster, UserReviewChatHistory, TaskLabel
-from .serializers import AssignedTaskSerializer, FullTaskSerializer, TaskClusterCreateSerializer, TaskIdSerializer, TaskSerializer, TaskStatusSerializer, TaskReviewSerializer, AssignTaskSerializer
+from .serializers import AcceptClusterIdSerializer, AssignedTaskSerializer, FullTaskSerializer, TaskClusterCreateSerializer, TaskClusterDetailSerializer, TaskClusterListSerializer, TaskIdSerializer, TaskSerializer, TaskStatusSerializer, TaskReviewSerializer, AssignTaskSerializer
 from .tasks import process_task, provide_feedback_to_ai_model
 from rest_framework_api_key.permissions import HasAPIKey
 from rest_framework.parsers import MultiPartParser, FormParser
@@ -52,6 +53,42 @@ class TaskListView(generics.ListAPIView):
         logger.info(f"User '{self.request.user.username}' fetched {tasks_list.count()} available tasks at {datetime.now()}")
         return tasks_list
 
+class GetClusterDetailView(generics.RetrieveAPIView):
+    serializer_class = TaskClusterDetailSerializer
+    lookup_field = 'id'
+    queryset = TaskCluster.objects.all()
+    permission_classes = [IsAuthenticated]   
+    
+    @extend_schema(
+        summary="Get the full details of a task cluster by id"
+    )
+    def get(self, request, *args, **kwargs):
+        return super().get(request, *args, **kwargs)
+
+class CreatedClusterListView(generics.ListAPIView):
+    serializer_class = TaskClusterListSerializer
+    def get_queryset(self):
+        return TaskCluster.objects.filter(created_by=self.request.user)
+    
+    @extend_schema(
+        summary="Get all clusters that were created by the currently logged in user"
+    )
+    def get(self, request, *args, **kwargs):
+        return super().get(request, *args, **kwargs)
+
+
+class GetAvailableClusters(generics.ListAPIView):
+    serializer_class = TaskClusterListSerializer
+    def get_queryset(self):
+        return TaskCluster.objects.exclude(status=TaskClusterStatusChoices.COMPLETED)
+    
+    @extend_schema(
+        summary="Get all the clusters that are available for assignment",
+        description="Ideal for when a reviewer is looking for clusters to assign to themselves"
+    )
+    def get(self, request, *args, **kwargs):
+        return super().get(request, *args, **kwargs)
+
 class TaskClusterCreateView(generics.GenericAPIView):
     serializer_class = TaskClusterCreateSerializer
     permission_classes = [IsAuthenticated]
@@ -66,12 +103,13 @@ class TaskClusterCreateView(generics.GenericAPIView):
         required_data_points = serializer.validated_data.get('required_data_points')
         labelling_choices = serializer.validated_data.get('labelling_choices', [])
         
-        cluster= serializer.save()
+        cluster= serializer.save(created_by=request.user)
         
         user_data_point, created = UserDataPoints.objects.get_or_create(user=request.user)
         if user_data_point.data_points_balance < required_data_points:
             return ErrorResponse(message="You do not have enough data points to satisfy this request")
         task_type = serializer.validated_data.get('task_type')
+        annotation_method = serializer.validated_data.get('annotation_method')
         
         
         for task in tasks:
@@ -93,6 +131,7 @@ class TaskClusterCreateView(generics.GenericAPIView):
                 user=request.user,
                 group = cluster.project, #TODO: REMOVE THIS LATER,
                 task_type=cluster.task_type,
+                processing_status= 'REVIEW_NEEDED' if annotation_method == "manual" else "PENDING", #review_needed indicates that a human needs to review this task
                 **extra_kwargs
             )
         
@@ -100,12 +139,18 @@ class TaskClusterCreateView(generics.GenericAPIView):
             MultiChoiceOption.objects.acreate(cluster=cluster, option_text=choice.get('option_text'))
         
         user_data_point.deduct_data_points(required_data_points)
-        return SuccessResponse(message="Implementation in progress")
+        
+        if annotation_method == AnnotationMethodChoices.AI_AUTOMATED:
+            tasks = Task.objects.select_related("cluster").filter(cluster=cluster)
+            for task in tasks:
+                process_task.delay(task.id)
+        
+            return SuccessResponse(message="Cluster created successfully, tasks have been queued for AI annotation", data=TaskClusterDetailSerializer(cluster).data)
+        
+        return SuccessResponse(message="Cluster created successfully", data=TaskClusterDetailSerializer(cluster).data)
         
     
     
-
-
 class TaskCreateView(generics.CreateAPIView):
     serializer_class = TaskSerializer
     permission_classes = [IsAuthenticated | HasUserAPIKey]
@@ -239,6 +284,26 @@ class TasksNeedingReviewView(APIView):
         serializer = TaskSerializer(tasks, many=True)
         return Response(serializer.data)
 
+class AssignClusterToSelf(generics.GenericAPIView):
+    serializer_class = AcceptClusterIdSerializer
+    permission_classes = [IsAuthenticated, IsReviewer]
+    
+    @extend_schema(
+        summary="Add currently logged in use to assigned reviewers for a cluster"
+    )
+    def post(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        if not serializer.is_valid():
+            return ErrorResponse(message=format_first_error(serializer.errors))
+
+        cluster = serializer.validated_data.get("cluster")
+
+        if not cluster.assigned_reviewers.filter(id=request.user.id).exists():
+            cluster.assigned_reviewers.add(request.user)
+        else:
+            return ErrorResponse(message="You are already assigned to this cluster")
+
+        return SuccessResponse(message="Successfully added user to assigned reviewers")
 
 class AssignTaskToSelfView(APIView):
     """
@@ -947,8 +1012,6 @@ class TaskAnnotationView(APIView):
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
-
-
 class ClusterAnnotationProgressView(APIView):
     """
     View to get annotation progress for a specific cluster
@@ -1224,7 +1287,6 @@ class TaskLabelsView(APIView):
                 'status': 'error',
                 'detail': f'Failed to fetch task labels: {str(e)}'
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
 
 class ClusterLabelsSummaryView(APIView):
     """

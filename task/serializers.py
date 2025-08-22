@@ -2,13 +2,21 @@ import attr
 from rest_framework import serializers
 
 from account.models import Project
-from account.serializers import UserSerializer
+from account.serializers import SimpleUserSerializer, UserSerializer
 from subscription.models import UserDataPoints
-from task.choices import TaskInputTypeChoices, TaskTypeChoices
+from task.choices import AnnotationMethodChoices, TaskInputTypeChoices, TaskTypeChoices
 from task.utils import calculate_required_data_points
 from .models import MultiChoiceOption, Task, TaskClassificationChoices, TaskCluster
 
+class AcceptClusterIdSerializer(serializers.Serializer):
+    cluster = serializers.IntegerField()
 
+    def validate_cluster(self, value):
+        try:
+            cluster = TaskCluster.objects.get(id=value)
+            return cluster
+        except TaskCluster.DoesNotExist:
+            raise serializers.ValidationError("Cluster not found")
 class ProjectUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         fields = ["name", "description", "status"]
@@ -50,6 +58,7 @@ class MultiChoiceOptionSerializer(serializers.ModelSerializer):
         model = MultiChoiceOption
         fields = ['option_text']
 
+
 class TaskClusterCreateSerializer(serializers.ModelSerializer):
     tasks = TaskCreateSerializer(many=True)
     labelling_choices = MultiChoiceOptionSerializer(many=True, required=False)
@@ -57,10 +66,14 @@ class TaskClusterCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = TaskCluster
         fields = "__all__"
-        read_only_fields = ["assigned_reviewers"]
+        read_only_fields = ["assigned_reviewers", 'created_by']
 
     def validate(self, attrs):
         attrs = super().validate(attrs)
+        task_type = attrs.get('task_type')
+
+        if attrs.get('annotation_method') == AnnotationMethodChoices.AI_AUTOMATED and task_type != TaskTypeChoices.TEXT:
+            raise serializers.ValidationError("AI annotation is currently only supported for text-based tasks.")
 
         tasks_data = attrs.get("tasks", [])
         if len(tasks_data) == 0:
@@ -71,14 +84,17 @@ class TaskClusterCreateSerializer(serializers.ModelSerializer):
         if attrs.get('input_type') == TaskInputTypeChoices.MULTIPLE_CHOICE and len(labelling_choices) ==0:
             raise serializers.ValidationError(f"Must specify at least one labelling choice for a Multiple choice labelling input type")
 
-        task_type = attrs.get('task_type')
         total_required_dp = 0
         # loop through the tasks data that were created and ensure accuracy
         for data in tasks_data:
             file = data.get('file', None)
-            # dont allow upload of files for a task that is supposed to be a file
-            if file and task_type == TaskTypeChoices.TEXT:
-                raise serializers.ValidationError(f"File uploads are not allowed for tasks of type '{task_type}'.")
+            text_data = data.get('data', None)
+            
+            if task_type == TaskTypeChoices.TEXT and not text_data:
+                raise serializers.ValidationError("Must provide a text data for task of type TEXT")
+            
+            if task_type != TaskTypeChoices.TEXT and not file:
+                raise serializers.ValidationError(f"Must provide file data for task of type {task_type}")
             
             # ensure file type is supported
             # TODO: IF THE TASK TYPE IS IMAGE, ENSURE USERS CAN ONLY UPLOAD IMAGES, E.T.C
@@ -101,6 +117,14 @@ class TaskClusterCreateSerializer(serializers.ModelSerializer):
         return super().create(validated_data)
 
 
+
+class TaskClusterListSerializer(serializers.ModelSerializer):
+    """
+    Use this serializer to serialize a list of task clusters
+    """
+    class Meta:
+        fields ="__all__"
+        model = TaskCluster
 
 class TaskSerializer(serializers.ModelSerializer):
     ai_output = AIOutputSerializer(read_only=True)
@@ -141,6 +165,18 @@ class TaskSerializer(serializers.ModelSerializer):
         ]
         extra_kwargs = {"priority": {"default": "NORMAL"}}
 
+
+class TaskClusterDetailSerializer(serializers.ModelSerializer):
+    """
+    Use this serializer when you need to get the full details of a task cluster
+    
+    Warning: to avoid n+1 queries, do not use for task list
+    """
+    tasks = TaskSerializer(many=True, read_only=True)
+    assigned_reviewers = SimpleUserSerializer(many=True)
+    class Meta:
+        fields ="__all__"
+        model = TaskCluster
 
 class AssignedTaskSerializer(serializers.ModelSerializer):
     ai_output = AIOutputSerializer(read_only=True)

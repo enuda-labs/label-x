@@ -17,3 +17,9 @@ class TaskTypeChoices(models.TextChoices):
     AUDIO = "AUDIO", "Audio",
     CSV = 'CSV', 'Csv'
     MULTIMODAL = "MULTIMODAL", "Multimodal"
+
+
+class TaskClusterStatusChoices(models.TextChoices):
+    PENDING = 'pending', 'Pending' #review has not started for this cluster
+    IN_REVIEW = 'in_review', 'In review' #at least one reviewer has assigned themselves to this cluster
+    COMPLETED = "completed", 'Completed' 

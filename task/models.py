@@ -4,7 +4,7 @@ import random
 from account.models import CustomUser, Project, ProjectLog
 import uuid
 
-from task.choices import AnnotationMethodChoices, TaskInputTypeChoices, TaskTypeChoices
+from task.choices import AnnotationMethodChoices, TaskClusterStatusChoices, TaskInputTypeChoices, TaskTypeChoices
 
 
 def generate_serial_no():
@@ -36,7 +36,10 @@ class TaskCluster(models.Model):
     )
     task_type = models.CharField(choices=TaskTypeChoices.choices, max_length=25, default=TaskTypeChoices.TEXT)
     annotation_method = models.CharField(choices=AnnotationMethodChoices.choices, default=AnnotationMethodChoices.AI_AUTOMATED, max_length=20)
-    
+    created_by = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='created_clusters', help_text="User who created this cluster", null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    status = models.CharField(max_length=50, choices=TaskClusterStatusChoices.choices, default=TaskClusterStatusChoices.PENDING)
 
 class MultiChoiceOption(models.Model):
     cluster = models.ForeignKey(TaskCluster, on_delete=models.CASCADE)
