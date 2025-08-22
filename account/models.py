@@ -11,6 +11,7 @@ from cloudinary.models import CloudinaryField
 import cloudinary.uploader
 
 from account.choices import ProjectStatusChoices
+from task.choices import TaskInputTypeChoices
 
 
 class Project(models.Model):
@@ -21,6 +22,8 @@ class Project(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     status = models.CharField(max_length=20, choices=ProjectStatusChoices.choices, default=ProjectStatusChoices.PENDING)
+
+
     
     def create_log(self, message, task=None):
         return ProjectLog.objects.create(project=self, message=message, task=task)

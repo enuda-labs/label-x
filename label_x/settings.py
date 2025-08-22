@@ -91,6 +91,7 @@ INSTALLED_APPS = [
     "subscription",
     'cloudinary',
     'cloudinary_storage',
+    "datasets"
 ]
 
 MIDDLEWARE = [
@@ -327,6 +328,8 @@ CLOUDINARY_CLOUD_NAME=os.getenv("CLOUDINARY_CLOUD_NAME")
 CLOUDINARY_API_KEY=os.getenv("CLOUDINARY_API_KEY")
 CLOUDINARY_API_SECRET= os.getenv("CLOUDINARY_API_SECRET")
 
+
+CO_API_KEY= os.getenv("CO_API_KEY")
 
 CLOUDINARY_STORAGE = {
     'CLOUD_NAME': CLOUDINARY_CLOUD_NAME,

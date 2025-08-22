@@ -13,6 +13,22 @@ urlpatterns = [
     path('assigned-task', apis.AssignedTaskListView.as_view(), name="assigned_task"),
     path('submit-review', apis.TaskReviewView.as_view(), name="submit-review" ),
     path('review/complete/', apis.CompleteTaskReviewView.as_view(), name='complete-task-review'),
-    path('completion-stats/', apis.TaskCompletionStatsView.as_view(), name='task_completion_stats')
+    path('completion-stats/', apis.TaskCompletionStatsView.as_view(), name='task_completion_stats'),
+    path('cluster/', apis.TaskClusterCreateView.as_view(), name='task-cluster-create'),
+    path('my-assigned-clusters/', apis.MyAssignedClustersView.as_view(), name='my_assigned_clusters'),
+    
+    # Annotation endpoints
+    path('annotate/', apis.TaskAnnotationView.as_view(), name='task_annotation'),
+    path('cluster/<int:cluster_id>/progress/', apis.ClusterAnnotationProgressView.as_view(), name='cluster_progress'),
+    path('available-for-annotation/', apis.AvailableTasksForAnnotationView.as_view(), name='available_tasks'),
+    
+    # Label management endpoints
+    path('labels/<int:task_id>/', apis.TaskLabelsView.as_view(), name='task_labels'),
+    path('cluster/<int:cluster_id>/labels-summary/', apis.ClusterLabelsSummaryView.as_view(), name='cluster_labels_summary'),
+    path('cluster/assign-to-self/', apis.AssignClusterToSelf.as_view(), name='assign-cluster-to-self'),
+    path('cluster/user/list/', apis.CreatedClusterListView.as_view(), name='get-created-clusters'),
+    path('cluster/<int:id>/', apis.GetClusterDetailView.as_view(), name='get-cluster-details'),
+    path('cluster/available/', apis.GetAvailableClusters.as_view(), name='get-available-clusters')
+    
     # path('list/', apis.TaskListView.as_view(), name='list-tasks')
 ]

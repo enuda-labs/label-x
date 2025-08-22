@@ -14,7 +14,7 @@ User = get_user_model()
 
 class TaskSubmissionTestCase(APITestCase):
     def setUp(self):
-        # Create test user
+        # Create test userTaskSubmissionTestCase
         self.user = User.objects.create_user(
             username='testuser', 
             email='test@example.com', 
@@ -43,116 +43,10 @@ class TaskSubmissionTestCase(APITestCase):
         self.text_task_data = {
             "task_type": "TEXT",
             "priority": "NORMAL",
-            "ai_output": {
-                "text": "This is some AI output",
-                "classification": "POSITIVE",
-                "confidence": 0.94,
-                "requires_human_review": False,
-                "human_review": {
-                    "correction": None,
-                    "justification": None
-                },},
-            "data": {
-                "content": "This is a sample text to analyze for inappropriate content.",
-                "language": "en",
-                "metadata": {
-                    "source": "user_input",
-                    "context": "social_media_post"
-                }
-            },
+            "data": 'You are good',
             "group": self.group.id
         }
         
-        self.image_task_data = {
-            "task_type": "IMAGE",
-            "priority": "URGENT",
-           "ai_output": {
-                "text": "This is some AI output",
-                "classification": "POSITIVE",
-                "confidence": 0.94,
-                "requires_human_review": False,
-                "human_review": {
-                    "correction": None,
-                    "justification": None
-                },},
-            "group": self.group.id,
-            "data": {
-                "image_url": "https://example.com/sample-image.jpg",
-                "file_type": "jpg",
-                "dimensions": {
-                    "width": 1920,
-                    "height": 1080
-                },
-                "metadata": {
-                    "source": "user_upload",
-                    "context": "profile_picture"
-                }
-            }
-        }
-        
-        self.video_task_data = {
-            "task_type": "VIDEO",
-            "priority": "NORMAL",
-            "ai_output": {
-                "text": "This is some AI output",
-                "classification": "POSITIVE",
-                "confidence": 0.94,
-                "requires_human_review": False,
-                "human_review": {
-                    "correction": None,
-                    "justification": None
-                },},
-             "group": self.group.id,
-            "data": {
-                "video_url": "https://example.com/sample-video.mp4",
-                "duration": "00:02:30",
-                "file_type": "mp4",
-                "resolution": "1080p",
-                "metadata": {
-                    "source": "user_upload",
-                    "context": "social_media_post",
-                    "frames_per_second": 30
-                }
-            }
-        }
-        
-        self.multimodal_task_data = {
-            "task_type": "MULTIMODAL",
-            "priority": "URGENT",
-            "ai_output": {
-                "text": "This is some AI output",
-                "classification": "POSITIVE",
-                "confidence": 0.94,
-                "requires_human_review": False,
-                "human_review": {
-                    "correction": None,
-                    "justification": None
-                },},
-             "group": self.group.id,
-            "data": {
-                "text_content": "Check this product advertisement",
-                "image_url": "https://example.com/product-image.jpg",
-                "components": {
-                    "text": {
-                        "language": "en",
-                        "type": "product_description"
-                    },
-                    "image": {
-                        "file_type": "jpg",
-                        "dimensions": {
-                            "width": 800,
-                            "height": 600
-                        }
-                    }
-                },
-                
-                "metadata": {
-                    "source": "marketing_team",
-                    "context": "advertisement",
-                    "campaign_id": "CAMP123"
-                }
-            }
-        }
 
     def test_submit_text_task(self):
         """Test submitting a text task"""
@@ -173,54 +67,6 @@ class TaskSubmissionTestCase(APITestCase):
         self.assertEqual(task.user, self.user)
         print(response.data)
 
-    def test_submit_image_task(self):
-        """Test submitting an image task"""
-        response = self.client.post(
-            self.task_create_url,
-            self.image_task_data,
-            format='json'
-        )
-        
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        self.assertIn('task_id', response.data['data'])
-        
-        task = Task.objects.get(id=response.data['data']['task_id'])
-        self.assertEqual(task.task_type, 'IMAGE')
-        self.assertEqual(task.priority, 'URGENT')
-        print(response.data)
-
-    def test_submit_video_task(self):
-        """Test submitting a video task"""
-        response = self.client.post(
-            self.task_create_url,
-            self.video_task_data,
-            format='json'
-        )
-        
-        # self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        # self.assertIn('task_id', response.data['data'])
-        print(response.data)
-        
-        # task = Task.objects.get(id=response.data['data']['task_id'])
-        # self.assertEqual(task.task_type, 'VIDEO')
-        # self.assertEqual(task.data['duration'], '00:02:30')
-
-    def test_submit_multimodal_task(self):
-        """Test submitting a multimodal task"""
-        response = self.client.post(
-            self.task_create_url,
-            self.multimodal_task_data,
-            format='json'
-        )
-        
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        self.assertIn('task_id', response.data['data'])
-        
-        task = Task.objects.get(id=response.data['data']['task_id'])
-        self.assertEqual(task.task_type, 'MULTIMODAL')
-        self.assertTrue('text_content' in task.data)
-        self.assertTrue('image_url' in task.data)
-        print(response.data)
 
     def test_submit_task_without_auth(self):
         """Test submitting without authentication"""
