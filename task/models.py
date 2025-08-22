@@ -23,6 +23,15 @@ class TaskClassificationChoices(models.TextChoices):
 
 
 class TaskCluster(models.Model):
+    """
+    A TaskCluster represents a batch of related tasks that share common properties and are assigned to the same group of reviewers.
+    
+    TaskClusters serve as organizational units for grouping similar annotation tasks together. They allow for:
+    - Batch assignment of tasks to multiple reviewers
+    - Shared configuration across related tasks (input type, instructions, deadline)
+    - Support for both manual and AI-automated annotation methods
+    Each cluster can contain multiple tasks and can be assigned to multiple reviewers simultaneously.
+    """
     input_type = models.CharField(max_length=25, help_text="The type of input the labeller is to provide for the tasks in this cluster", choices=TaskInputTypeChoices.choices, default=TaskInputTypeChoices.TEXT)
     labeller_instructions = models.TextField(default="Default")
     deadline = models.DateField(null=True, blank=True)
@@ -41,7 +50,20 @@ class TaskCluster(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
     status = models.CharField(max_length=50, choices=TaskClusterStatusChoices.choices, default=TaskClusterStatusChoices.PENDING)
 
+
 class MultiChoiceOption(models.Model):
+    """
+    MultiChoiceOption represents predefined label choices for tasks within a cluster.
+    
+    This model is used when a cluster requires reviewers to select from a predefined set of labels
+    rather than creating custom labels. It's particularly useful for:
+    - Standardizing annotation responses across multiple reviewers
+    - Ensuring consistency in labeling for specific project requirements
+    - Supporting multiple-choice annotation workflows
+    - Maintaining quality control in annotation projects
+    
+    Each option is associated with a specific cluster and can be used by any task within that cluster.
+    """
     cluster = models.ForeignKey(TaskCluster, on_delete=models.CASCADE)
     option_text = models.CharField(max_length=100)
     
@@ -187,6 +209,19 @@ class Task(models.Model):
         super().save(*args, **kwargs)
 
 class TaskLabel(models.Model):
+    """
+    TaskLabel represents individual labels applied to tasks by human reviewers.
+    
+    This model enables a flexible labeling system where:
+    - Multiple labels can be applied to a single task
+    - Each label is tracked with its creator and timestamp
+    - Reviewers can add custom labels based on their analysis
+    - Labels are not restricted to predefined categories
+    - Full audit trail of who labeled what and when
+    
+    This model replaces the single classification approach used earlier with a more flexible,
+    multi-label system that better captures the complexity of real-world content.
+    """
     task = models.ForeignKey(Task, on_delete=models.CASCADE)
     label = models.CharField(max_length=255)
     labeller = models.ForeignKey(CustomUser, on_delete=models.CASCADE)
@@ -196,6 +231,12 @@ class TaskLabel(models.Model):
     
 
 class UserReviewChatHistory(models.Model):
+    """
+    Tracks the conversation history between human reviewers and AI models during task review.
+    
+    Stores reviewer feedback, corrections, and confidence scores for AI model improvement.
+    Each record represents one interaction in the review process.
+    """
     reviewer = models.ForeignKey(CustomUser, on_delete=models.CASCADE, null=True)
     ai_output = models.JSONField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
