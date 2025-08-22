@@ -3,6 +3,7 @@ from celery import shared_task
 from celery.utils.log import get_task_logger
 
 from account.models import CustomUser
+from datasets.models import CohereDataset
 from task.utils import push_realtime_update
 
 from .ai_processor import submit_human_review, text_classification
@@ -149,8 +150,13 @@ def process_with_ai_model(task_id):
                 task.ai_confidence = float(classification.get('confidence', classification.get('confidence_score', 0.0)))
                 task.save()
                 task.create_log(f"Task {task.id} successfully reviewed by AI status: COMPLETED")
+                
                 push_realtime_update(task, action="task_status_changed")
                 logger.info(f"Task {task_id} completed automatically")
+                
+                # cohere_dataset, created = CohereDataset.objects.get_or_create(task=task)
+                # cohere_dataset.upload_to_cohere()
+                
 
         return {"status": "success", "task_id": task.id}
     except Exception as e:

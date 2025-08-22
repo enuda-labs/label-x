@@ -33,7 +33,9 @@ urlpatterns = [
     path('api/v1/account/', include("account.urls")),
     path('api/v1/tasks/', include('task.urls')),
     path('api/v1/keys/', include('api_auth.urls')),
-    path('api/v1/subscription/', include('subscription.urls'))
+    path('api/v1/subscription/', include('subscription.urls')),
+    path("api/v1/datasets/", include('datasets.urls')),
+    
 ]
 
 

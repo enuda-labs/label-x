@@ -2,6 +2,9 @@ from django.db import models
 import string
 import random
 from account.models import CustomUser, Project, ProjectLog
+import uuid
+
+from task.choices import AnnotationMethodChoices, TaskClusterStatusChoices, TaskInputTypeChoices, TaskTypeChoices
 
 
 def generate_serial_no():
@@ -11,18 +14,65 @@ def generate_serial_no():
 
 
 class TaskClassificationChoices(models.TextChoices):
-    SAFE = 'Safe', 'Safe',
-    MILDLY_OFFENSIVE = 'Mildly Offensive', 'Mildly Offensive'
-    HIGHLY_OFFENSIVE = 'Highly Offensive', 'Highly Offensive'
-class Task(models.Model):
-    TASK_TYPES = (
-        ("TEXT", "Text"),
-        ("IMAGE", "Image"),
-        ("VIDEO", "Video"),
-        ("AUDIO", "Audio"),
-        ("MULTIMODAL", "Multimodal"),
+    SAFE = (
+        "Safe",
+        "Safe",
     )
+    MILDLY_OFFENSIVE = "Mildly Offensive", "Mildly Offensive"
+    HIGHLY_OFFENSIVE = "Highly Offensive", "Highly Offensive"
 
+
+class TaskCluster(models.Model):
+    """
+    A TaskCluster represents a batch of related tasks that share common properties and are assigned to the same group of reviewers.
+    
+    TaskClusters serve as organizational units for grouping similar annotation tasks together. They allow for:
+    - Batch assignment of tasks to multiple reviewers
+    - Shared configuration across related tasks (input type, instructions, deadline)
+    - Support for both manual and AI-automated annotation methods
+    Each cluster can contain multiple tasks and can be assigned to multiple reviewers simultaneously.
+    """
+    input_type = models.CharField(max_length=25, help_text="The type of input the labeller is to provide for the tasks in this cluster", choices=TaskInputTypeChoices.choices, default=TaskInputTypeChoices.TEXT)
+    labeller_instructions = models.TextField(default="Default")
+    deadline = models.DateField(null=True, blank=True)
+    labeller_per_item_count = models.IntegerField(default=100)
+    project = models.ForeignKey(Project, on_delete=models.CASCADE)
+    assigned_reviewers = models.ManyToManyField(
+        CustomUser,
+        related_name="assigned_clusters",
+        help_text="Users assigned to review the tasks in this cluster",
+        blank=True
+    )
+    task_type = models.CharField(choices=TaskTypeChoices.choices, max_length=25, default=TaskTypeChoices.TEXT)
+    annotation_method = models.CharField(choices=AnnotationMethodChoices.choices, default=AnnotationMethodChoices.AI_AUTOMATED, max_length=20)
+    created_by = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='created_clusters', help_text="User who created this cluster", null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    status = models.CharField(max_length=50, choices=TaskClusterStatusChoices.choices, default=TaskClusterStatusChoices.PENDING)
+
+
+class MultiChoiceOption(models.Model):
+    """
+    MultiChoiceOption represents predefined label choices for tasks within a cluster.
+    
+    This model is used when a cluster requires reviewers to select from a predefined set of labels
+    rather than creating custom labels. It's particularly useful for:
+    - Standardizing annotation responses across multiple reviewers
+    - Ensuring consistency in labeling for specific project requirements
+    - Supporting multiple-choice annotation workflows
+    - Maintaining quality control in annotation projects
+    
+    Each option is associated with a specific cluster and can be used by any task within that cluster.
+    """
+    cluster = models.ForeignKey(TaskCluster, on_delete=models.CASCADE)
+    option_text = models.CharField(max_length=100)
+    
+
+class Task(models.Model):
+    """
+    A task is a single object to be annotated, it can be a text, a single image, video, csv file, e.t.c
+    """
+   
     PRIORITY_LEVELS = (
         ("URGENT", "Urgent"),
         ("NORMAL", "Normal"),
@@ -53,11 +103,10 @@ class Task(models.Model):
     )
 
     task_type = models.CharField(
-        max_length=10, choices=TASK_TYPES, help_text="Type of content to be processed"
+        max_length=10, choices=TaskTypeChoices.choices, default=TaskTypeChoices.TEXT, help_text="Type of content to be processed"
     )
 
-    # JSON fields for data and labels
-    data = models.JSONField(help_text="Task data (text content, file URLs, etc.)")
+    data = models.TextField()
 
     predicted_label = models.JSONField(
         null=True, blank=True, help_text="AI-generated predictions"
@@ -66,8 +115,8 @@ class Task(models.Model):
     ai_output = models.JSONField(
         null=True, blank=True, help_text="The full json output of the ai model"
     )
-    
-    ai_confidence= models.FloatField(default=0.0)
+
+    ai_confidence = models.FloatField(default=0.0)
 
     final_label = models.JSONField(
         null=True, blank=True, help_text="Human-reviewed final label"
@@ -85,6 +134,7 @@ class Task(models.Model):
     human_reviewed = models.BooleanField(
         default=False, help_text="Indicates if a human has reviewed this task"
     )
+    
     priority = models.CharField(
         max_length=10,
         choices=PRIORITY_LEVELS,
@@ -99,6 +149,8 @@ class Task(models.Model):
         related_name="created_tasks",
         help_text="Group who created the task",
     )
+    
+    cluster = models.ForeignKey(TaskCluster, on_delete=models.CASCADE, related_name='tasks', null=True, blank=False)
 
     assigned_to = models.ForeignKey(
         CustomUser,
@@ -121,8 +173,15 @@ class Task(models.Model):
     # Timestamps
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-    used_data_points = models.IntegerField(default=0)
-
+    used_data_points = models.IntegerField(default=0, help_text="The amount of data points that was used during the submission of this task") 
+    
+    # this fields will have values if the task type is a file
+    file_name = models.CharField(max_length=100, null=True, blank=True)
+    file_type= models.CharField(max_length=10, null=True, blank=True)
+    file_url = models.URLField(help_text="The cdn link to the file", null=True, blank=True)
+    file_size_bytes = models.FloatField(null=True, blank=True)
+    file_size_bytes = models.FloatField(null=True, blank=True)
+    
     class Meta:
         ordering = ["-created_at"]
         indexes = [
@@ -134,8 +193,8 @@ class Task(models.Model):
 
     def __str__(self):
         return f"{self.serial_no} - {self.task_type}"
-    
-    def create_log(self, message:str):
+
+    def create_log(self, message: str):
         return ProjectLog.objects.create(project=self.group, message=message, task=self)
 
     def save(self, *args, **kwargs):
@@ -149,12 +208,42 @@ class Task(models.Model):
 
         super().save(*args, **kwargs)
 
+class TaskLabel(models.Model):
+    """
+    TaskLabel represents individual labels applied to tasks by human reviewers.
+    
+    This model enables a flexible labeling system where:
+    - Multiple labels can be applied to a single task
+    - Each label is tracked with its creator and timestamp
+    - Reviewers can add custom labels based on their analysis
+    - Labels are not restricted to predefined categories
+    - Full audit trail of who labeled what and when
+    
+    This model replaces the single classification approach used earlier with a more flexible,
+    multi-label system that better captures the complexity of real-world content.
+    """
+    task = models.ForeignKey(Task, on_delete=models.CASCADE)
+    label = models.CharField(max_length=255)
+    labeller = models.ForeignKey(CustomUser, on_delete=models.CASCADE)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    
+
 class UserReviewChatHistory(models.Model):
+    """
+    Tracks the conversation history between human reviewers and AI models during task review.
+    
+    Stores reviewer feedback, corrections, and confidence scores for AI model improvement.
+    Each record represents one interaction in the review process.
+    """
     reviewer = models.ForeignKey(CustomUser, on_delete=models.CASCADE, null=True)
     ai_output = models.JSONField(null=True, blank=True)
-    created_at =models.DateTimeField(auto_now_add=True)
+    created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     task = models.ForeignKey(Task, on_delete=models.CASCADE)
     human_confidence_score = models.FloatField()
     human_justification = models.TextField()
-    human_classification = models.CharField(max_length=25, choices=TaskClassificationChoices.choices)
+    human_classification = models.CharField(
+        max_length=25, choices=TaskClassificationChoices.choices
+    )
