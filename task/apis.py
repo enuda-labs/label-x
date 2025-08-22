@@ -183,7 +183,7 @@ class TaskCreateView(generics.CreateAPIView):
 
             
             try:
-                task_cluster = TaskCluster.objects.create() #create a cluster which will contain this single task
+                task_cluster = TaskCluster.objects.create(project=serializer.validated_data.get('group')) #create a cluster which will contain this single task
                 
                 task = serializer.save(user=request.user, used_data_points=required_dp, cluster=task_cluster)
                 logger.info(f"User '{request.user.username}' created new task {task.id} (Serial: {task.serial_no}) at {datetime.now()}")
