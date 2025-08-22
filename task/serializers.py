@@ -41,7 +41,7 @@ class TaskClusterCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = TaskCluster
         fields = "__all__"
-        read_only_fields = ["assigned_to"]
+        read_only_fields = ["assigned_reviewers"]
 
     def validate(self, attrs):
         attrs = super().validate(attrs)

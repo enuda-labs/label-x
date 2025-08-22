@@ -28,13 +28,11 @@ class TaskCluster(models.Model):
     deadline = models.DateField(null=True, blank=True)
     labeller_per_item_count = models.IntegerField(default=100)
     project = models.ForeignKey(Project, on_delete=models.CASCADE)
-    assigned_to = models.ForeignKey(
+    assigned_reviewers = models.ManyToManyField(
         CustomUser,
-        null=True,
-        blank=True,
-        on_delete=models.SET_NULL,
         related_name="assigned_clusters",
-        help_text="User assigned to review the tasks in this cluster",
+        help_text="Users assigned to review the tasks in this cluster",
+        blank=True
     )
     task_type = models.CharField(choices=TaskTypeChoices.choices, max_length=25, default=TaskTypeChoices.TEXT)
     annotation_method = models.CharField(choices=AnnotationMethodChoices.choices, default=AnnotationMethodChoices.AI_AUTOMATED, max_length=20)
@@ -80,7 +78,7 @@ class Task(models.Model):
     )
 
     # JSON fields for data and labels
-    data = models.JSONField(help_text="Task data (text content, file URLs, etc.)")
+    data = models.TextField()
 
     predicted_label = models.JSONField(
         null=True, blank=True, help_text="AI-generated predictions"
@@ -153,6 +151,7 @@ class Task(models.Model):
     file_name = models.CharField(max_length=100, null=True, blank=True)
     file_type= models.CharField(max_length=10, null=True, blank=True)
     file_url = models.URLField(help_text="The cdn link to the file", null=True, blank=True)
+    file_size_bytes = models.FloatField(null=True, blank=True)
     
     class Meta:
         ordering = ["-created_at"]
@@ -180,6 +179,14 @@ class Task(models.Model):
 
         super().save(*args, **kwargs)
 
+class TaskLabel(models.Model):
+    task = models.ForeignKey(Task, on_delete=models.CASCADE)
+    label = models.CharField(max_length=255)
+    labeller = models.ForeignKey(CustomUser, on_delete=models.CASCADE)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    
 
 class UserReviewChatHistory(models.Model):
     reviewer = models.ForeignKey(CustomUser, on_delete=models.CASCADE, null=True)

@@ -14,6 +14,17 @@ urlpatterns = [
     path('submit-review', apis.TaskReviewView.as_view(), name="submit-review" ),
     path('review/complete/', apis.CompleteTaskReviewView.as_view(), name='complete-task-review'),
     path('completion-stats/', apis.TaskCompletionStatsView.as_view(), name='task_completion_stats'),
-    path('cluster/', apis.TaskClusterCreateView.as_view(), name='task-cluster-create')
+    path('cluster/', apis.TaskClusterCreateView.as_view(), name='task-cluster-create'),
+    path('my-assigned-clusters/', apis.MyAssignedClustersView.as_view(), name='my_assigned_clusters'),
+    
+    # Annotation endpoints
+    path('annotate/', apis.TaskAnnotationView.as_view(), name='task_annotation'),
+    path('cluster/<int:cluster_id>/progress/', apis.ClusterAnnotationProgressView.as_view(), name='cluster_progress'),
+    path('available-for-annotation/', apis.AvailableTasksForAnnotationView.as_view(), name='available_tasks'),
+    
+    # Label management endpoints
+    path('labels/<int:task_id>/', apis.TaskLabelsView.as_view(), name='task_labels'),
+    path('cluster/<int:cluster_id>/labels-summary/', apis.ClusterLabelsSummaryView.as_view(), name='cluster_labels_summary'),
+    
     # path('list/', apis.TaskListView.as_view(), name='list-tasks')
 ]

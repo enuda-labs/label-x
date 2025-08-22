@@ -7,13 +7,14 @@ from rest_framework.permissions import IsAuthenticated, AllowAny
 import logging
 from datetime import datetime
 from rest_framework.views import APIView
+from django.utils import timezone
 
 from account.choices import ProjectStatusChoices
 from account.models import Project
 from common.responses import ErrorResponse, SuccessResponse, format_first_error
 from subscription.models import UserDataPoints, UserSubscription
 from task.utils import calculate_required_data_points, dispatch_task_message, push_realtime_update
-from .models import Task, TaskCluster, UserReviewChatHistory
+from .models import Task, TaskCluster, UserReviewChatHistory, TaskLabel
 from .serializers import AssignedTaskSerializer, FullTaskSerializer, TaskClusterCreateSerializer, TaskIdSerializer, TaskSerializer, TaskStatusSerializer, TaskReviewSerializer, AssignTaskSerializer
 from .tasks import process_task, provide_feedback_to_ai_model
 from rest_framework_api_key.permissions import HasAPIKey
@@ -23,7 +24,7 @@ from rest_framework.parsers import MultiPartParser, FormParser
 # import custom permissions
 from account.utils import HasUserAPIKey, IsReviewer
 from django.db.models import Q
-
+# from task.choices import TaskClassificationChoices
 
 
 logger = logging.getLogger('task.apis')
@@ -40,8 +41,13 @@ class TaskListView(generics.ListAPIView):
     queryset = Task.objects.all()
     
     def get_queryset(self):
-        my_projects = Project.objects.filter(reviewers=self.request.user)
-        tasks_list = Task.objects.filter(group__in=my_projects, assigned_to=None, processing_status="REVIEW_NEEDED")
+        # Get tasks from clusters where the current user is assigned as a reviewer
+        tasks_list = Task.objects.filter(
+            cluster__assigned_reviewers=self.request.user,
+            assigned_to=None,
+            processing_status="REVIEW_NEEDED"
+        ).select_related('cluster', 'group')
+        
         logger.info(f"User '{self.request.user.username}' fetched {tasks_list.count()} available tasks at {datetime.now()}")
         return tasks_list
 
@@ -183,7 +189,13 @@ class TasksNeedingReviewView(APIView):
             logger.warning(f"Unauthorized access attempt to review tasks by user '{request.user.username}' at {datetime.now()}")
             return Response({"detail": "Not authorized."}, status=status.HTTP_403_FORBIDDEN)
         
-        tasks = Task.objects.filter(processing_status='REVIEW_NEEDED', group=request.user.project, assigned_to=None)
+        # Get tasks where user is assigned to review the cluster and task needs review
+        tasks = Task.objects.filter(
+            processing_status='REVIEW_NEEDED',
+            cluster__assigned_reviewers=request.user,
+            assigned_to=None
+        ).select_related('cluster', 'group')
+        
         logger.info(f"Reviewer '{request.user.username}' fetched {tasks.count()} tasks needing review at {datetime.now()}")
         serializer = TaskSerializer(tasks, many=True)
         return Response(serializer.data)
@@ -262,6 +274,14 @@ class AssignTaskToSelfView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
+        # Check if user is assigned to review this cluster
+        if not task.cluster or request.user not in task.cluster.assigned_reviewers.all():
+            logger.warning(f"Unauthorized reviewer '{request.user.username}' attempted to assign task {task_id} at {datetime.now()}")
+            return Response(
+                {"status": "error", "detail": "You are not assigned to review this task cluster."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
         if task.assigned_to:
             logger.warning(f"Reviewer '{request.user.username}' attempted to assign already assigned task {task_id} at {datetime.now()}")
             return Response(
@@ -320,9 +340,11 @@ class MyPendingReviewTasks(APIView):
     )
 
     def get(self, request):
-        tasks = Task.objects.select_related('assigned_to', 'group').filter(
+        # Get tasks assigned to the current user for review
+        tasks = Task.objects.select_related('assigned_to', 'group', 'cluster').filter(
             assigned_to=request.user,
-            review_status='PENDING_REVIEW')
+            review_status='PENDING_REVIEW'
+        )
        
         serializer = TaskSerializer(tasks, many=True)
         return Response(serializer.data)
@@ -453,7 +475,7 @@ class TaskStatusView(APIView):
         logger.info(f"User '{request.user.username}' checking status for task identifier: {identifier} at {datetime.now()}")
         
         try:
-            tasks_qs = Task.objects.select_related('user', 'assigned_to')
+            tasks_qs = Task.objects.select_related('user', 'assigned_to', 'group', 'cluster')
             
             if identifier.isdigit():
                 task = tasks_qs.get(id=identifier, user=request.user)
@@ -473,6 +495,8 @@ class TaskStatusView(APIView):
                     "ai_output": task.ai_output,
                     'submitted_by': task.user.username if task.user else None,
                     'assigned_to': task.assigned_to.username if task.assigned_to else None,
+                    'cluster_id': task.cluster.id if task.cluster else None,
+                    'cluster_reviewers': [user.username for user in task.cluster.assigned_reviewers.all()] if task.cluster else [],
                     'created_at': task.created_at,
                     'updated_at': task.updated_at
                 }
@@ -494,7 +518,7 @@ class UserTaskListView(generics.ListAPIView):
     def get_queryset(self):
         logger.info(f"User '{self.request.user.username}' fetching their task list at {datetime.now()}")
         return (Task.objects
-                .select_related('user', 'assigned_to')
+                .select_related('user', 'assigned_to', 'group', 'cluster')
                 .filter(user=self.request.user)
                 .order_by('-created_at'))
         
@@ -544,7 +568,7 @@ class AssignedTaskListView(generics.ListAPIView):
     def get_queryset(self):
         logger.info(f"User '{self.request.user.username}' fetching their assigned tasks at {datetime.now()}")
         return (Task.objects
-                .select_related('assigned_to')
+                .select_related('assigned_to', 'group', 'cluster')
                 .filter(assigned_to=self.request.user)
                 .order_by('-created_at'))
 
@@ -584,7 +608,6 @@ class TaskCompletionStatsView(APIView):
             user_tasks = Task.objects.filter(user=request.user)
             user_projects = Project.objects.filter(created_by=request.user)
             
-            
             # Get total tasks count for the logged-in user
             total_tasks = user_tasks.count()
             
@@ -593,6 +616,9 @@ class TaskCompletionStatsView(APIView):
                 user=request.user,
                 processing_status="COMPLETED"
             ).count()
+            
+            # Get clusters where user is assigned as reviewer
+            assigned_clusters = TaskCluster.objects.filter(assigned_reviewers=request.user).count()
             
             # Calculate percentage
             completion_percentage = (completed_tasks / total_tasks * 100) if total_tasks > 0 else 0
@@ -605,8 +631,8 @@ class TaskCompletionStatsView(APIView):
                     "total_tasks": total_tasks,
                     "completed_tasks": completed_tasks,
                     "completion_percentage": round(completion_percentage, 2),
-                    "pending_projects": user_projects.filter(Q(status=ProjectStatusChoices.PENDING) | Q(status=ProjectStatusChoices.IN_PROGRESS)).count()
-                    
+                    "pending_projects": user_projects.filter(Q(status=ProjectStatusChoices.PENDING) | Q(status=ProjectStatusChoices.IN_PROGRESS)).count(),
+                    "assigned_clusters": assigned_clusters
                 }
             }, status=status.HTTP_200_OK)
             
@@ -615,4 +641,649 @@ class TaskCompletionStatsView(APIView):
             return Response({
                 "status": "error",
                 "message": "Failed to calculate task completion statistics"
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+class MyAssignedClustersView(APIView):
+    """
+    View to list all clusters assigned to the authenticated user for review
+    """
+    permission_classes = [IsAuthenticated]
+    
+    @extend_schema(
+        summary="List clusters assigned to the authenticated user",
+        description="Retrieve a list of all task clusters currently assigned to the authenticated user for review.",
+        responses={
+            200: OpenApiResponse(
+                response=None,
+                description="List of assigned clusters",
+                examples=[
+                    OpenApiExample(
+                        "Successful Response Example",
+                        value={
+                            "status": "success",
+                            "data": [
+                                {
+                                    "id": 1,
+                                    "input_type": "text",
+                                    "task_type": "TEXT",
+                                    "annotation_method": "manual",
+                                    "project": 4,
+                                    "deadline": "2025-08-29",
+                                    "labeller_per_item_count": 100,
+                                    "labeller_instructions": "Review the text content",
+                                    "tasks_count": 5
+                                }
+                            ]
+                        },
+                        response_only=True
+                    )
+                ]
+            )
+        }
+    )
+    
+    def get(self, request):
+        try:
+            # Get clusters assigned to the current user
+            assigned_clusters = TaskCluster.objects.filter(
+                assigned_reviewers=request.user
+            ).select_related('project').prefetch_related('tasks')
+            
+            # Prepare response data
+            clusters_data = []
+            for cluster in assigned_clusters:
+                clusters_data.append({
+                    'id': cluster.id,
+                    'input_type': cluster.input_type,
+                    'task_type': cluster.task_type,
+                    'annotation_method': cluster.annotation_method,
+                    'project': cluster.project.id,
+                    'project_name': cluster.project.name,
+                    'deadline': cluster.deadline,
+                    'labeller_per_item_count': cluster.labeller_per_item_count,
+                    'labeller_instructions': cluster.labeller_instructions,
+                    'tasks_count': cluster.tasks.count(),
+                    'pending_tasks': cluster.tasks.filter(processing_status='REVIEW_NEEDED', assigned_to=None).count()
+                })
+            
+            logger.info(f"User '{request.user.username}' fetched {len(clusters_data)} assigned clusters at {datetime.now()}")
+            
+            return Response({
+                "status": "success",
+                "data": clusters_data
+            }, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            logger.error(f"Error fetching assigned clusters for user '{request.user.username}': {str(e)}", exc_info=True)
+            return Response({
+                "status": "error",
+                "message": "Failed to fetch assigned clusters"
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class TaskAnnotationView(APIView):
+    """
+    View for submitting multiple labels on individual tasks using the TaskLabel model
+    """
+    permission_classes = [IsAuthenticated, IsReviewer]
+    
+    @extend_schema(
+        summary="Submit task labels",
+        description="Submit multiple labels for a specific task. Reviewers can add as many labels as needed.",
+        request={
+            'application/json': {
+                'type': 'object',
+                'properties': {
+                    'task_id': {'type': 'integer', 'description': 'ID of the task to label'},
+                    'labels': {
+                        'type': 'array',
+                        'items': {
+                            'type': 'string',
+                            'description': 'Individual label text'
+                        },
+                        'description': 'Array of labels to add to the task'
+                    },
+                   
+                },
+                'required': ['task_id', 'labels']
+            }
+        },
+        responses={
+            200: OpenApiResponse(
+                response=None,
+                description="Task labels submitted successfully",
+                examples=[
+                    OpenApiExample(
+                        "Successful Labeling",
+                        value={
+                            "status": "success",
+                            "message": "Task labels submitted successfully",
+                            "data": {
+                                "task_id": 123,
+                                "serial_no": "T12345",
+                                "labels_added": 3,
+                                "total_labels": 5,
+                                "processing_status": "COMPLETED"
+                            }
+                        },
+                        response_only=True
+                    )
+                ]
+            ),
+            400: OpenApiResponse(
+                response=None,
+                description="Invalid label data or task not available",
+                examples=[
+                    OpenApiExample(
+                        "Task Not Available",
+                        value={
+                            "status": "error",
+                            "detail": "Task is not available for labeling"
+                        },
+                        response_only=True
+                    )
+                ]
+            )
+        }
+    )
+    
+    def post(self, request):
+        try:
+            task_id = request.data.get('task_id')
+            labels = request.data.get('labels', [])
+            
+            
+            # Validate required fields
+            if not task_id:
+                return Response({
+                    'status': 'error',
+                    'detail': 'Missing required field: task_id'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            if not labels or not isinstance(labels, list):
+                return Response({
+                    'status': 'error',
+                    'detail': 'Labels must be a non-empty array'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            if len(labels) == 0:
+                return Response({
+                    'status': 'error',
+                    'detail': 'At least one label must be provided'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Get the task
+            task = get_object_or_404(Task, id=task_id)
+            
+            # Check if user is assigned to review this cluster
+            if not task.cluster or request.user not in task.cluster.assigned_reviewers.all():
+                return Response({
+                    'status': 'error',
+                    'detail': 'You are not assigned to review this task cluster'
+                }, status=status.HTTP_403_FORBIDDEN)
+            
+            # Check if task is available for annotation
+            if task.processing_status not in ['REVIEW_NEEDED', 'ASSIGNED_REVIEWER']:
+                return Response({
+                    'status': 'error',
+                    'detail': 'Task is not available for labeling'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Check if task is already assigned to someone else
+            if TaskLabel.objects.filter(task=task, labeller=request.user).exists():
+                return Response({
+                    'status': 'error',
+                    'detail': 'You have already labeled this task'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+
+            # Create TaskLabel instances for each label
+            created_labels = []
+            for label_text in labels:
+                if label_text and label_text.strip():  # Skip empty labels
+                    task_label = TaskLabel.objects.create(
+                        task=task,
+                        label=label_text.strip(),
+                        labeller=request.user
+                    )
+                    created_labels.append(task_label)
+            
+            # Create annotation history for tracking
+            # annotation = UserReviewChatHistory.objects.create(
+            #     reviewer=request.user,
+            #     task=task,
+            #     human_classification="Multiple Labels",  # Since we're using TaskLabel model now
+            #     human_confidence_score=confidence_score,
+            #     human_justification=justification,
+            #     ai_output={
+            #         'human_review': {
+            #             'labels_added': [label.label for label in created_labels],
+            #             'confidence': confidence_score,
+            #             'justification': justification,
+            #             'additional_metadata': additional_metadata,
+            #             'labeling_method': 'TaskLabel'
+            #         }
+            #     }
+            # )
+            
+            # Update task with final label information and mark as reviewed
+            # task.final_label = {
+            #     'labels': [label.label for label in created_labels],
+            #     'confidence': confidence_score,
+            #     'justification': justification,
+            #     'additional_metadata': additional_metadata,
+            #     'reviewed_by': request.user.username,
+            #     'reviewed_at': timezone.now().isoformat(),
+            #     'labeling_method': 'TaskLabel'
+            # }
+            task.human_reviewed = True
+            # task.processing_status = 'COMPLETED'
+            # task.review_status = 'COMPLETED'
+            task.save()
+            
+            # Send real-time update
+            push_realtime_update(task, action='task_labels_completed')
+            
+            logger.info(f"Reviewer '{request.user.username}' submitted {len(created_labels)} labels for task {task.serial_no} at {datetime.now()}")
+            
+            return Response({
+                'status': 'success',
+                'message': 'Task labels submitted successfully',
+                'data': {
+                    'task_id': task.id,
+                    'serial_no': task.serial_no,
+                    'labels_added': len(created_labels),
+                    'total_labels': TaskLabel.objects.filter(task=task).count(),
+                    'processing_status': task.processing_status,
+                    # 'final_label': task.final_label,
+                    'labels': [label.label for label in created_labels]
+                }
+            }, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            logger.error(f"Error submitting task labels: {str(e)}", exc_info=True)
+            return Response({
+                'status': 'error',
+                'detail': f'Failed to submit labels: {str(e)}'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+
+
+class ClusterAnnotationProgressView(APIView):
+    """
+    View to get annotation progress for a specific cluster
+    """
+    permission_classes = [IsAuthenticated, IsReviewer]
+    
+    @extend_schema(
+        summary="Get cluster annotation progress",
+        description="Retrieve annotation progress and statistics for a specific cluster.",
+        responses={
+            200: OpenApiResponse(
+                response=None,
+                description="Cluster annotation progress",
+                examples=[
+                    OpenApiExample(
+                        "Successful Response",
+                        value={
+                            "status": "success",
+                            "data": {
+                                "cluster_id": 1,
+                                "total_tasks": 100,
+                                "completed_tasks": 75,
+                                "pending_tasks": 25,
+                                "completion_percentage": 75.0,
+                                "assigned_reviewers": ["user1", "user2"],
+                                "deadline": "2025-08-29",
+                                "labeller_instructions": "Review text content for offensive language"
+                            }
+                        },
+                        response_only=True
+                    )
+                ]
+            )
+        }
+    )
+    
+    def get(self, request, cluster_id):
+        try:
+            # Get the cluster
+            cluster = get_object_or_404(TaskCluster, id=cluster_id)
+            
+            # Check if user is assigned to review this cluster
+            if request.user not in cluster.assigned_reviewers.all():
+                return Response({
+                    'status': 'error',
+                    'detail': 'You are not assigned to review this cluster'
+                }, status=status.HTTP_403_FORBIDDEN)
+            
+            # Get task statistics
+            total_tasks = cluster.tasks.count()
+            completed_tasks = cluster.tasks.filter(processing_status='COMPLETED').count()
+            pending_tasks = cluster.tasks.filter(processing_status__in=['REVIEW_NEEDED', 'ASSIGNED_REVIEWER']).count()
+            completion_percentage = (completed_tasks / total_tasks * 100) if total_tasks > 0 else 0
+            
+            # Get reviewer information
+            assigned_reviewers = [user.username for user in cluster.assigned_reviewers.all()]
+            
+            logger.info(f"User '{request.user.username}' fetched annotation progress for cluster {cluster_id} at {datetime.now()}")
+            
+            return Response({
+                'status': 'success',
+                'data': {
+                    'cluster_id': cluster.id,
+                    'total_tasks': total_tasks,
+                    'completed_tasks': completed_tasks,
+                    'pending_tasks': pending_tasks,
+                    'completion_percentage': round(completion_percentage, 2),
+                    'assigned_reviewers': assigned_reviewers,
+                    'deadline': cluster.deadline,
+                    'labeller_instructions': cluster.labeller_instructions,
+                    'input_type': cluster.input_type,
+                    'task_type': cluster.task_type,
+                    'annotation_method': cluster.annotation_method
+                }
+            }, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            logger.error(f"Error fetching cluster annotation progress: {str(e)}", exc_info=True)
+            return Response({
+                'status': 'error',
+                'detail': f'Failed to fetch cluster progress: {str(e)}'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class AvailableTasksForAnnotationView(APIView):
+    """
+    View to get available tasks for annotation from user's assigned clusters
+    """
+    permission_classes = [IsAuthenticated, IsReviewer]
+    
+    @extend_schema(
+        summary="Get available tasks for annotation",
+        description="Retrieve tasks that are available for annotation from clusters assigned to the current user.",
+        responses={
+            200: OpenApiResponse(
+                response=None,
+                description="Available tasks for annotation",
+                examples=[
+                    OpenApiExample(
+                        "Successful Response",
+                        value={
+                            "status": "success",
+                            "data": {
+                                "available_tasks": [
+                                    {
+                                        "id": 123,
+                                        "serial_no": "T12345",
+                                        "task_type": "TEXT",
+                                        "data": {"text": "Sample text to review"},
+                                        "cluster_id": 1,
+                                        "cluster_name": "Text Review Batch 1",
+                                        "priority": "NORMAL"
+                                    }
+                                ],
+                                "total_available": 25,
+                                "assigned_clusters": 3
+                            }
+                        },
+                        response_only=True
+                    )
+                ]
+            )
+        }
+    )
+    
+    def get(self, request):
+        try:
+            # Get tasks available for annotation from user's assigned clusters
+            available_tasks = Task.objects.filter(
+                cluster__assigned_reviewers=request.user,
+                processing_status__in=['REVIEW_NEEDED', 'ASSIGNED_REVIEWER'],
+                assigned_to__isnull=True
+            ).select_related('cluster', 'group').order_by('priority', 'created_at')
+            
+            # Prepare response data
+            tasks_data = []
+            for task in available_tasks:
+                tasks_data.append({
+                    'id': task.id,
+                    'serial_no': task.serial_no,
+                    'task_type': task.task_type,
+                    'data': task.data,
+                    'cluster_id': task.cluster.id,
+                    'cluster_name': f"{task.cluster.task_type} Review Batch {task.cluster.id}",
+                    'priority': task.priority,
+                    'created_at': task.created_at,
+                    'ai_confidence': task.ai_confidence,
+                    'predicted_label': task.predicted_label
+                })
+            
+            # Get cluster count
+            assigned_clusters = TaskCluster.objects.filter(assigned_reviewers=request.user).count()
+            
+            logger.info(f"User '{request.user.username}' fetched {len(tasks_data)} available tasks for annotation at {datetime.now()}")
+            
+            return Response({
+                'status': 'success',
+                'data': {
+                    'available_tasks': tasks_data,
+                    'total_available': len(tasks_data),
+                    'assigned_clusters': assigned_clusters
+                }
+            }, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            logger.error(f"Error fetching available tasks for annotation: {str(e)}", exc_info=True)
+            return Response({
+                'status': 'error',
+                'detail': f'Failed to fetch available tasks: {str(e)}'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class TaskLabelsView(APIView):
+    """
+    View to retrieve all labels for a specific task
+    """
+    permission_classes = [IsAuthenticated]
+    
+    @extend_schema(
+        summary="Get task labels",
+        description="Retrieve all labels associated with a specific task.",
+        responses={
+            200: OpenApiResponse(
+                response=None,
+                description="Task labels retrieved successfully",
+                examples=[
+                    OpenApiExample(
+                        "Successful Response",
+                        value={
+                            "status": "success",
+                            "data": {
+                                "task_id": 123,
+                                "serial_no": "T12345",
+                                "labels": [
+                                    {
+                                        "id": 1,
+                                        "label": "positive",
+                                        "labeller": "user1",
+                                        "created_at": "2025-01-15T10:30:00Z"
+                                    },
+                                    {
+                                        "id": 2,
+                                        "label": "technology",
+                                        "labeller": "user2",
+                                        "created_at": "2025-01-15T11:00:00Z"
+                                    }
+                                ],
+                                "total_labels": 2,
+                                "unique_labellers": 2
+                            }
+                        },
+                        response_only=True
+                    )
+                ]
+            )
+        }
+    )
+    
+    def get(self, request, task_id):
+        try:
+            # Get the task
+            task = get_object_or_404(Task, id=task_id)
+            
+            # Check if user has access to this task
+            # Users can view labels if they created the task, are assigned to review it, or are assigned to the cluster
+            has_access = (
+                task.user == request.user or
+                task.assigned_to == request.user or
+                (task.cluster and request.user in task.cluster.assigned_reviewers.all())
+            )
+            
+            if not has_access:
+                return Response({
+                    'status': 'error',
+                    'detail': 'You do not have access to view this task'
+                }, status=status.HTTP_403_FORBIDDEN)
+            
+            # Get all labels for the task
+            task_labels = TaskLabel.objects.filter(task=task).select_related('labeller').order_by('created_at')
+            
+            # Prepare response data
+            labels_data = []
+            labeller_set = set()
+            
+            for task_label in task_labels:
+                labels_data.append({
+                    'id': task_label.id,
+                    'label': task_label.label,
+                    'labeller': task_label.labeller.username,
+                    'labeller_id': task_label.labeller.id,
+                    'created_at': task_label.created_at,
+                    'updated_at': task_label.updated_at
+                })
+                labeller_set.add(task_label.labeller.username)
+            
+            logger.info(f"User '{request.user.username}' fetched {len(labels_data)} labels for task {task.serial_no} at {datetime.now()}")
+            
+            return Response({
+                'status': 'success',
+                'data': {
+                    'task_id': task.id,
+                    'serial_no': task.serial_no,
+                    'labels': labels_data,
+                    'total_labels': len(labels_data),
+                    'unique_labellers': len(labeller_set),
+                    'labellers': list(labeller_set)
+                }
+            }, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            logger.error(f"Error fetching task labels: {str(e)}", exc_info=True)
+            return Response({
+                'status': 'error',
+                'detail': f'Failed to fetch task labels: {str(e)}'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class ClusterLabelsSummaryView(APIView):
+    """
+    View to get a summary of all labels across tasks in a cluster
+    """
+    permission_classes = [IsAuthenticated, IsReviewer]
+    
+    @extend_schema(
+        summary="Get cluster labels summary",
+        description="Retrieve a summary of all labels across tasks in a cluster.",
+        responses={
+            200: OpenApiResponse(
+                response=None,
+                description="Cluster labels summary",
+                examples=[
+                    OpenApiExample(
+                        "Successful Response",
+                        value={
+                            "status": "success",
+                            "data": {
+                                "cluster_id": 1,
+                                "total_tasks": 10,
+                                "labeled_tasks": 8,
+                                "total_labels": 25,
+                                "unique_labels": 15,
+                                "label_frequency": {
+                                    "positive": 8,
+                                    "negative": 5,
+                                    "technology": 12
+                                },
+                                "labeller_contributions": {
+                                    "user1": 12,
+                                    "user2": 13
+                                }
+                            }
+                        },
+                        response_only=True
+                    )
+                ]
+            )
+        }
+    )
+    
+    def get(self, request, cluster_id):
+        try:
+            # Get the cluster
+            cluster = get_object_or_404(TaskCluster, id=cluster_id)
+            
+            # Check if user is assigned to review this cluster
+            if request.user not in cluster.assigned_reviewers.all():
+                return Response({
+                    'status': 'error',
+                    'detail': 'You are not assigned to review this cluster'
+                }, status=status.HTTP_403_FORBIDDEN)
+            
+            # Get all tasks in the cluster
+            cluster_tasks = cluster.tasks.all()
+            total_tasks = cluster_tasks.count()
+            labeled_tasks = cluster_tasks.filter(tasklabel__isnull=False).distinct().count()
+            
+            # Get all labels for the cluster
+            cluster_labels = TaskLabel.objects.filter(task__cluster=cluster).select_related('labeller')
+            total_labels = cluster_labels.count()
+            
+            # Calculate label frequency
+            label_frequency = {}
+            labeller_contributions = {}
+            
+            for task_label in cluster_labels:
+                # Count label frequency
+                label_text = task_label.label
+                label_frequency[label_text] = label_frequency.get(label_text, 0) + 1
+                
+                # Count labeller contributions
+                labeller_name = task_label.labeller.username
+                labeller_contributions[labeller_name] = labeller_contributions.get(labeller_name, 0) + 1
+            
+            # Get unique labels count
+            unique_labels = len(label_frequency)
+            
+            logger.info(f"User '{request.user.username}' fetched labels summary for cluster {cluster_id} at {datetime.now()}")
+            
+            return Response({
+                'status': 'success',
+                'data': {
+                    'cluster_id': cluster.id,
+                    'total_tasks': total_tasks,
+                    'labeled_tasks': labeled_tasks,
+                    'total_labels': total_labels,
+                    'unique_labels': unique_labels,
+                    'label_frequency': label_frequency,
+                    'labeller_contributions': labeller_contributions
+                }
+            }, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            logger.error(f"Error fetching cluster labels summary: {str(e)}", exc_info=True)
+            return Response({
+                'status': 'error',
+                'detail': f'Failed to fetch cluster labels summary: {str(e)}'
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
