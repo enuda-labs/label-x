@@ -77,6 +77,27 @@ def assign_reviewer(task):
     return True
 
 def calculate_required_data_points(task_type, text_data=None, file_size_bytes=None)->int:
+    """
+    Calculate the number of data points required to process a task based on its type and content.
+    
+    This function determines the cost (in data points) for processing different types of tasks.
+    Data points are consumed based on the complexity and resource requirements of each task type.
+    
+    Args:
+        task_type (str): The type of task (TEXT, AUDIO, IMAGE, VIDEO, etc.)
+        text_data (str, optional): The text content for text-based tasks
+        file_size_bytes (int, optional): File size in bytes for file-based tasks
+    
+    Returns:
+        int: Number of data points required to process the task
+        
+    Logic:
+        - TEXT tasks: Cost varies based on text length (4-10 points for short texts, 0.035 per character for long texts)
+        - AUDIO tasks: Fixed cost of 90 points
+        - IMAGE tasks: Fixed cost of 70 points  
+        - VIDEO tasks: Fixed cost of 200 points
+        - Default: 20 points for unhandled task types
+    """
     
     if task_type == 'TEXT' and text_data:
         text_length = len(text_data)
