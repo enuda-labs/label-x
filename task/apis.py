@@ -31,6 +31,18 @@ from django.db.models import Q
 
 logger = logging.getLogger('task.apis')
 
+class GetProjectClusters(generics.ListAPIView):
+    serializer_class = TaskClusterListSerializer
+    def get_queryset(self):
+        return TaskCluster.objects.filter()
+    
+    def get(self, request, *args, **kwargs):
+        try:
+            Project.objects.get(id=kwargs.get('project_id'))
+        except Project.DoesNotExist:
+            return ErrorResponse(message="Project not found")
+        return super().get(request, *args, **kwargs)
+
 class GetPendingClusters(generics.GenericAPIView):
     
     @extend_schema(
@@ -132,6 +144,7 @@ class TaskClusterCreateView(generics.GenericAPIView):
         required_data_points = serializer.validated_data.get('required_data_points')
         labelling_choices = serializer.validated_data.get('labelling_choices', [])
         
+                
         cluster= serializer.save(created_by=request.user)
         
         user_data_point, created = UserDataPoints.objects.get_or_create(user=request.user)
@@ -165,7 +178,7 @@ class TaskClusterCreateView(generics.GenericAPIView):
             )
         
         for choice in labelling_choices:
-            MultiChoiceOption.objects.acreate(cluster=cluster, option_text=choice.get('option_text'))
+            MultiChoiceOption.objects.create(cluster=cluster, option_text=choice.get('option_text'))
         
         user_data_point.deduct_data_points(required_data_points)
         
