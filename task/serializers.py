@@ -148,6 +148,7 @@ class TaskClusterCreateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("AI annotation is currently only supported for text-based tasks.")
 
         tasks_data = attrs.get("tasks", [])
+        print("the tasks data", tasks_data)
         if len(tasks_data) == 0:
             raise serializers.ValidationError("Cannot create an empty cluster")
         
@@ -174,7 +175,7 @@ class TaskClusterCreateSerializer(serializers.ModelSerializer):
             if file and file.get('file_type') not in accepted_file_types:
                 raise serializers.ValidationError(f"Unsupported file type for file `{file.get('file_name')}`")
             
-            required_data_points = calculate_required_data_points(task_type, text_data=data.get('data'), file_size_bytes=file.get('file_size_bytes'))
+            required_data_points = calculate_required_data_points(task_type, text_data=data.get('data'), file_size_bytes=file.get('file_size_bytes') if file else None)
             total_required_dp += required_data_points
         
 
