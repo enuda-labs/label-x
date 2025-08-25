@@ -13,9 +13,9 @@ from account.choices import ProjectStatusChoices
 from account.models import Project
 from common.responses import ErrorResponse, SuccessResponse, format_first_error
 from subscription.models import UserDataPoints, UserSubscription
-from task.choices import AnnotationMethodChoices, TaskClusterStatusChoices
+from task.choices import AnnotationMethodChoices, ManualReviewSessionStatusChoices, TaskClusterStatusChoices
 from task.utils import calculate_required_data_points, dispatch_task_message, push_realtime_update
-from .models import MultiChoiceOption, Task, TaskCluster, UserReviewChatHistory, TaskLabel
+from .models import ManualReviewSession, MultiChoiceOption, Task, TaskCluster, UserReviewChatHistory, TaskLabel
 from .serializers import AcceptClusterIdSerializer, AssignedTaskSerializer, FullTaskSerializer, TaskClusterCreateSerializer, TaskClusterDetailSerializer, TaskClusterListSerializer, TaskIdSerializer, TaskSerializer, TaskStatusSerializer, TaskReviewSerializer, AssignTaskSerializer
 from .tasks import process_task, provide_feedback_to_ai_model
 from rest_framework_api_key.permissions import HasAPIKey
@@ -31,6 +31,35 @@ from django.db.models import Q
 
 logger = logging.getLogger('task.apis')
 
+class GetPendingClusters(generics.GenericAPIView):
+    
+    @extend_schema(
+        summary="Get pending clusters",
+        description="Retrieve the list of clusters that this user is currently reviewing, but where they have not yet completed labeling all tasks within the cluster."
+    )
+    def get(self, request):
+        review_session_clusters = ManualReviewSession.objects.filter(labeller=request.user, status=ManualReviewSessionStatusChoices.STARTED).values_list('cluster_id', flat=True)
+        clusters = TaskCluster.objects.filter(id__in=review_session_clusters)
+        return SuccessResponse(message="Pending clusters", data=TaskClusterListSerializer(clusters, many=True).data)
+
+class UserClusterAnnotatedTasksView(generics.GenericAPIView):
+    
+    @extend_schema(
+        summary="Get the tasks the currently logged in user has annotated in a particular cluster"
+    )
+    def get(self, request, *args, **kwargs):
+        cluster_id = kwargs.get('cluster_id')
+        
+        try:
+            cluster = TaskCluster.objects.get(id=cluster_id)
+        except TaskCluster.DoesNotExist:
+            return ErrorResponse(message="Cluster not found", status=status.HTTP_404_NOT_FOUND)
+        
+        user_labelled_tasks_ids = TaskLabel.objects.filter(task__cluster=cluster, labeller=request.user).values_list('task__id', flat=True)
+        user_labelled_tasks = Task.objects.filter(id__in=user_labelled_tasks_ids)
+        
+        
+        return SuccessResponse(message="", data=TaskSerializer(user_labelled_tasks, many=True).data)
 
 class TaskListView(generics.ListAPIView):
     """
@@ -827,7 +856,7 @@ class MyAssignedClustersView(APIView):
 
 class TaskAnnotationView(APIView):
     """
-    View for submitting multiple labels on individual tasks using the TaskLabel model
+    View for submitting labels on individual tasks
     """
     permission_classes = [IsAuthenticated, IsReviewer]
     
@@ -951,6 +980,18 @@ class TaskAnnotationView(APIView):
                         labeller=request.user
                     )
                     created_labels.append(task_label)
+            
+            
+            review_session, created = ManualReviewSession.objects.get_or_create(labeller=request.user, cluster=task.cluster)
+            task_ids = task.cluster.tasks.values_list("id", flat=True) #get the ids of all the tasks in a cluster
+            
+            labelled_tasks_ids = TaskLabel.objects.filter(task_id__in=task_ids, labeller=request.user).values_list("task_id", flat=True).distinct()  #get the ids of all the tasks the currently logged in user has labelled in this cluster
+            
+            session_complete= set(task_ids) == set(labelled_tasks_ids)
+            
+            if session_complete:
+                review_session.status = ManualReviewSessionStatusChoices.COMPLETED
+                review_session.save()
             
             # Create annotation history for tracking
             # annotation = UserReviewChatHistory.objects.create(
