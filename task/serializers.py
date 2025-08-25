@@ -119,7 +119,7 @@ class TaskClusterCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = TaskCluster
         fields = "__all__"
-        read_only_fields = ["assigned_reviewers", 'created_by']
+        read_only_fields = ["assigned_reviewers", 'created_by', 'status']
 
     def validate(self, attrs):
         """
@@ -199,6 +199,11 @@ class TaskClusterCreateSerializer(serializers.ModelSerializer):
         validated_data.pop('required_data_points')
         validated_data.pop("labelling_choices")
         return super().create(validated_data)
+    
+class MultipleChoicesSerializer(serializers.ModelSerializer):
+    class Meta:
+        fields = "__all__"
+        model = MultiChoiceOption
 
 class TaskClusterListSerializer(serializers.ModelSerializer):
     """
@@ -207,9 +212,11 @@ class TaskClusterListSerializer(serializers.ModelSerializer):
     Provides essential cluster information for list views.
     Optimized for performance in list operations.
     """
+    choices = MultipleChoicesSerializer(many=True)
     class Meta:
         fields ="__all__"
         model = TaskCluster
+    
 
 class TaskSerializer(serializers.ModelSerializer):
     """
@@ -273,6 +280,7 @@ class TaskClusterDetailSerializer(serializers.ModelSerializer):
     """
     tasks = TaskSerializer(many=True, read_only=True)
     assigned_reviewers = SimpleUserSerializer(many=True)
+    choices = MultipleChoicesSerializer(many=True)
     class Meta:
         fields ="__all__"
         model = TaskCluster

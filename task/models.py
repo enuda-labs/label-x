@@ -64,7 +64,7 @@ class MultiChoiceOption(models.Model):
     
     Each option is associated with a specific cluster and can be used by any task within that cluster.
     """
-    cluster = models.ForeignKey(TaskCluster, on_delete=models.CASCADE)
+    cluster = models.ForeignKey(TaskCluster, on_delete=models.CASCADE, related_name="choices")
     option_text = models.CharField(max_length=100)
     
 
