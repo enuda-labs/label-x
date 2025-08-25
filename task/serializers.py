@@ -239,6 +239,10 @@ class TaskSerializer(serializers.ModelSerializer):
             "priority",
             "group",
             "used_data_points",
+            "file_name",
+            "file_type",
+            "file_url",
+            "file_size_bytes"
         ]
         read_only_fields = [
             "id",
@@ -253,6 +257,10 @@ class TaskSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
             "used_data_points",
+            "file_name",
+            "file_type",
+            "file_url",
+            "file_size_bytes"
         ]
         extra_kwargs = {"priority": {"default": "NORMAL"}}
 
