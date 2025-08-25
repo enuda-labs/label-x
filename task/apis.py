@@ -16,7 +16,7 @@ from subscription.models import UserDataPoints, UserSubscription
 from task.choices import AnnotationMethodChoices, ManualReviewSessionStatusChoices, TaskClusterStatusChoices
 from task.utils import calculate_required_data_points, dispatch_task_message, push_realtime_update
 from .models import ManualReviewSession, MultiChoiceOption, Task, TaskCluster, UserReviewChatHistory, TaskLabel
-from .serializers import AcceptClusterIdSerializer, AssignedTaskSerializer, FullTaskSerializer, TaskClusterCreateSerializer, TaskClusterDetailSerializer, TaskClusterListSerializer, TaskIdSerializer, TaskSerializer, TaskStatusSerializer, TaskReviewSerializer, AssignTaskSerializer
+from .serializers import AcceptClusterIdSerializer, AssignedTaskSerializer, FullTaskSerializer, MultiChoiceOptionSerializer, TaskClusterCreateSerializer, TaskClusterDetailSerializer, TaskClusterListSerializer, TaskIdSerializer, TaskSerializer, TaskStatusSerializer, TaskReviewSerializer, AssignTaskSerializer
 from .tasks import process_task, provide_feedback_to_ai_model
 from rest_framework_api_key.permissions import HasAPIKey
 from rest_framework.parsers import MultiPartParser, FormParser
@@ -849,7 +849,8 @@ class MyAssignedClustersView(APIView):
                     'labeller_per_item_count': cluster.labeller_per_item_count,
                     'labeller_instructions': cluster.labeller_instructions,
                     'tasks_count': cluster.tasks.count(),
-                    'pending_tasks': cluster.tasks.filter(processing_status='REVIEW_NEEDED', assigned_to=None).count()
+                    'pending_tasks': cluster.tasks.filter(processing_status='REVIEW_NEEDED', assigned_to=None).count(),
+                    "choices": MultiChoiceOptionSerializer(MultiChoiceOption.objects.filter(cluster=cluster), many=True).data
                 })
             
             logger.info(f"User '{request.user.username}' fetched {len(clusters_data)} assigned clusters at {datetime.now()}")
