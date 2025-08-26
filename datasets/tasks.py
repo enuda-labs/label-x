@@ -21,7 +21,7 @@ def upload_to_cohere_async(cohere_dataset_id):
         
         temp_file_path= None
         json_data = cohere_dataset.get_json_data()
-        print('the json data', json_dat```      a)
+        print('the json data', json_data)
         with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False, encoding='utf-8') as f:
             for data in json_data:
                 f.write(json.dumps(data, ensure_ascii=False) + "\n")
@@ -41,10 +41,7 @@ def upload_to_cohere_async(cohere_dataset_id):
         completed_dataset = co.wait(dataset)
         
         upload_status=  completed_dataset.dataset.validation_status
-        if upload_status == 'validated':
-            
-            print(completed_dataset.dataset.validation_status)
-            
+        if upload_status == 'validated':            
             cohere_dataset.dataset_id = dataset.id
             cohere_dataset.status = CohereStatusChoices.UPLOAD_STARTED
             cohere_dataset.uploaded_at = timezone.now()
