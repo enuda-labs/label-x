@@ -48,6 +48,7 @@ celery_app.conf.task_routes = {
     'task.tasks.queue_task_for_processing': {'queue': 'default'},
     'task.tasks.provide_feedback_to_ai_model': {'queue': 'default'},
     'task.tasks.submit_human_review_history': {'queue': 'default'},
+    'datasets.tasks.upload_to_cohere_async': {'queue': 'default'},
 }
 
 CELERY_TASK_QUEUES = {
