@@ -227,7 +227,7 @@ class TaskLabel(models.Model):
     labeller = models.ForeignKey(CustomUser, on_delete=models.CASCADE)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-    
+    notes = models.TextField(null=True)
 
 class ManualReviewSession(models.Model):
     """
