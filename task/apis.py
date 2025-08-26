@@ -890,7 +890,10 @@ class TaskAnnotationView(APIView):
                         },
                         'description': 'Array of labels to add to the task'
                     },
-                   
+                    'notes': {
+                        'type': 'string',
+                        'description': 'Any notes or comments the reviewer has'
+                    },
                 },
                 'required': ['task_id', 'labels']
             }
@@ -938,6 +941,7 @@ class TaskAnnotationView(APIView):
         try:
             task_id = request.data.get('task_id')
             labels = request.data.get('labels', [])
+            notes = request.data.get('notes', None)
             
             
             # Validate required fields
@@ -991,7 +995,8 @@ class TaskAnnotationView(APIView):
                     task_label = TaskLabel.objects.create(
                         task=task,
                         label=label_text.strip(),
-                        labeller=request.user
+                        labeller=request.user,
+                        notes = notes
                     )
                     created_labels.append(task_label)
             
