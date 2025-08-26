@@ -21,6 +21,7 @@ def upload_to_cohere_async(cohere_dataset_id):
         
         temp_file_path= None
         json_data = cohere_dataset.get_json_data()
+        print('the json data', json_dat```      a)
         with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False, encoding='utf-8') as f:
             for data in json_data:
                 f.write(json.dumps(data, ensure_ascii=False) + "\n")
@@ -38,14 +39,20 @@ def upload_to_cohere_async(cohere_dataset_id):
         
         # wait for cohere to complete validation on this dataset
         completed_dataset = co.wait(dataset)
-        print(completed_dataset.dataset.validation_status)
         
-        cohere_dataset.dataset_id = dataset.id
-        cohere_dataset.status = CohereStatusChoices.UPLOAD_STARTED
-        cohere_dataset.uploaded_at = timezone.now()
-        cohere_dataset.save(update_fields=['dataset_id', 'status', 'uploaded_at'])
+        upload_status=  completed_dataset.dataset.validation_status
+        if upload_status == 'validated':
+            
+            print(completed_dataset.dataset.validation_status)
+            
+            cohere_dataset.dataset_id = dataset.id
+            cohere_dataset.status = CohereStatusChoices.UPLOAD_STARTED
+            cohere_dataset.uploaded_at = timezone.now()
+            cohere_dataset.save(update_fields=['dataset_id', 'status', 'uploaded_at'])
         
     except CohereDataset.DoesNotExist:
         print('could not find cohere dataset') #TODO: log this
     except Exception as e:
-        print('An error occurred')
+        cohere_dataset.status = CohereStatusChoices.FAILED
+        cohere_dataset.save(update_fields=['status'])
+        print(f'An error occurred, {e}')

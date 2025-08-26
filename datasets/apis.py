@@ -18,14 +18,15 @@ co = cohere.Client(api_key=settings.CO_API_KEY)
 class UploadClusterDatasetView(generics.GenericAPIView):
     def post(self, request, *args, **kwargs):
         cluster_id = kwargs.get('cluster_id')
+        print(cluster_id)
         
         try:
-            cluster= TaskCluster.objects.filter(id=cluster_id)
+            cluster= TaskCluster.objects.get(id=cluster_id)
         except TaskCluster.DoesNotExist:
             return ErrorResponse(message="Cluster not found", status=status.HTTP_404_NOT_FOUND)
         
         cohere_dataset, created =  CohereDataset.objects.get_or_create(cluster=cluster)
-        upload_to_cohere_async.delay(cohere_dataset)
+        upload_to_cohere_async.delay(cohere_dataset.id)
         return SuccessResponse(message="Upload to cohere queued successfully")
 
 class DeleteCohereDataset(generics.DestroyAPIView):

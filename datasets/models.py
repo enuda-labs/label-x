@@ -30,10 +30,8 @@ class CohereDataset(models.Model):
             if task.final_label:
                 labels.append(str(task.final_label))
                 
-            if task.task_type == TaskTypeChoices.TEXT:
-                data= [{"text": str(task.file_url), "labels": labels}]
-            else:
-                data = [{"file_url": str(task.file_url), "labels": labels}]
+            data= {"text": str(task.file_url), "labels": labels}
+
             parsed_data.append(data)
         
         return parsed_data
