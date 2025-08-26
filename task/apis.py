@@ -34,7 +34,7 @@ logger = logging.getLogger('task.apis')
 class GetProjectClusters(generics.ListAPIView):
     serializer_class = TaskClusterListSerializer
     def get_queryset(self):
-        return TaskCluster.objects.filter()
+        return TaskCluster.objects.filter(project=self.kwargs.get('project_id'))
     
     def get(self, request, *args, **kwargs):
         try:
