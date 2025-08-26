@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Task, TaskCluster, TaskLabel, UserReviewChatHistory
+from .models import ManualReviewSession, MultiChoiceOption, Task, TaskCluster, TaskLabel, UserReviewChatHistory
 
 @admin.register(TaskCluster)
 class TaskClusterAdmin(admin.ModelAdmin):
@@ -24,3 +24,5 @@ class UserReviewChatHistoryAdmin(admin.ModelAdmin):
     readonly_fields = ['created_at', 'updated_at']
 
 admin.site.register(TaskLabel)
+admin.site.register(MultiChoiceOption)
+admin.site.register(ManualReviewSession)

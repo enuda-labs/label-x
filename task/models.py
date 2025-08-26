@@ -4,7 +4,7 @@ import random
 from account.models import CustomUser, Project, ProjectLog
 import uuid
 
-from task.choices import AnnotationMethodChoices, TaskClusterStatusChoices, TaskInputTypeChoices, TaskTypeChoices
+from task.choices import AnnotationMethodChoices, ManualReviewSessionStatusChoices, TaskClusterStatusChoices, TaskInputTypeChoices, TaskTypeChoices
 
 
 def generate_serial_no():
@@ -64,7 +64,7 @@ class MultiChoiceOption(models.Model):
     
     Each option is associated with a specific cluster and can be used by any task within that cluster.
     """
-    cluster = models.ForeignKey(TaskCluster, on_delete=models.CASCADE)
+    cluster = models.ForeignKey(TaskCluster, on_delete=models.CASCADE, related_name="choices")
     option_text = models.CharField(max_length=100)
     
 
@@ -227,9 +227,17 @@ class TaskLabel(models.Model):
     labeller = models.ForeignKey(CustomUser, on_delete=models.CASCADE)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-    
-    
+    notes = models.TextField(null=True)
 
+class ManualReviewSession(models.Model):
+    """
+    This model is used to track the progress of a human reviewer on the tasks in a task cluster
+    """
+    labeller = models.ForeignKey(CustomUser, on_delete=models.CASCADE)
+    cluster = models.ForeignKey(TaskCluster, on_delete=models.CASCADE)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    status = models.CharField(max_length=50, choices=ManualReviewSessionStatusChoices.choices, default=ManualReviewSessionStatusChoices.STARTED)
 class UserReviewChatHistory(models.Model):
     """
     Tracks the conversation history between human reviewers and AI models during task review.

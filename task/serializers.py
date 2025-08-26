@@ -119,7 +119,7 @@ class TaskClusterCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = TaskCluster
         fields = "__all__"
-        read_only_fields = ["assigned_reviewers", 'created_by']
+        read_only_fields = ["assigned_reviewers", 'created_by', 'status']
 
     def validate(self, attrs):
         """
@@ -148,6 +148,7 @@ class TaskClusterCreateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("AI annotation is currently only supported for text-based tasks.")
 
         tasks_data = attrs.get("tasks", [])
+        print("the tasks data", tasks_data)
         if len(tasks_data) == 0:
             raise serializers.ValidationError("Cannot create an empty cluster")
         
@@ -170,11 +171,11 @@ class TaskClusterCreateSerializer(serializers.ModelSerializer):
             
             # ensure file type is supported
             # TODO: IF THE TASK TYPE IS IMAGE, ENSURE USERS CAN ONLY UPLOAD IMAGES, E.T.C
-            accepted_file_types = ['csv', 'jpg', 'jpeg', 'png']
-            if file and file.get('file_type') not in accepted_file_types:
-                raise serializers.ValidationError(f"Unsupported file type for file `{file.get('file_name')}`")
+            # accepted_file_types = ['csv', 'jpg', 'jpeg', 'png']
+            # if file and file.get('file_type') not in accepted_file_types:
+            #     raise serializers.ValidationError(f"Unsupported file type for file `{file.get('file_name')}`")
             
-            required_data_points = calculate_required_data_points(task_type, text_data=data.get('data'), file_size_bytes=file.get('file_size_bytes'))
+            required_data_points = calculate_required_data_points(task_type, text_data=data.get('data'), file_size_bytes=file.get('file_size_bytes') if file else None)
             total_required_dp += required_data_points
         
 
@@ -199,6 +200,11 @@ class TaskClusterCreateSerializer(serializers.ModelSerializer):
         validated_data.pop('required_data_points')
         validated_data.pop("labelling_choices")
         return super().create(validated_data)
+    
+class MultipleChoicesSerializer(serializers.ModelSerializer):
+    class Meta:
+        fields = "__all__"
+        model = MultiChoiceOption
 
 class TaskClusterListSerializer(serializers.ModelSerializer):
     """
@@ -207,9 +213,11 @@ class TaskClusterListSerializer(serializers.ModelSerializer):
     Provides essential cluster information for list views.
     Optimized for performance in list operations.
     """
+    choices = MultipleChoicesSerializer(many=True)
     class Meta:
         fields ="__all__"
         model = TaskCluster
+    
 
 class TaskSerializer(serializers.ModelSerializer):
     """
@@ -239,6 +247,10 @@ class TaskSerializer(serializers.ModelSerializer):
             "priority",
             "group",
             "used_data_points",
+            "file_name",
+            "file_type",
+            "file_url",
+            "file_size_bytes"
         ]
         read_only_fields = [
             "id",
@@ -253,6 +265,10 @@ class TaskSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
             "used_data_points",
+            "file_name",
+            "file_type",
+            "file_url",
+            "file_size_bytes"
         ]
         extra_kwargs = {"priority": {"default": "NORMAL"}}
 
@@ -265,6 +281,7 @@ class TaskClusterDetailSerializer(serializers.ModelSerializer):
     """
     tasks = TaskSerializer(many=True, read_only=True)
     assigned_reviewers = SimpleUserSerializer(many=True)
+    choices = MultipleChoicesSerializer(many=True)
     class Meta:
         fields ="__all__"
         model = TaskCluster
