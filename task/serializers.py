@@ -171,9 +171,9 @@ class TaskClusterCreateSerializer(serializers.ModelSerializer):
             
             # ensure file type is supported
             # TODO: IF THE TASK TYPE IS IMAGE, ENSURE USERS CAN ONLY UPLOAD IMAGES, E.T.C
-            accepted_file_types = ['csv', 'jpg', 'jpeg', 'png']
-            if file and file.get('file_type') not in accepted_file_types:
-                raise serializers.ValidationError(f"Unsupported file type for file `{file.get('file_name')}`")
+            # accepted_file_types = ['csv', 'jpg', 'jpeg', 'png']
+            # if file and file.get('file_type') not in accepted_file_types:
+            #     raise serializers.ValidationError(f"Unsupported file type for file `{file.get('file_name')}`")
             
             required_data_points = calculate_required_data_points(task_type, text_data=data.get('data'), file_size_bytes=file.get('file_size_bytes') if file else None)
             total_required_dp += required_data_points
