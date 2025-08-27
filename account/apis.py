@@ -17,7 +17,7 @@ from common.utils import get_duration
 from subscription.models import UserDataPoints
 from subscription.serializers import UserDataPointsSerializer
 from task.models import Task
-from task.serializers import ProjectUpdateSerializer, TaskSerializer
+from task.serializers import ListReviewersWithClustersSerializer, ProjectUpdateSerializer, TaskSerializer
 
 from .utils import IsAdminUser, IsSuperAdmin, assign_default_plan
 from .serializers import (
@@ -55,11 +55,26 @@ from django.contrib.auth import logout
 # Set up logger
 logger = logging.getLogger('account.apis')
 from .choices import ProjectStatusChoices
-from django.utils import timezone
 from datetime import datetime
 from django.db.models.functions import TruncDate
 from django.db.models import Sum, Count, Q, Avg 
 from drf_spectacular.openapi import OpenApiTypes
+
+
+
+
+
+class GetReviewersListView(generics.ListAPIView):
+    permission_classes = [IsAuthenticated, IsAdminUser]
+    serializer_class = ListReviewersWithClustersSerializer
+    def get_queryset(self):
+        return CustomUser.objects.prefetch_related("assigned_clusters").filter(is_reviewer=True)
+    
+    @extend_schema(
+        summary="Get a list of reviewers on the platform and task clusters they are assigned to"
+    )
+    def get(self, request, *args, **kwargs):
+        return super().get(request, *args, **kwargs)
 
 
 class GetProjectChart(generics.GenericAPIView):
