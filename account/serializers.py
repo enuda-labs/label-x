@@ -1,5 +1,4 @@
 import re
-from httpx import request
 from rest_framework import serializers
 from django.contrib.auth import authenticate
 
@@ -7,6 +6,7 @@ from subscription.models import UserDataPoints, UserSubscription
 from subscription.serializers import UserDataPointsSerializer, UserSubscriptionSerializer, UserSubscriptionSimpleSerializer
 from task.models import Task
 from django.db.models import Sum
+
 
 from .models import CustomUser, OTPVerification, Project, ProjectLog
 
@@ -310,7 +310,10 @@ class SimpleUserSerializer(serializers.ModelSerializer):
             "id",
             "username",
             "email",
+            "is_active"
         ]
+
+
 
 
 # Set of Serializers to use for api doc example and documentation

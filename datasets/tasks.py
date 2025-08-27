@@ -40,7 +40,7 @@ def upload_to_cohere_async(cohere_dataset_id):
         # wait for cohere to complete validation on this dataset
         completed_dataset = co.wait(dataset)
         
-        upload_status=  completed_dataset.dataset.validation_status
+        upload_status = completed_dataset.dataset.validation_status
         if upload_status == 'validated':            
             cohere_dataset.dataset_id = dataset.id
             cohere_dataset.status = CohereStatusChoices.UPLOAD_STARTED
