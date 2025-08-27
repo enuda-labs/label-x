@@ -1,7 +1,7 @@
 import attr
 from rest_framework import serializers
 
-from account.models import Project
+from account.models import CustomUser, Project
 from account.serializers import SimpleUserSerializer, UserSerializer
 from subscription.models import UserDataPoints
 from task.choices import AnnotationMethodChoices, TaskInputTypeChoices, TaskTypeChoices
@@ -217,6 +217,19 @@ class TaskClusterListSerializer(serializers.ModelSerializer):
     class Meta:
         fields ="__all__"
         model = TaskCluster
+
+
+class ListReviewersWithClustersSerializer(serializers.ModelSerializer):
+    assigned_clusters = TaskClusterListSerializer(many=True, read_only=True)
+    class Meta:
+        model = CustomUser
+        fields = [
+            "id",
+            "username",
+            "email",
+            "is_active",
+            "assigned_clusters"
+        ]
     
 
 class TaskSerializer(serializers.ModelSerializer):
