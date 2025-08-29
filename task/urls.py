@@ -31,7 +31,10 @@ urlpatterns = [
     path('cluster/available/', apis.GetAvailableClusters.as_view(), name='get-available-clusters'),
     path('cluster/<int:cluster_id>/tasks/user-annotated/', apis.UserClusterAnnotatedTasksView.as_view(), name='user-cluster-annotated-tasks'),
     path('cluster/user/pending/', apis.GetPendingClusters.as_view(), name='get-pending-clusters'),
-    path('project/<int:project_id>/clusters/', apis.GetProjectClusters.as_view(), name='get-project-clusters')
+    path('project/<int:project_id>/clusters/', apis.GetProjectClusters.as_view(), name='get-project-clusters'),
+    path('cluster/<int:cluster_id>/reviewers/', apis.GetClusterReviewers.as_view(), name='get-cluster-reviewers'),
+    path('cluster/<int:cluster_id>/assign-reviewers/', apis.AssignReviewersToCluster.as_view(), name='assign-reviewers-to-cluster'),
+    path('cluster/<int:cluster_id>/remove-reviewers/', apis.RemoveReviewersFromCluster.as_view(), name='remove-reviewers-from-cluster'),
     
     # path('list/', apis.TaskListView.as_view(), name='list-tasks')
 ]

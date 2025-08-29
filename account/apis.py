@@ -21,6 +21,7 @@ from task.serializers import ListReviewersWithClustersSerializer, ProjectUpdateS
 
 from .utils import IsAdminUser, IsSuperAdmin, assign_default_plan
 from .serializers import (
+    AdminProjectDetailSerializer,
     Disable2faSerializer,
     LoginSerializer,
     LogoutSerializer,
@@ -61,7 +62,24 @@ from django.db.models import Sum, Count, Q, Avg
 from drf_spectacular.openapi import OpenApiTypes
 
 
-
+class DeactivateUserView(generics.GenericAPIView):
+    permission_classes = [IsAuthenticated, IsAdminUser]
+    @extend_schema(
+        summary="Deactivate a user",
+        description="Deactivate a user, this will prevent the user from logging in to the platform",
+        responses={
+            200: SuccessResponse,
+            404: ErrorResponse
+        }
+    )
+    def post(self, request, *args, **kwargs):
+        try:
+            user = CustomUser.objects.get(id=kwargs.get('user_id'))
+            user.is_active = False
+            user.save()
+            return SuccessResponse(message="User deactivated")       
+        except CustomUser.DoesNotExist:
+            return ErrorResponse(message="User not found", status=status.HTTP_404_NOT_FOUND)
 
 
 class GetReviewersListView(generics.ListAPIView):
@@ -205,6 +223,24 @@ class GetUserDataPointsView(generics.GenericAPIView):
     def get(self, request):
         user_data_points, created = UserDataPoints.objects.get_or_create(user=request.user)
         return SuccessResponse(data=self.get_serializer(user_data_points).data)
+    
+
+class AdminProjectDetailView(generics.RetrieveAPIView):
+    serializer_class = AdminProjectDetailSerializer
+    permission_classes = [IsAdminUser]
+    lookup_field = 'id'
+    def get_queryset(self):
+        return Project.objects.all()
+    
+    @extend_schema(
+        summary="Get the details of a project tailored for admins",
+        description="Get the details of a project for an admin",
+        responses={
+            200: AdminProjectDetailSerializer,
+        }
+    )
+    def get(self, request, *args, **kwargs):
+        return super().get(request, *args, **kwargs)
 
 class ProjectDetailView(generics.RetrieveAPIView):
     serializer_class = ProjectDetailSerializer
@@ -461,6 +497,8 @@ class LoginView(APIView):
             except OTPVerification.DoesNotExist:
                 #this means 2FA is not enabled, so we continue with normal login
                 pass
+                
+        
             
             refresh = RefreshToken.for_user(user)
             logger.info(f"User '{user.username}' logged in successfully at {datetime.now()}")
