@@ -24,5 +24,7 @@ urlpatterns = [
     path('projects/<int:id>/', apis.ProjectDetailView.as_view(), name="project-detail-view"),
     path('datapoints/', apis.GetUserDataPointsView.as_view(), name='get-user-data-points'),
     path('project/chart/<int:project_id>/<str:time_unit>/<int:time_period>/', apis.GetProjectChart.as_view(), name='get-project-chart'),
-    path('reviewers/', apis.GetReviewersListView.as_view(), name='get-reviewers-view')
+    path('reviewers/', apis.GetReviewersListView.as_view(), name='get-reviewers-view'),
+    path('admin/project/<int:id>/', apis.AdminProjectDetailView.as_view(), name='admin-project-detail'),
+    path('admin/deactivate-user/<int:user_id>/', apis.DeactivateUserView.as_view(), name='deactivate-user')
 ]

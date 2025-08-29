@@ -4,9 +4,30 @@ from rest_framework import serializers
 from account.models import CustomUser, Project
 from account.serializers import SimpleUserSerializer, UserSerializer
 from subscription.models import UserDataPoints
-from task.choices import AnnotationMethodChoices, TaskInputTypeChoices, TaskTypeChoices
+from task.choices import AnnotationMethodChoices, ManualReviewSessionStatusChoices, TaskInputTypeChoices, TaskTypeChoices
 from task.utils import calculate_required_data_points
-from .models import MultiChoiceOption, Task, TaskClassificationChoices, TaskCluster
+from .models import ManualReviewSession, MultiChoiceOption, Task, TaskClassificationChoices, TaskCluster
+
+
+
+class GetAndValidateReviewersSerializer(serializers.Serializer):
+    """
+    Serializer for assigning reviewers to a cluster.
+    """
+    reviewer_ids= serializers.ListField(child=serializers.IntegerField())
+    
+    def validate_reviewer_ids(self, value):
+        """
+        Validate that the reviewers exist and are active.
+        """
+        for reviewer_id in value:
+            try:
+                reviewer = CustomUser.objects.get(id=reviewer_id)
+                if not reviewer.is_active:
+                    raise serializers.ValidationError(f"Reviewer {reviewer.username} is not active")
+            except CustomUser.DoesNotExist:
+                raise serializers.ValidationError(f"Reviewer {reviewer_id} not found")
+        return value
 
 class AcceptClusterIdSerializer(serializers.Serializer):
     """
@@ -221,6 +242,7 @@ class TaskClusterListSerializer(serializers.ModelSerializer):
 
 class ListReviewersWithClustersSerializer(serializers.ModelSerializer):
     assigned_clusters = TaskClusterListSerializer(many=True, read_only=True)
+    completed_clusters = serializers.SerializerMethodField() #the number of clusters this reviewer has completed
     class Meta:
         model = CustomUser
         fields = [
@@ -228,8 +250,15 @@ class ListReviewersWithClustersSerializer(serializers.ModelSerializer):
             "username",
             "email",
             "is_active",
-            "assigned_clusters"
+            "assigned_clusters",
+            "completed_clusters"
         ]
+    
+    def get_completed_clusters(self, obj):
+        """
+        Get the number of clusters this reviewer has completed.
+        """
+        return ManualReviewSession.objects.filter(labeller=obj, status=ManualReviewSessionStatusChoices.COMPLETED).count()
     
 
 class TaskSerializer(serializers.ModelSerializer):
