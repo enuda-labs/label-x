@@ -3,9 +3,14 @@ from rest_framework import serializers
 from django.contrib.auth import authenticate
 
 from subscription.models import UserDataPoints, UserSubscription
-from subscription.serializers import UserDataPointsSerializer, UserSubscriptionSerializer, UserSubscriptionSimpleSerializer
-from task.models import Task
-from django.db.models import Sum
+from subscription.serializers import (
+    UserDataPointsSerializer,
+    UserSubscriptionSerializer,
+    UserSubscriptionSimpleSerializer,
+)
+from task.choices import TaskClusterStatusChoices
+from task.models import Task, TaskCluster, TaskLabel
+from django.db.models import Sum, Count
 
 
 from .models import CustomUser, OTPVerification, Project, ProjectLog
@@ -13,31 +18,71 @@ from .models import CustomUser, OTPVerification, Project, ProjectLog
 
 class ProjectLogSerializer(serializers.ModelSerializer):
     class Meta:
-        fields ="__all__"
+        fields = "__all__"
         model = ProjectLog
         depth = 1
+
+
+class AdminProjectDetailSerializer(serializers.ModelSerializer):
+    cluster_stats = serializers.SerializerMethodField()
+    clusters = serializers.SerializerMethodField()
+
+    class Meta:
+        fields = "__all__"
+        model = Project
+
+    def get_clusters(self, obj):
+        from task.serializers import TaskClusterListSerializer
+        return TaskClusterListSerializer(TaskCluster.objects.filter(project=obj), many=True).data
+
+    def get_cluster_stats(self, obj):
+        clusters = TaskCluster.objects.filter(project=obj)
+        assigned_labellers = clusters.aggregate(
+            total_labellers=Count("assigned_reviewers")
+        )
+        total_tasks = clusters.aggregate(total_tasks=Count("tasks"))
+
+        tasks = Task.objects.filter(cluster__in=clusters)
+
+        return {
+            "total_clusters": clusters.count(),
+            "completed_clusters": clusters.filter(
+                status=TaskClusterStatusChoices.COMPLETED
+            ).count(),
+            "assigned_labellers": assigned_labellers.get("total_labellers", 0),
+            "tasks": {
+                "total_tasks": total_tasks.get("total_tasks", 0),
+                "completed_by_ai": tasks.filter(final_label__isnull=False).count(),
+                "completed_by_reviewer": TaskLabel.objects.filter(task__in=tasks)
+                .values("task")
+                .distinct()
+                .count(),
+            },
+        }
+
 
 class ProjectDetailSerializer(serializers.ModelSerializer):
     project_logs = serializers.SerializerMethodField()
     user_subscription = serializers.SerializerMethodField()
     user_data_points = serializers.SerializerMethodField()
     task_stats = serializers.SerializerMethodField()
+
     # total_used_data_points = serializers.SerializerMethodField()
     class Meta:
         fields = "__all__"
         model = Project
-        
+
     def get_project_logs(self, obj):
         logs = ProjectLog.objects.filter(project=obj)
         return ProjectLogSerializer(logs, many=True).data
-    
+
     def get_user_data_points(self, obj):
-        request = self.context.get('request')
+        request = self.context.get("request")
         data_points, created = UserDataPoints.objects.get_or_create(user=request.user)
         return UserDataPointsSerializer(data_points).data
-    
+
     def get_user_subscription(self, obj):
-        request = self.context.get('request')
+        request = self.context.get("request")
         if request and request.user:
             try:
                 user_subscription = UserSubscription.objects.get(user=request.user)
@@ -53,20 +98,22 @@ class ProjectDetailSerializer(serializers.ModelSerializer):
 
     def get_task_stats(self, obj):
         tasks = Task.objects.filter(group=obj)
-        
-        completed_tasks = tasks.filter(processing_status='COMPLETED').count()
-        total_data_points = tasks.aggregate(data_points=Sum('used_data_points'))
-        
+
+        completed_tasks = tasks.filter(processing_status="COMPLETED").count()
+        total_data_points = tasks.aggregate(data_points=Sum("used_data_points"))
+
         total_tasks = tasks.count()
-        completion_percentage = (completed_tasks / total_tasks * 100) if total_tasks > 0 else 0
+        completion_percentage = (
+            (completed_tasks / total_tasks * 100) if total_tasks > 0 else 0
+        )
 
         print(total_data_points)
         return {
             "completion_percentage": round(completion_percentage, 2),
-            "total_used_data_points": total_data_points.get('data_points', 0) or 0
+            "total_used_data_points": total_data_points.get("data_points", 0) or 0,
         }
-        
-        
+
+
 class LogoutSerializer(serializers.Serializer):
     refresh_token = serializers.CharField()
 
@@ -77,27 +124,36 @@ class Disable2faSerializer(serializers.Serializer):
 
 class OtpVerificationSerializer(serializers.ModelSerializer):
     otp_code = serializers.CharField(write_only=True)
-    
+
     class Meta:
         model = OTPVerification
-        fields = ['otp_code', 'is_verified']
-        read_only_fields = ['is_verified']
-        
+        fields = ["otp_code", "is_verified"]
+        read_only_fields = ["is_verified"]
+
     def validate(self, attrs):
         otp_code = attrs.pop("otp_code")
         if not self.instance.verify_otp(otp_code):
             raise serializers.ValidationError("Invalid otp code")
         return attrs
-    
-    
+
+
 class UserSerializer(serializers.ModelSerializer):
     """Serializer for the user model"""
+
     roles = serializers.SerializerMethodField()
     permissions = serializers.SerializerMethodField()
 
     class Meta:
         model = CustomUser
-        fields = ["id", "username", "email", "is_reviewer", "is_admin", "roles", "permissions"]
+        fields = [
+            "id",
+            "username",
+            "email",
+            "is_reviewer",
+            "is_admin",
+            "roles",
+            "permissions",
+        ]
 
     def get_roles(self, obj):
         roles = []
@@ -107,39 +163,37 @@ class UserSerializer(serializers.ModelSerializer):
             roles.append("admin")
         if obj.is_reviewer:
             roles.append("reviewer")
-        
+
         return roles
 
     def get_permissions(self, obj):
         permissions = []
         if obj.is_superuser:
-            permissions.extend([
-                "can_manage_users",
-                "can_manage_projects",
-                "can_manage_subscriptions",
-                "can_manage_api_keys",
-                "can_review_tasks",
-                "can_create_tasks",
-                "can_view_all_tasks"
-            ])
+            permissions.extend(
+                [
+                    "can_manage_users",
+                    "can_manage_projects",
+                    "can_manage_subscriptions",
+                    "can_manage_api_keys",
+                    "can_review_tasks",
+                    "can_create_tasks",
+                    "can_view_all_tasks",
+                ]
+            )
         elif obj.is_admin:
-            permissions.extend([
-                "can_manage_reviewers",
-                "can_manage_projects",
-                "can_review_tasks",
-                "can_create_tasks",
-                "can_view_all_tasks"
-            ])
+            permissions.extend(
+                [
+                    "can_manage_reviewers",
+                    "can_manage_projects",
+                    "can_review_tasks",
+                    "can_create_tasks",
+                    "can_view_all_tasks",
+                ]
+            )
         elif obj.is_reviewer:
-            permissions.extend([
-                "can_review_tasks",
-                "can_view_assigned_tasks"
-            ])
+            permissions.extend(["can_review_tasks", "can_view_assigned_tasks"])
         else:
-            permissions.extend([
-                "can_create_tasks",
-                "can_view_own_tasks"
-            ])
+            permissions.extend(["can_create_tasks", "can_view_own_tasks"])
         return permissions
 
 
@@ -272,14 +326,14 @@ class TokenRefreshResponseSerializer(serializers.Serializer):
 class ProjectCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Project
-        fields = ["id", "name", 'description']
-        
+        fields = ["id", "name", "description"]
+
 
 class UserProjectSerializer(serializers.ModelSerializer):
     class Meta:
         model = Project
-        fields = ["id", "name", "created_by", "description", 'created_at', 'status']
-        read_only_fields = ["created_by", 'created_at']
+        fields = ["id", "name", "created_by", "description", "created_at", "status"]
+        read_only_fields = ["created_by", "created_at"]
 
     def create(self, validated_data):
         request = self.context.get("request")
@@ -306,14 +360,7 @@ class UserDetailSerializer(serializers.ModelSerializer):
 class SimpleUserSerializer(serializers.ModelSerializer):
     class Meta:
         model = CustomUser
-        fields = [
-            "id",
-            "username",
-            "email",
-            "is_active"
-        ]
-
-
+        fields = ["id", "username", "email", "is_active"]
 
 
 # Set of Serializers to use for api doc example and documentation
@@ -340,21 +387,26 @@ class ProjectListResponseSerializer(serializers.Serializer):
 
 class ChangePasswordSerializer(serializers.Serializer):
     """Serializer for password change endpoint"""
+
     current_password = serializers.CharField(required=True)
     new_password = serializers.CharField(required=True, min_length=8)
     confirm_password = serializers.CharField(required=True, min_length=8)
 
     def validate(self, data):
-        if data['new_password'] != data['confirm_password']:
-            raise serializers.ValidationError({"confirm_password": "The two password fields didn't match."})
+        if data["new_password"] != data["confirm_password"]:
+            raise serializers.ValidationError(
+                {"confirm_password": "The two password fields didn't match."}
+            )
         return data
+
 
 class UpdateNameSerializer(serializers.Serializer):
     """Serializer for name update endpoint"""
+
     username = serializers.CharField(required=True, max_length=255)
 
     def validate_username(self, value):
-        user = self.context['request'].user
+        user = self.context["request"].user
         if CustomUser.objects.exclude(pk=user.pk).filter(username=value).exists():
             raise serializers.ValidationError("This username is already taken.")
         return value
@@ -363,24 +415,32 @@ class UpdateNameSerializer(serializers.Serializer):
 class ProjectSerializer(serializers.ModelSerializer):
     created_by = serializers.SerializerMethodField()
     members = serializers.SerializerMethodField()
-    
+
     class Meta:
         model = Project
-        fields = ['id', 'name', 'description', 'created_by', 'members', 'created_at', 'updated_at', 'status']
-        read_only_fields = ['id', 'created_at', 'updated_at']
-    
+        fields = [
+            "id",
+            "name",
+            "description",
+            "created_by",
+            "members",
+            "created_at",
+            "updated_at",
+            "status",
+        ]
+        read_only_fields = ["id", "created_at", "updated_at"]
+
     def get_created_by(self, obj):
         if obj.created_by is None:
             return None
         return {
-            'id': obj.created_by.id,
-            'username': obj.created_by.username,
-            'email': obj.created_by.email
+            "id": obj.created_by.id,
+            "username": obj.created_by.username,
+            "email": obj.created_by.email,
         }
-    
+
     def get_members(self, obj):
-        return [{
-            'id': member.id,
-            'username': member.username,
-            'email': member.email
-        } for member in obj.members.all()]
+        return [
+            {"id": member.id, "username": member.username, "email": member.email}
+            for member in obj.members.all()
+        ]

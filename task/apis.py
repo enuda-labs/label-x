@@ -10,26 +10,177 @@ from rest_framework.views import APIView
 from django.utils import timezone
 
 from account.choices import ProjectStatusChoices
-from account.models import Project
+from account.models import Project, CustomUser
 from common.responses import ErrorResponse, SuccessResponse, format_first_error
 from subscription.models import UserDataPoints, UserSubscription
 from task.choices import AnnotationMethodChoices, ManualReviewSessionStatusChoices, TaskClusterStatusChoices
 from task.utils import calculate_required_data_points, dispatch_task_message, push_realtime_update
 from .models import ManualReviewSession, MultiChoiceOption, Task, TaskCluster, UserReviewChatHistory, TaskLabel
-from .serializers import AcceptClusterIdSerializer, AssignedTaskSerializer, FullTaskSerializer, MultiChoiceOptionSerializer, TaskClusterCreateSerializer, TaskClusterDetailSerializer, TaskClusterListSerializer, TaskIdSerializer, TaskSerializer, TaskStatusSerializer, TaskReviewSerializer, AssignTaskSerializer
+from .serializers import AcceptClusterIdSerializer, AssignedTaskSerializer, FullTaskSerializer, GetAndValidateReviewersSerializer, ListReviewersWithClustersSerializer, MultiChoiceOptionSerializer, TaskClusterCreateSerializer, TaskClusterDetailSerializer, TaskClusterListSerializer, TaskIdSerializer, TaskSerializer, TaskStatusSerializer, TaskReviewSerializer, AssignTaskSerializer
 from .tasks import process_task, provide_feedback_to_ai_model
 from rest_framework_api_key.permissions import HasAPIKey
 from rest_framework.parsers import MultiPartParser, FormParser
 from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiTypes
 
 
+
 # import custom permissions
-from account.utils import HasUserAPIKey, IsReviewer
+from account.utils import HasUserAPIKey, IsAdminUser, IsReviewer
 from django.db.models import Q
 # from task.choices import TaskClassificationChoices
 
 
 logger = logging.getLogger('task.apis')
+
+class RemoveReviewersFromCluster(generics.GenericAPIView):
+    
+    permission_classes = [IsAuthenticated, IsAdminUser]
+    serializer_class = GetAndValidateReviewersSerializer
+    
+    @extend_schema(
+        summary="Remove reviewers from a cluster",
+        description="Remove reviewers from a cluster",
+        request=GetAndValidateReviewersSerializer,
+        responses={
+            200: OpenApiResponse(
+                response=None,
+                description="Reviewers removed from cluster",
+                examples=[
+                    OpenApiExample(
+                        "Successful Response",
+                        value=[
+                            {
+                                "id": 1,
+                                "username": "user1",
+                                "email": "user1@example.com",
+                                "is_active": True
+                            },
+                            {
+                                "id": 2,
+                                "username": "user2",
+                                "email": "user2@example.com",
+                                "is_active": True
+                            }
+                        ],
+                        response_only=True
+                    )
+                ]
+            )
+        }
+    )
+    def post(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        if not serializer.is_valid():
+            return ErrorResponse(message=format_first_error(serializer.errors, False))
+                
+        try:
+            cluster = TaskCluster.objects.get(id=kwargs.get('cluster_id'))
+        except TaskCluster.DoesNotExist:
+            return ErrorResponse(message="Cluster not found", status=status.HTTP_404_NOT_FOUND)
+        
+        
+        reviewer_ids = request.data.get('reviewer_ids')
+        for reviewer_id in reviewer_ids:
+            reviewer = CustomUser.objects.get(id=reviewer_id)
+            cluster.assigned_reviewers.remove(reviewer)
+            
+        return SuccessResponse(message="Reviewers removed from cluster", data=cluster.assigned_reviewers.values('id', 'username', 'email', 'is_active'))
+
+class AssignReviewersToCluster(generics.GenericAPIView):
+    permission_classes = [IsAuthenticated, IsAdminUser]
+    serializer_class = GetAndValidateReviewersSerializer
+    @extend_schema(
+        summary="Assign reviewers to a cluster",
+        description="Assign reviewers to a cluster",
+        request=GetAndValidateReviewersSerializer,
+        responses={
+            200: OpenApiResponse(
+                response=None,
+                description="Reviewers assigned to cluster",
+                examples=[
+                    OpenApiExample(
+                        "Successful Response",
+                        value=[
+                            {
+                                "id": 1,
+                                "username": "user1",
+                                "email": "user1@example.com",
+                                "is_active": True
+                            },
+                            {
+                                "id": 2,
+                                "username": "user2",
+                                "email": "user2@example.com",
+                                "is_active": True
+                            }
+                        ],
+                        response_only=True
+                    )
+                ]
+            )
+        }
+    )
+    def post(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        if not serializer.is_valid():
+            return ErrorResponse(message=format_first_error(serializer.errors, False))
+        
+        cluster_id = kwargs.get('cluster_id')
+        try:
+            cluster = TaskCluster.objects.get(id=cluster_id)
+        except TaskCluster.DoesNotExist:
+            return ErrorResponse(message="Cluster not found", status=status.HTTP_404_NOT_FOUND)
+        
+        reviewer_ids = serializer.validated_data.get('reviewer_ids')
+        for reviewer_id in reviewer_ids:
+            #user is already validated in the serializer
+            reviewer = CustomUser.objects.get(id=reviewer_id)
+            cluster.assigned_reviewers.add(reviewer)
+            
+        return SuccessResponse(message="Reviewers assigned to cluster", data=cluster.assigned_reviewers.values('id', 'username', 'email', 'is_active'))
+
+
+class GetClusterReviewers(generics.GenericAPIView):
+    permission_classes = [IsAuthenticated, IsAdminUser]
+
+    @extend_schema(
+        summary="Get the reviewers assigned to a cluster",
+        description="Get the reviewers assigned to a cluster",
+        responses={
+            200: OpenApiResponse(
+                response=None,
+                description="Cluster reviewers",
+                examples=[
+                    OpenApiExample(
+                        "Successful Response",
+                        value=[
+                            {
+                                "id": 1,
+                                "username": "user1",
+                                "email": "user1@example.com",
+                                "is_active": True
+                            },
+                            {
+                                "id": 2,
+                                "username": "user2",
+                                "email": "user2@example.com",
+                                "is_active": True
+                            }
+                        ],
+                        response_only=True
+                    )
+                ]
+            )
+        }
+    )
+    def get(self, request, *args, **kwargs):
+        try:
+            cluster_id = kwargs.get('cluster_id')
+            cluster = TaskCluster.objects.get(id=cluster_id)
+            return SuccessResponse(message="Cluster reviewers", data=ListReviewersWithClustersSerializer(cluster.assigned_reviewers, many=True).data)
+        except TaskCluster.DoesNotExist:
+            return ErrorResponse(message="Cluster not found", status=status.HTTP_404_NOT_FOUND)
+    
 
 class GetProjectClusters(generics.ListAPIView):
     serializer_class = TaskClusterListSerializer
