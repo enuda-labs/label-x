@@ -272,7 +272,7 @@ class CreatedClusterListView(generics.ListAPIView):
 class GetAvailableClusters(generics.ListAPIView):
     serializer_class = TaskClusterListSerializer
     def get_queryset(self):
-        return TaskCluster.objects.exclude(status=TaskClusterStatusChoices.COMPLETED)
+        return TaskCluster.objects.exclude(status=TaskClusterStatusChoices.COMPLETED).exclude(annotation_method=AnnotationMethodChoices.AI_AUTOMATED)
     
     @extend_schema(
         summary="Get all the clusters that are available for assignment",
@@ -1128,7 +1128,7 @@ class TaskAnnotationView(APIView):
             if task.processing_status not in ['REVIEW_NEEDED', 'ASSIGNED_REVIEWER']:
                 return Response({
                     'status': 'error',
-                    'detail': 'Task is not available for labeling'
+                    'detail': f'Task is not available for labeling, current status: {task.processing_status}'
                 }, status=status.HTTP_400_BAD_REQUEST)
             
             # Check if task is already assigned to someone else
@@ -1192,7 +1192,7 @@ class TaskAnnotationView(APIView):
             #     'labeling_method': 'TaskLabel'
             # }
             task.human_reviewed = True
-            task.processing_status = 'COMPLETED'
+            # task.processing_status = 'COMPLETED'
             # task.review_status = 'COMPLETED'
             task.save()
             
