@@ -34,6 +34,7 @@ from .serializers import (
     ProjectSerializer,
     RegisterSerializer,
     RevokeReviewerSerializer,
+    SetUserActiveStatusSerializer,
     SimpleUserSerializer,
     SuccessDetailResponseSerializer,
     TokenRefreshResponseSerializer,
@@ -60,6 +61,28 @@ from datetime import datetime
 from django.db.models.functions import TruncDate
 from django.db.models import Sum, Count, Q, Avg 
 from drf_spectacular.openapi import OpenApiTypes
+
+
+class SetUserActiveStatusView(generics.GenericAPIView):
+    permission_classes = [IsAuthenticated, IsAdminUser]
+    serializer_class= SetUserActiveStatusSerializer
+    
+    def post(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        if not serializer.is_valid():
+            return ErrorResponse(message=serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        
+        user_id = serializer.validated_data['user_id']
+        
+        try:
+            user= CustomUser.objects.get(id=user_id)
+        except CustomUser.DoesNotExist:
+            return ErrorResponse(message="User not found", status=status.HTTP_404_NOT_FOUND)
+        
+        user.is_active = serializer.validated_data['is_active']
+        user.save()
+        return SuccessResponse(message="User active status updated", data=SimpleUserSerializer(user).data)
+
 
 
 class DeactivateUserView(generics.GenericAPIView):
