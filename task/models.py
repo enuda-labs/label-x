@@ -49,7 +49,8 @@ class TaskCluster(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     status = models.CharField(max_length=50, choices=TaskClusterStatusChoices.choices, default=TaskClusterStatusChoices.PENDING)
-
+    class Meta:
+        ordering = ["-created_at"]
 
 class MultiChoiceOption(models.Model):
     """
