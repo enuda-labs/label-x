@@ -1117,6 +1117,13 @@ class TaskAnnotationView(APIView):
             # Get the task
             task = get_object_or_404(Task, id=task_id)
             
+            # Check if task is already assigned to someone else
+            if TaskLabel.objects.filter(task=task, labeller=request.user).exists():
+                return Response({
+                    'status': 'error',
+                    'detail': 'You have already labeled this task'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
             # Check if user is assigned to review this cluster
             if not task.cluster or request.user not in task.cluster.assigned_reviewers.all():
                 return Response({
@@ -1131,14 +1138,7 @@ class TaskAnnotationView(APIView):
                     'detail': f'Task is not available for labeling, current status: {task.processing_status}'
                 }, status=status.HTTP_400_BAD_REQUEST)
             
-            # Check if task is already assigned to someone else
-            if TaskLabel.objects.filter(task=task, labeller=request.user).exists():
-                return Response({
-                    'status': 'error',
-                    'detail': 'You have already labeled this task'
-                }, status=status.HTTP_400_BAD_REQUEST)
-            
-
+    
             # Create TaskLabel instances for each label
             created_labels = []
             for label_text in labels:
@@ -1192,7 +1192,7 @@ class TaskAnnotationView(APIView):
             #     'labeling_method': 'TaskLabel'
             # }
             task.human_reviewed = True
-            # task.processing_status = 'COMPLETED'
+            task.processing_status = 'COMPLETED'
             # task.review_status = 'COMPLETED'
             task.save()
             
