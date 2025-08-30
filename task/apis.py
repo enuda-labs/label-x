@@ -295,12 +295,11 @@ class TaskClusterCreateView(generics.GenericAPIView):
         required_data_points = serializer.validated_data.get('required_data_points')
         labelling_choices = serializer.validated_data.get('labelling_choices', [])
         
-                
-        cluster= serializer.save(created_by=request.user)
-        
         user_data_point, created = UserDataPoints.objects.get_or_create(user=request.user)
         if user_data_point.data_points_balance < required_data_points:
             return ErrorResponse(message="You do not have enough data points to satisfy this request")
+        
+        cluster= serializer.save(created_by=request.user)
         task_type = serializer.validated_data.get('task_type')
         annotation_method = serializer.validated_data.get('annotation_method')
         
