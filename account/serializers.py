@@ -16,6 +16,15 @@ from django.db.models import Sum, Count
 from .models import CustomUser, OTPVerification, Project, ProjectLog
 
 
+class SetUserActiveStatusSerializer(serializers.Serializer):
+    user_id = serializers.IntegerField()
+    is_active = serializers.BooleanField(
+        help_text="Whether to set the user as active or inactive"
+    )
+    
+
+
+
 class ProjectLogSerializer(serializers.ModelSerializer):
     class Meta:
         fields = "__all__"
@@ -33,7 +42,10 @@ class AdminProjectDetailSerializer(serializers.ModelSerializer):
 
     def get_clusters(self, obj):
         from task.serializers import TaskClusterListSerializer
-        return TaskClusterListSerializer(TaskCluster.objects.filter(project=obj), many=True).data
+
+        return TaskClusterListSerializer(
+            TaskCluster.objects.filter(project=obj), many=True
+        ).data
 
     def get_cluster_stats(self, obj):
         clusters = TaskCluster.objects.filter(project=obj)
@@ -225,10 +237,13 @@ class RegisterSerializer(serializers.ModelSerializer):
         write_only=True,
         min_length=8,
     )
+    user_type = serializers.ChoiceField(
+        choices=[("individual", "Individual"), ("reviewer", "Reviewer")], required=False
+    )
 
     class Meta:
         model = CustomUser
-        fields = ["id", "username", "email", "password", "role"]
+        fields = ["id", "username", "email", "password", "role", "user_type"]
         extra_kwargs = {
             "username": {"error_messages": {"unique": "Username already exists"}},
             "email": {"error_messages": {"unique": "Email already exists"}},
@@ -238,6 +253,12 @@ class RegisterSerializer(serializers.ModelSerializer):
         # Pop the password and role from validated_data
         password = validated_data.pop("password")
         role = validated_data.pop("role")
+        user_type = validated_data.pop("user_type", None)
+
+        if user_type == "reviewer":
+            validated_data["is_reviewer"] = True
+        else:
+            validated_data["is_reviewer"] = False
 
         # Create user instance
         user = CustomUser.objects.create(**validated_data)
