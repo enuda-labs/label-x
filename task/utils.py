@@ -91,12 +91,6 @@ def calculate_required_data_points(task_type, text_data=None, file_size_bytes=No
     Returns:
         int: Number of data points required to process the task
         
-    Logic:
-        - TEXT tasks: Cost varies based on text length (4-10 points for short texts, 0.035 per character for long texts)
-        - AUDIO tasks: Fixed cost of 90 points
-        - IMAGE tasks: Fixed cost of 70 points  
-        - VIDEO tasks: Fixed cost of 200 points
-        - Default: 20 points for unhandled task types
     """
     
     if task_type == 'TEXT' and text_data:
@@ -107,12 +101,20 @@ def calculate_required_data_points(task_type, text_data=None, file_size_bytes=No
             return 10
         else:
             return round(0.035 * text_length)
+    
+    if file_size_bytes and task_type in [TaskTypeChoices.AUDIO, TaskTypeChoices.IMAGE, TaskTypeChoices.VIDEO]:
+        # Convert bytes to megabytes for easier calculation
+        size_in_mb = file_size_bytes / (1024 * 1024)
         
-    if task_type == TaskTypeChoices.AUDIO:
-        return 90
-    if task_type == TaskTypeChoices.IMAGE:
-        return 70
-    if task_type == TaskTypeChoices.VIDEO:
-        return 200            
-    # TODO: handle cases for other file types properly
+        if task_type == TaskTypeChoices.AUDIO:
+            # Audio: 10 points per MB, minimum 10 points
+            return max(10, round(10 * size_in_mb))
+            
+        elif task_type == TaskTypeChoices.IMAGE:
+            # Image: 5 points per MB, minimum 10 points
+            return max(10, round(5 * size_in_mb))
+            
+        elif task_type == TaskTypeChoices.VIDEO:
+            # Video: 15 points per MB, minimum 10 points
+            return max(10, round(15 * size_in_mb))        
     return 20
