@@ -6,7 +6,7 @@ from account.serializers import SimpleUserSerializer, UserSerializer
 from subscription.models import UserDataPoints
 from task.choices import AnnotationMethodChoices, ManualReviewSessionStatusChoices, TaskInputTypeChoices, TaskTypeChoices
 from task.utils import calculate_required_data_points
-from .models import ManualReviewSession, MultiChoiceOption, Task, TaskClassificationChoices, TaskCluster
+from .models import ManualReviewSession, MultiChoiceOption, Task, TaskClassificationChoices, TaskCluster, TaskLabel
 
 
 
@@ -314,6 +314,12 @@ class TaskSerializer(serializers.ModelSerializer):
         ]
         extra_kwargs = {"priority": {"default": "NORMAL"}}
 
+
+class TaskLabelSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = TaskLabel
+        fields = "__all__"
+
 class TaskClusterDetailSerializer(serializers.ModelSerializer):
     """
     Detailed serializer for task cluster information.
@@ -324,9 +330,16 @@ class TaskClusterDetailSerializer(serializers.ModelSerializer):
     tasks = TaskSerializer(many=True, read_only=True)
     assigned_reviewers = SimpleUserSerializer(many=True)
     choices = MultipleChoicesSerializer(many=True)
+    my_labels = serializers.SerializerMethodField()
     class Meta:
         fields ="__all__"
         model = TaskCluster
+    
+    def get_my_labels(self, obj):
+        """
+        Get the labels the current user has made on this cluster if any.
+        """
+        return TaskLabelSerializer(TaskLabel.objects.filter(task__cluster=obj, labeller=self.context['request'].user), many=True).data
 
 class AssignedTaskSerializer(serializers.ModelSerializer):
     """
