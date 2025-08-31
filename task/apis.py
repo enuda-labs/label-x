@@ -1191,7 +1191,7 @@ class TaskAnnotationView(APIView):
             #     'labeling_method': 'TaskLabel'
             # }
             task.human_reviewed = True
-            task.processing_status = 'COMPLETED'
+            # task.processing_status = 'COMPLETED'
             # task.review_status = 'COMPLETED'
             task.save()
             
