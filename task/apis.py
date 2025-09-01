@@ -26,7 +26,7 @@ from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiTypes
 
 # import custom permissions
 from account.utils import HasUserAPIKey, IsAdminUser, IsReviewer
-from django.db.models import Q
+from django.db.models import Q, Count
 # from task.choices import TaskClassificationChoices
 
 
@@ -140,10 +140,10 @@ class AssignReviewersToCluster(generics.GenericAPIView):
             reviewer = CustomUser.objects.get(id=reviewer_id)
             cluster.assigned_reviewers.add(reviewer)
             
-            if cluster.status == TaskClusterStatusChoices.COMPLETED:
-                #if the cluster was previously completed and another reviewer is assigned to it, set the status to in review
-                cluster.status = TaskClusterStatusChoices.IN_REVIEW
-                cluster.save()
+        if cluster.status == TaskClusterStatusChoices.COMPLETED:
+            #if the cluster was previously completed and another reviewer is assigned to it, set the status to in review
+            cluster.status = TaskClusterStatusChoices.IN_REVIEW
+            cluster.save()
             
         return SuccessResponse(message="Reviewers assigned to cluster", data=cluster.assigned_reviewers.values('id', 'username', 'email', 'is_active'))
 
@@ -999,9 +999,14 @@ class MyAssignedClustersView(APIView):
     def get(self, request):
         try:
             # Get clusters assigned to the current user
-            assigned_clusters = TaskCluster.objects.filter(
-                assigned_reviewers=request.user
-            ).select_related('project').prefetch_related('tasks')
+            # assigned_clusters = TaskCluster.objects.filter(
+            #     assigned_reviewers=request.user
+            # ).select_related('project').prefetch_related('tasks')
+            
+            assigned_clusters = TaskCluster.objects.filter(assigned_reviewers=request.user).select_related('project').prefetch_related('tasks', "choices").annotate(
+                tasks_count=Count("tasks"),
+                user_labels_count=Count("tasks", filter=Q(tasks__tasklabel__labeller=request.user), distinct=True)
+            )
             
             # Prepare response data
             clusters_data = []
@@ -1016,8 +1021,9 @@ class MyAssignedClustersView(APIView):
                     'deadline': cluster.deadline,
                     'labeller_per_item_count': cluster.labeller_per_item_count,
                     'labeller_instructions': cluster.labeller_instructions,
-                    'tasks_count': cluster.tasks.count(),
-                    'pending_tasks': cluster.tasks.filter(processing_status='REVIEW_NEEDED', assigned_to=None).count(),
+                    'tasks_count': cluster.tasks_count,
+                    'pending_tasks': cluster.tasks_count - cluster.user_labels_count,
+                    "user_labels_count": cluster.user_labels_count,
                     "choices": MultiChoiceOptionSerializer(MultiChoiceOption.objects.filter(cluster=cluster), many=True).data
                 })
             
@@ -1134,7 +1140,7 @@ class TaskAnnotationView(APIView):
             # Get the task
             task = get_object_or_404(Task, id=task_id)
             
-            # Check if task is already assigned to someone else
+            # Check if task has already been labeled by the user
             if TaskLabel.objects.filter(task=task, labeller=request.user).exists():
                 return Response({
                     'status': 'error',
