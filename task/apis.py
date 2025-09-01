@@ -140,6 +140,11 @@ class AssignReviewersToCluster(generics.GenericAPIView):
             reviewer = CustomUser.objects.get(id=reviewer_id)
             cluster.assigned_reviewers.add(reviewer)
             
+            if cluster.status == TaskClusterStatusChoices.COMPLETED:
+                #if the cluster was previously completed and another reviewer is assigned to it, set the status to in review
+                cluster.status = TaskClusterStatusChoices.IN_REVIEW
+                cluster.save()
+            
         return SuccessResponse(message="Reviewers assigned to cluster", data=cluster.assigned_reviewers.values('id', 'username', 'email', 'is_active'))
 
 
@@ -321,7 +326,6 @@ class TaskClusterCreateView(generics.GenericAPIView):
                     "file_size_bytes": file.get('file_size_bytes')
                 }
             
-            print("the required data points", task.get('required_data_points'))
             Task.objects.create(
                 cluster = cluster,
                 user=request.user,
@@ -500,6 +504,12 @@ class AssignClusterToSelf(generics.GenericAPIView):
 
         if not cluster.assigned_reviewers.filter(id=request.user.id).exists():
             cluster.assigned_reviewers.add(request.user)
+            
+            if cluster.status == TaskClusterStatusChoices.COMPLETED: 
+                #if the cluster was previously completed and another reviewer is assigned to it, set the status to in review
+                cluster.status = TaskClusterStatusChoices.IN_REVIEW
+                cluster.save()
+                
         else:
             return ErrorResponse(message="You are already assigned to this cluster")
 
@@ -1169,39 +1179,22 @@ class TaskAnnotationView(APIView):
             if session_complete:
                 review_session.status = ManualReviewSessionStatusChoices.COMPLETED
                 review_session.save()
-            
-            # Create annotation history for tracking
-            # annotation = UserReviewChatHistory.objects.create(
-            #     reviewer=request.user,
-            #     task=task,
-            #     human_classification="Multiple Labels",  # Since we're using TaskLabel model now
-            #     human_confidence_score=confidence_score,
-            #     human_justification=justification,
-            #     ai_output={
-            #         'human_review': {
-            #             'labels_added': [label.label for label in created_labels],
-            #             'confidence': confidence_score,
-            #             'justification': justification,
-            #             'additional_metadata': additional_metadata,
-            #             'labeling_method': 'TaskLabel'
-            #         }
-            #     }
-            # )
-            
-            # Update task with final label information and mark as reviewed
-            # task.final_label = {
-            #     'labels': [label.label for label in created_labels],
-            #     'confidence': confidence_score,
-            #     'justification': justification,
-            #     'additional_metadata': additional_metadata,
-            #     'reviewed_by': request.user.username,
-            #     'reviewed_at': timezone.now().isoformat(),
-            #     'labeling_method': 'TaskLabel'
-            # }
+     
+      
             task.human_reviewed = True
-            # task.processing_status = 'COMPLETED'
-            # task.review_status = 'COMPLETED'
             task.save()
+            
+            
+            cluster = task.cluster
+            
+            completed_manual_review_sessions = ManualReviewSession.objects.filter(cluster=cluster, status=ManualReviewSessionStatusChoices.COMPLETED).count()
+            if completed_manual_review_sessions == cluster.assigned_reviewers.count(): #indicate that all the reviewers assigned to this cluster have completed the review for every task in the cluster
+                cluster.status = TaskClusterStatusChoices.COMPLETED
+                cluster.save()
+            
+            if cluster.status == TaskClusterStatusChoices.PENDING:
+                cluster.status = TaskClusterStatusChoices.IN_REVIEW #indicate that at least one reviewer has reviewed at least one task in the cluster
+                cluster.save()
             
             # Send real-time update
             push_realtime_update(task, action='task_labels_completed')

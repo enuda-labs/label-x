@@ -242,7 +242,6 @@ class GetProjectChart(generics.GenericAPIView):
             average_ai_confidence = Avg('ai_confidence') * 100
         )
 
-
         return SuccessResponse(message="Project charts", data={
             'daily_progress': daily_stats,
             "pie_chart_data": cluster_pie_chart_data,
