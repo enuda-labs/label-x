@@ -109,17 +109,18 @@ class ProjectDetailSerializer(serializers.ModelSerializer):
     #     return total_dp.get('data_points', 0)
 
     def get_task_stats(self, obj):
-        tasks = Task.objects.filter(group=obj)
-
-        completed_tasks = tasks.filter(processing_status="COMPLETED").count()
+        tasks = Task.objects.filter(cluster__project=obj)
+        clusters = TaskCluster.objects.filter(project=obj)
+        
+        completed_tasks = clusters.filter(status=TaskClusterStatusChoices.COMPLETED).count()
+        
+        # completed_tasks = tasks.filter(processing_status="COMPLETED").count()
         total_data_points = tasks.aggregate(data_points=Sum("used_data_points"))
 
-        total_tasks = tasks.count()
+        total_tasks = clusters.count()
         completion_percentage = (
             (completed_tasks / total_tasks * 100) if total_tasks > 0 else 0
         )
-
-        print(total_data_points)
         return {
             "completion_percentage": round(completion_percentage, 2),
             "total_used_data_points": total_data_points.get("data_points", 0) or 0,

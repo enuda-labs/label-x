@@ -197,6 +197,7 @@ class TaskClusterCreateSerializer(serializers.ModelSerializer):
             #     raise serializers.ValidationError(f"Unsupported file type for file `{file.get('file_name')}`")
             
             required_data_points = calculate_required_data_points(task_type, text_data=data.get('data'), file_size_bytes=file.get('file_size_bytes') if file else None)
+            data['required_data_points'] = required_data_points
             total_required_dp += required_data_points
         
 
@@ -339,7 +340,10 @@ class TaskClusterDetailSerializer(serializers.ModelSerializer):
         """
         Get the labels the current user has made on this cluster if any.
         """
-        return TaskLabelSerializer(TaskLabel.objects.filter(task__cluster=obj, labeller=self.context['request'].user), many=True).data
+        request = self.context.get('request')
+        if request and request.user:
+            return TaskLabelSerializer(TaskLabel.objects.filter(task__cluster=obj, labeller=request.user), many=True).data
+        return []
 
 class AssignedTaskSerializer(serializers.ModelSerializer):
     """

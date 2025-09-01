@@ -16,7 +16,8 @@ from common.responses import ErrorResponse, SuccessResponse, format_first_error,
 from common.utils import get_duration
 from subscription.models import UserDataPoints
 from subscription.serializers import UserDataPointsSerializer
-from task.models import Task
+from task.choices import TaskClusterStatusChoices
+from task.models import Task, TaskCluster
 from task.serializers import ListReviewersWithClustersSerializer, ProjectUpdateSerializer, TaskSerializer
 
 from .utils import IsAdminUser, IsSuperAdmin, assign_default_plan
@@ -206,7 +207,10 @@ class GetProjectChart(generics.GenericAPIView):
         
         duration = get_duration(time_unit, time_period)
         
-        queryset = Task.objects.filter(created_at__date__gte=duration.date(), created_at__date__lte=datetime.today().date(), group=project)
+        queryset = Task.objects.filter(created_at__date__gte=duration.date(), created_at__date__lte=datetime.today().date(), cluster__project=project)
+        
+        clusters = TaskCluster.objects.filter(project=project, created_at__date__gte=duration.date(), created_at__date__lte=datetime.today().date())
+        
         
         daily_stats = queryset.annotate(
             date=TruncDate('created_at')
@@ -216,10 +220,22 @@ class GetProjectChart(generics.GenericAPIView):
             human_reviewed_count = Count('id', filter=Q(human_reviewed=True))
         ).order_by('date')
         
-        pie_chart_data= queryset.aggregate(
-            completed = Count('id', filter=Q(final_label__isnull=False)),
-            pending = Count('id', filter=Q(processing_status='PENDING')),
-            in_progress = Count('id', filter=Q(processing_status='PROCESSING')),
+        # cluster_daily_stats = clusters.annotate(date=TruncDate('created_at')).values('date').annotate(
+        #     task_count=Count('id'),
+        #     total_data_points=Sum('tasks__used_data_points'),
+        # ).order_by('date')
+        
+        
+        # pie_chart_data= queryset.aggregate(
+        #     completed = Count('id', filter=Q(final_label__isnull=False)),
+        #     pending = Count('id', filter=Q(processing_status='PENDING')),
+        #     in_progress = Count('id', filter=Q(processing_status='PROCESSING')),
+        # )
+        
+        cluster_pie_chart_data = clusters.aggregate(
+            completed = Count('id', filter=Q(status=TaskClusterStatusChoices.COMPLETED)),
+            pending = Count('id', filter=Q(status=TaskClusterStatusChoices.PENDING)),
+            in_progress = Count('id', filter=Q(status=TaskClusterStatusChoices.IN_REVIEW)),
         )
         
         accuracy_trend = queryset.annotate(date=TruncDate('created_at')).values('date').annotate(
@@ -229,9 +245,9 @@ class GetProjectChart(generics.GenericAPIView):
 
         return SuccessResponse(message="Project charts", data={
             'daily_progress': daily_stats,
-            "pie_chart_data": pie_chart_data,
+            "pie_chart_data": cluster_pie_chart_data,
             'accuracy_trend': accuracy_trend
-        })
+        }) 
         
         
 

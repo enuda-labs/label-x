@@ -132,6 +132,9 @@ class AssignReviewersToCluster(generics.GenericAPIView):
             return ErrorResponse(message="Cluster not found", status=status.HTTP_404_NOT_FOUND)
         
         reviewer_ids = serializer.validated_data.get('reviewer_ids')
+        if cluster.assigned_reviewers.count() + len(reviewer_ids) > cluster.labeller_per_item_count:
+            return ErrorResponse(message="This cluster has reached its maximum number of assigned reviewers")
+        
         for reviewer_id in reviewer_ids:
             #user is already validated in the serializer
             reviewer = CustomUser.objects.get(id=reviewer_id)
@@ -317,13 +320,15 @@ class TaskClusterCreateView(generics.GenericAPIView):
                     "file_url": file.get('file_url'),
                     "file_size_bytes": file.get('file_size_bytes')
                 }
-                
+            
+            print("the required data points", task.get('required_data_points'))
             Task.objects.create(
                 cluster = cluster,
                 user=request.user,
                 group = cluster.project, #TODO: REMOVE THIS LATER,
                 task_type=cluster.task_type,
                 processing_status= 'REVIEW_NEEDED' if annotation_method == "manual" else "PENDING", #review_needed indicates that a human needs to review this task
+                used_data_points=task.get('required_data_points', 0),
                 **extra_kwargs
             )
         
@@ -489,6 +494,9 @@ class AssignClusterToSelf(generics.GenericAPIView):
             return ErrorResponse(message=format_first_error(serializer.errors))
 
         cluster = serializer.validated_data.get("cluster")
+        
+        if cluster.assigned_reviewers.count() >= cluster.labeller_per_item_count:
+            return ErrorResponse(message="This cluster has reached its maximum number of assigned reviewers")
 
         if not cluster.assigned_reviewers.filter(id=request.user.id).exists():
             cluster.assigned_reviewers.add(request.user)
@@ -1191,7 +1199,7 @@ class TaskAnnotationView(APIView):
             #     'labeling_method': 'TaskLabel'
             # }
             task.human_reviewed = True
-            task.processing_status = 'COMPLETED'
+            # task.processing_status = 'COMPLETED'
             # task.review_status = 'COMPLETED'
             task.save()
             
