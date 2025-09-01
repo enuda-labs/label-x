@@ -103,11 +103,7 @@ class ProjectDetailSerializer(serializers.ModelSerializer):
                 return None
         return None
 
-    # def get_total_used_data_points(self, obj):
-    #     tasks = Task.objects.filter(group=obj)
-    #     total_dp = tasks.aggregate(data_points=Sum('used_data_points'))
-    #     return total_dp.get('data_points', 0)
-
+ 
     def get_task_stats(self, obj):
         tasks = Task.objects.filter(cluster__project=obj)
         clusters = TaskCluster.objects.filter(project=obj)
