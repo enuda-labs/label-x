@@ -22,7 +22,7 @@ class TaskTypeChoices(models.TextChoices):
 class TaskClusterStatusChoices(models.TextChoices):
     PENDING = 'pending', 'Pending' #review has not started for this cluster
     IN_REVIEW = 'in_review', 'In review' #at least one reviewer has assigned themselves to this cluster
-    COMPLETED = "completed", 'Completed' 
+    COMPLETED = "completed", 'Completed' #all the reviewers have completed the review for this cluster
 
 
 class ManualReviewSessionStatusChoices(models.TextChoices):
