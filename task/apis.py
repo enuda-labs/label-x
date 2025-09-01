@@ -1024,7 +1024,7 @@ class MyAssignedClustersView(APIView):
                     'tasks_count': cluster.tasks_count,
                     'pending_tasks': cluster.tasks_count - cluster.user_labels_count,
                     "user_labels_count": cluster.user_labels_count,
-                    "choices": MultiChoiceOptionSerializer(MultiChoiceOption.objects.filter(cluster=cluster), many=True).data
+                    "choices": MultiChoiceOptionSerializer(cluster.choices.all(), many=True).data
                 })
             
             logger.info(f"User '{request.user.username}' fetched {len(clusters_data)} assigned clusters at {datetime.now()}")
