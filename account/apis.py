@@ -20,7 +20,7 @@ from task.choices import TaskClusterStatusChoices
 from task.models import Task, TaskCluster
 from task.serializers import ListReviewersWithClustersSerializer, ProjectUpdateSerializer, TaskSerializer
 
-from .utils import IsAdminUser, IsSuperAdmin, assign_default_plan
+from .utils import IsAdminUser, IsSuperAdmin, NotReviewer, assign_default_plan
 from .serializers import (
     AdminProjectDetailSerializer,
     Disable2faSerializer,
@@ -786,7 +786,7 @@ class ListUserProjectView(generics.ListAPIView):
 
 class CreateUserProject(generics.CreateAPIView):
     queryset = Project.objects.all()
-    permission_classes =[IsAuthenticated | HasUserAPIKey]
+    permission_classes =[IsAuthenticated | HasUserAPIKey, NotReviewer]
     serializer_class = UserProjectSerializer
     
     @extend_schema(
