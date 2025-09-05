@@ -39,6 +39,15 @@ class IsReviewer(BasePermission):
             request.user and request.user.is_authenticated and request.user.is_reviewer
         )
 
+class NotReviewer(BasePermission):
+    """
+    Restrict access only to users marked as reviewers.
+    """
+
+    def has_permission(self, request, view):
+        return bool(
+            request.user and request.user.is_authenticated and not request.user.is_reviewer
+        )
 class HasUserAPIKey(BaseHasAPIKey):
     model = UserAPIKey
     def has_permission(self, request, view):
