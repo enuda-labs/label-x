@@ -11,6 +11,7 @@ from django.utils import timezone
 
 from account.choices import ProjectStatusChoices
 from account.models import Project, CustomUser
+from common.caching import cache_user_response_decorator
 from common.responses import ErrorResponse, SuccessResponse, format_first_error
 from subscription.models import UserDataPoints, UserSubscription
 from task.choices import AnnotationMethodChoices, ManualReviewSessionStatusChoices, TaskClusterStatusChoices
@@ -21,7 +22,10 @@ from .tasks import process_task, provide_feedback_to_ai_model
 from rest_framework_api_key.permissions import HasAPIKey
 from rest_framework.parsers import MultiPartParser, FormParser
 from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiTypes
-
+from django.core.cache import cache
+from django.views.decorators.cache import cache_page
+from django.views.decorators.vary import vary_on_cookie, vary_on_headers
+from django.utils.decorators import method_decorator
 
 
 # import custom permissions
@@ -273,20 +277,30 @@ class CreatedClusterListView(generics.ListAPIView):
     @extend_schema(
         summary="Get all clusters that were created by the currently logged in user"
     )
+    
+    @cache_user_response_decorator('created_clusters', cache_timeout=60 * 1)
     def get(self, request, *args, **kwargs):
+        import time
+        time.sleep(3)
         return super().get(request, *args, **kwargs)
 
 
 class GetAvailableClusters(generics.ListAPIView):
     serializer_class = TaskClusterListSerializer
     def get_queryset(self):
-        return TaskCluster.objects.exclude(status=TaskClusterStatusChoices.COMPLETED).exclude(annotation_method=AnnotationMethodChoices.AI_AUTOMATED)
+        return TaskCluster.objects.filter(
+            ~Q(status=TaskClusterStatusChoices.COMPLETED) & 
+            ~Q(annotation_method=AnnotationMethodChoices.AI_AUTOMATED)
+        )
     
     @extend_schema(
         summary="Get all the clusters that are available for assignment",
         description="Ideal for when a reviewer is looking for clusters to assign to themselves"
     )
+    @method_decorator(cache_page(60 * 15, key_prefix='available_clusters'))
     def get(self, request, *args, **kwargs):
+        import time
+        time.sleep(2)
         return super().get(request, *args, **kwargs)
 
 class TaskClusterCreateView(generics.GenericAPIView):
@@ -886,11 +900,13 @@ class AssignedTaskListView(generics.ListAPIView):
                 .filter(assigned_to=self.request.user)
                 .order_by('-created_at'))
 
-class TaskCompletionStatsView(APIView):
+class TaskCompletionStatsView(generics.GenericAPIView):
     """
     View to get task completion statistics for tasks submitted by the logged-in user
     """
     permission_classes = [IsAuthenticated]
+    cache_prefix = 'task_completion_stats'
+
     
     @extend_schema(
         summary="Get task completion statistics",
@@ -916,8 +932,9 @@ class TaskCompletionStatsView(APIView):
             )
         }
     )
-    
-    def get(self, request):
+        
+    @cache_user_response_decorator('task_completion_stats')
+    def get(self, request):        
         try:
             user_tasks = Task.objects.filter(user=request.user)
             user_projects = Project.objects.filter(created_by=request.user)
@@ -942,7 +959,7 @@ class TaskCompletionStatsView(APIView):
             return Response({
                 "status": "success",
                 "data": {
-                    "total_tasks": total_tasks,
+                    "total_tasks": total_tasks ,
                     "completed_tasks": completed_tasks,
                     "completion_percentage": round(completion_percentage, 2),
                     "pending_projects": user_projects.filter(Q(status=ProjectStatusChoices.PENDING) | Q(status=ProjectStatusChoices.IN_PROGRESS)).count(),
