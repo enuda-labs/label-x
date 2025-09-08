@@ -17,5 +17,5 @@ def invalidate_task_cluster_cache(sender, instance, **kwargs):
         cache.delete_pattern(f"*task_completion_stats_{instance.created_by.id}*")
         cache.delete_pattern(f"*created_clusters_{instance.created_by.id}*")
 
-    cache.delete_pattern(f"*available_clusters*")
-    print('invalidated task cluster cache')
+    cache.delete_pattern("*available_clusters*")
+    print('invalidated task cluster cache 5')

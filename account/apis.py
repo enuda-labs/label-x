@@ -129,10 +129,10 @@ class GetProjectChart(generics.GenericAPIView):
         The API looks back from today by the specified time_period in the given time_unit.
         
         **Examples:**
-        - `time_unit=day, time_period=7` → Data from 7 days ago to today
-        - `time_unit=week, time_period=2` → Data from 2 weeks ago to today  
-        - `time_unit=month, time_period=3` → Data from 3 months ago to today
-        - `time_unit=year, time_period=1` → Data from 1 year ago to today
+        - `time_unit=day, time_period=7` = Data from 7 days ago to today
+        - `time_unit=week, time_period=2` = Data from 2 weeks ago to today  
+        - `time_unit=month, time_period=3`= Data from 3 months ago to today
+        - `time_unit=year, time_period=1` = Data from 1 year ago to today
         ''',
         parameters=[
             OpenApiParameter(

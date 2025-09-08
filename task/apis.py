@@ -11,7 +11,7 @@ from django.utils import timezone
 
 from account.choices import ProjectStatusChoices
 from account.models import Project, CustomUser
-from common.caching import cache_user_response_decorator
+from common.caching import cache_response_decorator
 from common.responses import ErrorResponse, SuccessResponse, format_first_error
 from subscription.models import UserDataPoints, UserSubscription
 from task.choices import AnnotationMethodChoices, ManualReviewSessionStatusChoices, TaskClusterStatusChoices
@@ -278,7 +278,7 @@ class CreatedClusterListView(generics.ListAPIView):
         summary="Get all clusters that were created by the currently logged in user"
     )
     
-    @cache_user_response_decorator('created_clusters', cache_timeout=60 * 1)
+    @cache_response_decorator('created_clusters', cache_timeout=60 * 1, per_user=True)
     def get(self, request, *args, **kwargs):
         import time
         time.sleep(3)
@@ -297,7 +297,7 @@ class GetAvailableClusters(generics.ListAPIView):
         summary="Get all the clusters that are available for assignment",
         description="Ideal for when a reviewer is looking for clusters to assign to themselves"
     )
-    @method_decorator(cache_page(60 * 15, key_prefix='available_clusters'))
+    @cache_response_decorator('available_clusters', cache_timeout=60 * 3)
     def get(self, request, *args, **kwargs):
         import time
         time.sleep(2)
@@ -933,7 +933,7 @@ class TaskCompletionStatsView(generics.GenericAPIView):
         }
     )
         
-    @cache_user_response_decorator('task_completion_stats')
+    @cache_response_decorator('task_completion_stats', per_user=True)
     def get(self, request):        
         try:
             user_tasks = Task.objects.filter(user=request.user)
