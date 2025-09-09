@@ -13,9 +13,9 @@ def invalidate_task_cache(sender, instance, **kwargs):
 @receiver([post_save, post_delete], sender=TaskCluster)
 def invalidate_task_cluster_cache(sender, instance, **kwargs):
     """Invalidate all cache data for the task cluster"""
-    if instance.created_by:
-        cache.delete_pattern(f"*task_completion_stats_{instance.created_by.id}*")
-        cache.delete_pattern(f"*created_clusters_{instance.created_by.id}*")
+    if instance.created_by_id:
+        cache.delete_pattern(f"*task_completion_stats_{instance.created_by_id}*")
+        cache.delete_pattern(f"*created_clusters_{instance.created_by_id}*")
 
     cache.delete_pattern("*available_clusters*")
 
