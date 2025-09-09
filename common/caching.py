@@ -27,6 +27,8 @@ def cache_response_decorator(cache_prefix: str, cache_timeout: int = 60 * 10, pe
     def decorator(view_func):
         def wrapper(self, request, *args, **kwargs):
             # if per_user is True, the cache key will contain the user id, this is intended for invalidating cache for a specific user
+            # Note that changing the way the cache key is constructed might break the invalidation strategies for some cache patterns
+            # If modifying the cache key structure is absolutely necessary, append any new components to the end rather than inserting them at the beginning or middle to maintain compatibility with existing cache invalidation patterns
             cache_key = f"{cache_prefix}_{request.user.id}_{request.method}_{request.get_full_path()}" if per_user else f"{cache_prefix}_{request.method}_{request.get_full_path()}"
 
             cached_response = cache.get(cache_key) if cache_key else None

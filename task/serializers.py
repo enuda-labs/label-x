@@ -321,6 +321,11 @@ class TaskLabelSerializer(serializers.ModelSerializer):
         model = TaskLabel
         fields = "__all__"
 
+class TaskAnnotationSerializer(serializers.Serializer):
+    task_id = serializers.IntegerField()
+    labels = serializers.ListField(child=serializers.CharField())
+    notes = serializers.CharField(required=False)
+
 class TaskClusterDetailSerializer(serializers.ModelSerializer):
     """
     Detailed serializer for task cluster information.

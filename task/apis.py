@@ -14,10 +14,10 @@ from account.models import Project, CustomUser
 from common.caching import cache_response_decorator
 from common.responses import ErrorResponse, SuccessResponse, format_first_error
 from subscription.models import UserDataPoints, UserSubscription
-from task.choices import AnnotationMethodChoices, ManualReviewSessionStatusChoices, TaskClusterStatusChoices
+from task.choices import AnnotationMethodChoices, ManualReviewSessionStatusChoices, TaskClusterStatusChoices, TaskInputTypeChoices
 from task.utils import calculate_required_data_points, dispatch_task_message, push_realtime_update
 from .models import ManualReviewSession, MultiChoiceOption, Task, TaskCluster, UserReviewChatHistory, TaskLabel
-from .serializers import AcceptClusterIdSerializer, AssignedTaskSerializer, FullTaskSerializer, GetAndValidateReviewersSerializer, ListReviewersWithClustersSerializer, MultiChoiceOptionSerializer, TaskClusterCreateSerializer, TaskClusterDetailSerializer, TaskClusterListSerializer, TaskIdSerializer, TaskSerializer, TaskStatusSerializer, TaskReviewSerializer, AssignTaskSerializer
+from .serializers import AcceptClusterIdSerializer, AssignedTaskSerializer, FullTaskSerializer, GetAndValidateReviewersSerializer, ListReviewersWithClustersSerializer, MultiChoiceOptionSerializer, TaskAnnotationSerializer, TaskClusterCreateSerializer, TaskClusterDetailSerializer, TaskClusterListSerializer, TaskIdSerializer, TaskSerializer, TaskStatusSerializer, TaskReviewSerializer, AssignTaskSerializer
 from .tasks import process_task, provide_feedback_to_ai_model
 from rest_framework_api_key.permissions import HasAPIKey
 from rest_framework.parsers import MultiPartParser, FormParser
@@ -278,10 +278,8 @@ class CreatedClusterListView(generics.ListAPIView):
         summary="Get all clusters that were created by the currently logged in user"
     )
     
-    @cache_response_decorator('created_clusters', cache_timeout=60 * 1, per_user=True)
+    @cache_response_decorator('created_clusters', per_user=True)
     def get(self, request, *args, **kwargs):
-        import time
-        time.sleep(3)
         return super().get(request, *args, **kwargs)
 
 
@@ -297,10 +295,8 @@ class GetAvailableClusters(generics.ListAPIView):
         summary="Get all the clusters that are available for assignment",
         description="Ideal for when a reviewer is looking for clusters to assign to themselves"
     )
-    @cache_response_decorator('available_clusters', cache_timeout=60 * 3)
+    @cache_response_decorator('available_clusters')
     def get(self, request, *args, **kwargs):
-        import time
-        time.sleep(2)
         return super().get(request, *args, **kwargs)
 
 class TaskClusterCreateView(generics.GenericAPIView):
@@ -936,17 +932,15 @@ class TaskCompletionStatsView(generics.GenericAPIView):
     @cache_response_decorator('task_completion_stats', per_user=True)
     def get(self, request):        
         try:
-            user_tasks = Task.objects.filter(user=request.user)
+            user_clusters = TaskCluster.objects.filter(created_by=request.user)
+            
+            # user_tasks = Task.objects.filter(user=request.user)
             user_projects = Project.objects.filter(created_by=request.user)
             
             # Get total tasks count for the logged-in user
-            total_tasks = user_tasks.count()
+            total_tasks = user_clusters.count()
             
-            # Get completed tasks count for the logged-in user
-            completed_tasks = Task.objects.filter(
-                user=request.user,
-                processing_status="COMPLETED"
-            ).count()
+            completed_tasks = user_clusters.filter(status=TaskClusterStatusChoices.COMPLETED).count()
             
             # Get clusters where user is assigned as reviewer
             assigned_clusters = TaskCluster.objects.filter(assigned_reviewers=request.user).count()
@@ -960,6 +954,7 @@ class TaskCompletionStatsView(generics.GenericAPIView):
                 "status": "success",
                 "data": {
                     "total_tasks": total_tasks ,
+                    "total_projects": user_projects.count(),
                     "completed_tasks": completed_tasks,
                     "completion_percentage": round(completion_percentage, 2),
                     "pending_projects": user_projects.filter(Q(status=ProjectStatusChoices.PENDING) | Q(status=ProjectStatusChoices.IN_PROGRESS)).count(),
@@ -1059,11 +1054,12 @@ class MyAssignedClustersView(APIView):
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
-class TaskAnnotationView(APIView):
+class TaskAnnotationView(generics.GenericAPIView):
     """
     View for submitting labels on individual tasks
     """
     permission_classes = [IsAuthenticated, IsReviewer]
+    serializer_class = TaskAnnotationSerializer
     
     @extend_schema(
         summary="Submit task labels",
@@ -1127,14 +1123,16 @@ class TaskAnnotationView(APIView):
             )
         }
     )
-    
     def post(self, request):
+        serializer = self.get_serializer(data=request.data)
+        if not serializer.is_valid():
+            return ErrorResponse(message=format_first_error(serializer.errors, False))
+        
+        task_id = serializer.validated_data.get('task_id')
+        labels = serializer.validated_data.get('labels', [])
+        notes = serializer.validated_data.get('notes', None)  
+              
         try:
-            task_id = request.data.get('task_id')
-            labels = request.data.get('labels', [])
-            notes = request.data.get('notes', None)
-            
-            
             # Validate required fields
             if not task_id:
                 return Response({
@@ -1154,8 +1152,14 @@ class TaskAnnotationView(APIView):
                     'detail': 'At least one label must be provided'
                 }, status=status.HTTP_400_BAD_REQUEST)
             
-            # Get the task
-            task = get_object_or_404(Task, id=task_id)
+            # Get the task            
+            try:
+                task = Task.objects.select_related('cluster').get(id=task_id)
+            except Task.DoesNotExist:
+                return Response({
+                    'status': 'error',
+                    'detail': 'Task not found'
+                }, status=status.HTTP_404_NOT_FOUND)
             
             # Check if task has already been labeled by the user
             if TaskLabel.objects.filter(task=task, labeller=request.user).exists():
@@ -1178,14 +1182,39 @@ class TaskAnnotationView(APIView):
                     'detail': f'Task is not available for labeling, current status: {task.processing_status}'
                 }, status=status.HTTP_400_BAD_REQUEST)
             
+            is_text_input_type = task.cluster.input_type  in [TaskInputTypeChoices.TEXT, TaskInputTypeChoices.MULTIPLE_CHOICE]
+
+            if not is_text_input_type:
+                # Validate that all labels are valid URLs
+                from django.core.validators import URLValidator
+                from django.core.exceptions import ValidationError
+
+                url_validator = URLValidator()
+                invalid_urls = []
+                
+                for label in labels:
+                    try:
+                        url_validator(label)
+                    except ValidationError:
+                        invalid_urls.append(label)
+                
+                if invalid_urls:
+                    return Response({
+                        'status': 'error',
+                        'detail': f'Cannot submit plain texts for a task where the input type is {task.cluster.input_type}, please provide valid urls for the labels',
+                        "invalid_urls": invalid_urls
+                    }, status=status.HTTP_400_BAD_REQUEST)
+            
     
             # Create TaskLabel instances for each label
             created_labels = []
+
             for label_text in labels:
                 if label_text and label_text.strip():  # Skip empty labels
                     task_label = TaskLabel.objects.create(
                         task=task,
-                        label=label_text.strip(),
+                        label=label_text.strip() if is_text_input_type else None,
+                        label_file_url=label_text.strip() if not is_text_input_type else None,
                         labeller=request.user,
                         notes = notes
                     )
@@ -1282,7 +1311,9 @@ class ClusterAnnotationProgressView(APIView):
         }
     )
     
+    @cache_response_decorator('cluster_annotation_progress', per_user=True)
     def get(self, request, cluster_id):
+      
         try:
             # Get the cluster
             cluster = get_object_or_404(TaskCluster, id=cluster_id)
@@ -1296,9 +1327,14 @@ class ClusterAnnotationProgressView(APIView):
             
             # Get task statistics
             total_tasks = cluster.tasks.count()
-            completed_tasks = cluster.tasks.filter(processing_status='COMPLETED').count()
-            pending_tasks = cluster.tasks.filter(processing_status__in=['REVIEW_NEEDED', 'ASSIGNED_REVIEWER']).count()
-            completion_percentage = (completed_tasks / total_tasks * 100) if total_tasks > 0 else 0
+            
+            #get all the unique task labels this person has made on this cluster
+            labelled_task_ids = TaskLabel.objects.filter(task__cluster=cluster, labeller=request.user).values_list('task_id', flat=True).distinct()
+            total_labelled_tasks = len(set(labelled_task_ids))
+            
+            pending_tasks = total_tasks - total_labelled_tasks
+            
+            completion_percentage = (total_labelled_tasks / total_tasks * 100) if total_tasks > 0 else 0
             
             # Get reviewer information
             assigned_reviewers = [user.username for user in cluster.assigned_reviewers.all()]
@@ -1310,7 +1346,7 @@ class ClusterAnnotationProgressView(APIView):
                 'data': {
                     'cluster_id': cluster.id,
                     'total_tasks': total_tasks,
-                    'completed_tasks': completed_tasks,
+                    'completed_tasks': total_labelled_tasks,
                     'pending_tasks': pending_tasks,
                     'completion_percentage': round(completion_percentage, 2),
                     'assigned_reviewers': assigned_reviewers,
@@ -1494,6 +1530,7 @@ class TaskLabelsView(APIView):
                 labels_data.append({
                     'id': task_label.id,
                     'label': task_label.label,
+                    'label_file_url': task_label.label_file_url,
                     'labeller': task_label.labeller.username,
                     'labeller_id': task_label.labeller.id,
                     'created_at': task_label.created_at,
