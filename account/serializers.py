@@ -16,6 +16,15 @@ from django.db.models import Sum, Count
 from .models import CustomUser, OTPVerification, Project, ProjectLog
 
 
+class SetUserActiveStatusSerializer(serializers.Serializer):
+    user_id = serializers.IntegerField()
+    is_active = serializers.BooleanField(
+        help_text="Whether to set the user as active or inactive"
+    )
+    
+
+
+
 class ProjectLogSerializer(serializers.ModelSerializer):
     class Meta:
         fields = "__all__"
@@ -33,7 +42,10 @@ class AdminProjectDetailSerializer(serializers.ModelSerializer):
 
     def get_clusters(self, obj):
         from task.serializers import TaskClusterListSerializer
-        return TaskClusterListSerializer(TaskCluster.objects.filter(project=obj), many=True).data
+
+        return TaskClusterListSerializer(
+            TaskCluster.objects.filter(project=obj), many=True
+        ).data
 
     def get_cluster_stats(self, obj):
         clusters = TaskCluster.objects.filter(project=obj)
@@ -91,23 +103,20 @@ class ProjectDetailSerializer(serializers.ModelSerializer):
                 return None
         return None
 
-    # def get_total_used_data_points(self, obj):
-    #     tasks = Task.objects.filter(group=obj)
-    #     total_dp = tasks.aggregate(data_points=Sum('used_data_points'))
-    #     return total_dp.get('data_points', 0)
-
+ 
     def get_task_stats(self, obj):
-        tasks = Task.objects.filter(group=obj)
-
-        completed_tasks = tasks.filter(processing_status="COMPLETED").count()
+        tasks = Task.objects.filter(cluster__project=obj)
+        clusters = TaskCluster.objects.filter(project=obj)
+        
+        completed_tasks = clusters.filter(status=TaskClusterStatusChoices.COMPLETED).count()
+        
+        # completed_tasks = tasks.filter(processing_status="COMPLETED").count()
         total_data_points = tasks.aggregate(data_points=Sum("used_data_points"))
 
-        total_tasks = tasks.count()
+        total_tasks = clusters.count()
         completion_percentage = (
             (completed_tasks / total_tasks * 100) if total_tasks > 0 else 0
         )
-
-        print(total_data_points)
         return {
             "completion_percentage": round(completion_percentage, 2),
             "total_used_data_points": total_data_points.get("data_points", 0) or 0,
@@ -225,10 +234,13 @@ class RegisterSerializer(serializers.ModelSerializer):
         write_only=True,
         min_length=8,
     )
+    user_type = serializers.ChoiceField(
+        choices=[("individual", "Individual"), ("reviewer", "Reviewer")], required=False
+    )
 
     class Meta:
         model = CustomUser
-        fields = ["id", "username", "email", "password", "role"]
+        fields = ["id", "username", "email", "password", "role", "user_type"]
         extra_kwargs = {
             "username": {"error_messages": {"unique": "Username already exists"}},
             "email": {"error_messages": {"unique": "Email already exists"}},
@@ -238,6 +250,12 @@ class RegisterSerializer(serializers.ModelSerializer):
         # Pop the password and role from validated_data
         password = validated_data.pop("password")
         role = validated_data.pop("role")
+        user_type = validated_data.pop("user_type", None)
+
+        if user_type == "reviewer":
+            validated_data["is_reviewer"] = True
+        else:
+            validated_data["is_reviewer"] = False
 
         # Create user instance
         user = CustomUser.objects.create(**validated_data)

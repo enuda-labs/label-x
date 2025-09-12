@@ -46,6 +46,7 @@ jobs:
           echo "DATABASE_URL=postgres://django:password@postgres:5432/test_db" >> $GITHUB_ENV
           echo "CELERY_BROKER_URL=redis://localhost:6379/0" >> $GITHUB_ENV
           echo "CO_API_KEY=${{ secrets.CO_API_KEY }}" >> $GITHUB_ENV
+          echo "REDIS_CACHE_BACKEND=redis://localhost:6379/1" >> $GITHUB_ENV
 
       - name: Apply Migrations
         run: |

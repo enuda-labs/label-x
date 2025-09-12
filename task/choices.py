@@ -3,6 +3,10 @@ from django.db import models
 class TaskInputTypeChoices(models.TextChoices):
     TEXT = 'text', 'Text'
     MULTIPLE_CHOICE = 'multiple_choice', 'Multiple choice'
+    VOICE = 'voice', 'Voice'
+    IMAGE = 'image', 'Image'
+    VIDEO = 'video', 'Video'
+ 
 
 
 class AnnotationMethodChoices(models.TextChoices):
@@ -21,8 +25,8 @@ class TaskTypeChoices(models.TextChoices):
 
 class TaskClusterStatusChoices(models.TextChoices):
     PENDING = 'pending', 'Pending' #review has not started for this cluster
-    IN_REVIEW = 'in_review', 'In review' #at least one reviewer has assigned themselves to this cluster
-    COMPLETED = "completed", 'Completed' 
+    IN_REVIEW = 'in_review', 'In review' #at least one reviewer has reviewed at least one this cluster
+    COMPLETED = "completed", 'Completed' #all the reviewers assigned to this cluster have completed the review every task in the cluster
 
 
 class ManualReviewSessionStatusChoices(models.TextChoices):

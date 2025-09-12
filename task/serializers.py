@@ -6,7 +6,7 @@ from account.serializers import SimpleUserSerializer, UserSerializer
 from subscription.models import UserDataPoints
 from task.choices import AnnotationMethodChoices, ManualReviewSessionStatusChoices, TaskInputTypeChoices, TaskTypeChoices
 from task.utils import calculate_required_data_points
-from .models import ManualReviewSession, MultiChoiceOption, Task, TaskClassificationChoices, TaskCluster
+from .models import ManualReviewSession, MultiChoiceOption, Task, TaskClassificationChoices, TaskCluster, TaskLabel
 
 
 
@@ -197,6 +197,7 @@ class TaskClusterCreateSerializer(serializers.ModelSerializer):
             #     raise serializers.ValidationError(f"Unsupported file type for file `{file.get('file_name')}`")
             
             required_data_points = calculate_required_data_points(task_type, text_data=data.get('data'), file_size_bytes=file.get('file_size_bytes') if file else None)
+            data['required_data_points'] = required_data_points
             total_required_dp += required_data_points
         
 
@@ -314,6 +315,17 @@ class TaskSerializer(serializers.ModelSerializer):
         ]
         extra_kwargs = {"priority": {"default": "NORMAL"}}
 
+
+class TaskLabelSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = TaskLabel
+        fields = "__all__"
+
+class TaskAnnotationSerializer(serializers.Serializer):
+    task_id = serializers.IntegerField()
+    labels = serializers.ListField(child=serializers.CharField())
+    notes = serializers.CharField(required=False)
+
 class TaskClusterDetailSerializer(serializers.ModelSerializer):
     """
     Detailed serializer for task cluster information.
@@ -324,9 +336,19 @@ class TaskClusterDetailSerializer(serializers.ModelSerializer):
     tasks = TaskSerializer(many=True, read_only=True)
     assigned_reviewers = SimpleUserSerializer(many=True)
     choices = MultipleChoicesSerializer(many=True)
+    my_labels = serializers.SerializerMethodField()
     class Meta:
         fields ="__all__"
         model = TaskCluster
+    
+    def get_my_labels(self, obj):
+        """
+        Get the labels the current user has made on this cluster if any.
+        """
+        request = self.context.get('request')
+        if request and request.user:
+            return TaskLabelSerializer(TaskLabel.objects.filter(task__cluster=obj, labeller=request.user), many=True).data
+        return []
 
 class AssignedTaskSerializer(serializers.ModelSerializer):
     """

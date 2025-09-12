@@ -7,6 +7,8 @@ from rest_framework import status
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from account.models import CustomUser, Project
+from task.choices import AnnotationMethodChoices, TaskInputTypeChoices, TaskTypeChoices
+from task.models import Task, TaskCluster
 
 class RegisterTestCase(APITransactionTestCase):
     def setUp(self):
@@ -501,7 +503,30 @@ class ListProjectsTestCase(APITransactionTestCase):
         )
         
         # Assign reviewer to project1
-        self.project1.members.add(self.reviewer_user)
+        cluster = TaskCluster.objects.create(
+                project=self.project1,
+                input_type=TaskInputTypeChoices.TEXT,
+                task_type=TaskTypeChoices.IMAGE,
+                annotation_method=AnnotationMethodChoices.MANUAL,
+                created_by=self.organization_user,
+                labeller_per_item_count=10
+        )
+        
+        task = Task.objects.create(
+            task_type=cluster.task_type,
+            processing_status="REVIEW_NEEDED",
+            file_name=f"Test file1.jpg",
+            file_type="image/jpeg",
+            file_url=f"https://placehold.co/600x400.jpg",
+            file_size_bytes=1000,
+            user=self.organization_user,
+            cluster=cluster,
+            group=cluster.project
+        )
+
+                
+        cluster.assigned_reviewers.add(self.reviewer_user)
+        # self.project1.members.add(self.reviewer_user)
         
         # Get tokens for authentication
         self.admin_token = str(RefreshToken.for_user(self.admin_user).access_token)

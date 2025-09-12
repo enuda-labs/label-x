@@ -36,7 +36,7 @@ class TaskCluster(models.Model):
     labeller_instructions = models.TextField(default="Default")
     deadline = models.DateField(null=True, blank=True)
     labeller_per_item_count = models.IntegerField(default=100)
-    project = models.ForeignKey(Project, on_delete=models.CASCADE)
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name="clusters")
     assigned_reviewers = models.ManyToManyField(
         CustomUser,
         related_name="assigned_clusters",
@@ -49,7 +49,8 @@ class TaskCluster(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     status = models.CharField(max_length=50, choices=TaskClusterStatusChoices.choices, default=TaskClusterStatusChoices.PENDING)
-
+    class Meta:
+        ordering = ["-created_at"]
 
 class MultiChoiceOption(models.Model):
     """
@@ -223,7 +224,8 @@ class TaskLabel(models.Model):
     multi-label system that better captures the complexity of real-world content.
     """
     task = models.ForeignKey(Task, on_delete=models.CASCADE)
-    label = models.CharField(max_length=255)
+    label = models.CharField(max_length=255, null=True, blank=True, help_text="The text label if the submission type for the task is text") 
+    label_file_url = models.URLField(null=True, blank=True, help_text="The url of the file label if the submission type for the task is a e.g a voice recording, video, image, etc")
     labeller = models.ForeignKey(CustomUser, on_delete=models.CASCADE)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

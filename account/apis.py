@@ -12,14 +12,17 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenRefreshView
 
+from common.caching import cache_response_decorator
 from common.responses import ErrorResponse, SuccessResponse, format_first_error, get_first_error
 from common.utils import get_duration
 from subscription.models import UserDataPoints
 from subscription.serializers import UserDataPointsSerializer
-from task.models import Task
+from task.choices import TaskClusterStatusChoices
+from task.models import Task, TaskCluster
 from task.serializers import ListReviewersWithClustersSerializer, ProjectUpdateSerializer, TaskSerializer
+from django.db.models import Prefetch
 
-from .utils import IsAdminUser, IsSuperAdmin, assign_default_plan
+from .utils import IsAdminUser, IsSuperAdmin, NotReviewer, assign_default_plan
 from .serializers import (
     AdminProjectDetailSerializer,
     Disable2faSerializer,
@@ -34,6 +37,7 @@ from .serializers import (
     ProjectSerializer,
     RegisterSerializer,
     RevokeReviewerSerializer,
+    SetUserActiveStatusSerializer,
     SimpleUserSerializer,
     SuccessDetailResponseSerializer,
     TokenRefreshResponseSerializer,
@@ -60,6 +64,28 @@ from datetime import datetime
 from django.db.models.functions import TruncDate
 from django.db.models import Sum, Count, Q, Avg 
 from drf_spectacular.openapi import OpenApiTypes
+
+
+class SetUserActiveStatusView(generics.GenericAPIView):
+    permission_classes = [IsAuthenticated, IsAdminUser]
+    serializer_class= SetUserActiveStatusSerializer
+    
+    def post(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        if not serializer.is_valid():
+            return ErrorResponse(message=serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        
+        user_id = serializer.validated_data['user_id']
+        
+        try:
+            user= CustomUser.objects.get(id=user_id)
+        except CustomUser.DoesNotExist:
+            return ErrorResponse(message="User not found", status=status.HTTP_404_NOT_FOUND)
+        
+        user.is_active = serializer.validated_data['is_active']
+        user.save()
+        return SuccessResponse(message="User active status updated", data=SimpleUserSerializer(user).data)
+
 
 
 class DeactivateUserView(generics.GenericAPIView):
@@ -105,10 +131,10 @@ class GetProjectChart(generics.GenericAPIView):
         The API looks back from today by the specified time_period in the given time_unit.
         
         **Examples:**
-        - `time_unit=day, time_period=7` → Data from 7 days ago to today
-        - `time_unit=week, time_period=2` → Data from 2 weeks ago to today  
-        - `time_unit=month, time_period=3` → Data from 3 months ago to today
-        - `time_unit=year, time_period=1` → Data from 1 year ago to today
+        - `time_unit=day, time_period=7` = Data from 7 days ago to today
+        - `time_unit=week, time_period=2` = Data from 2 weeks ago to today  
+        - `time_unit=month, time_period=3`= Data from 3 months ago to today
+        - `time_unit=year, time_period=1` = Data from 1 year ago to today
         ''',
         parameters=[
             OpenApiParameter(
@@ -183,7 +209,10 @@ class GetProjectChart(generics.GenericAPIView):
         
         duration = get_duration(time_unit, time_period)
         
-        queryset = Task.objects.filter(created_at__date__gte=duration.date(), created_at__date__lte=datetime.today().date(), group=project)
+        queryset = Task.objects.filter(created_at__date__gte=duration.date(), created_at__date__lte=datetime.today().date(), cluster__project=project)
+        
+        clusters = TaskCluster.objects.filter(project=project, created_at__date__gte=duration.date(), created_at__date__lte=datetime.today().date())
+        
         
         daily_stats = queryset.annotate(
             date=TruncDate('created_at')
@@ -193,22 +222,33 @@ class GetProjectChart(generics.GenericAPIView):
             human_reviewed_count = Count('id', filter=Q(human_reviewed=True))
         ).order_by('date')
         
-        pie_chart_data= queryset.aggregate(
-            completed = Count('id', filter=Q(final_label__isnull=False)),
-            pending = Count('id', filter=Q(processing_status='PENDING')),
-            in_progress = Count('id', filter=Q(processing_status='PROCESSING')),
+        # cluster_daily_stats = clusters.annotate(date=TruncDate('created_at')).values('date').annotate(
+        #     task_count=Count('id'),
+        #     total_data_points=Sum('tasks__used_data_points'),
+        # ).order_by('date')
+        
+        
+        # pie_chart_data= queryset.aggregate(
+        #     completed = Count('id', filter=Q(final_label__isnull=False)),
+        #     pending = Count('id', filter=Q(processing_status='PENDING')),
+        #     in_progress = Count('id', filter=Q(processing_status='PROCESSING')),
+        # )
+        
+        cluster_pie_chart_data = clusters.aggregate(
+            completed = Count('id', filter=Q(status=TaskClusterStatusChoices.COMPLETED)),
+            pending = Count('id', filter=Q(status=TaskClusterStatusChoices.PENDING)),
+            in_progress = Count('id', filter=Q(status=TaskClusterStatusChoices.IN_REVIEW)),
         )
         
         accuracy_trend = queryset.annotate(date=TruncDate('created_at')).values('date').annotate(
             average_ai_confidence = Avg('ai_confidence') * 100
         )
 
-
         return SuccessResponse(message="Project charts", data={
             'daily_progress': daily_stats,
-            "pie_chart_data": pie_chart_data,
+            "pie_chart_data": cluster_pie_chart_data,
             'accuracy_trend': accuracy_trend
-        })
+        }) 
         
         
 
@@ -252,6 +292,10 @@ class ProjectDetailView(generics.RetrieveAPIView):
             return Project.objects.all()
         else:
             return Project.objects.filter(created_by=self.request.user)
+    
+    @cache_response_decorator('project_detail')
+    def retrieve(self, request, *args, **kwargs):
+        return super().retrieve(request, *args, **kwargs)
 
 
 @extend_schema_view(
@@ -748,7 +792,7 @@ class ListUserProjectView(generics.ListAPIView):
 
 class CreateUserProject(generics.CreateAPIView):
     queryset = Project.objects.all()
-    permission_classes =[IsAuthenticated | HasUserAPIKey]
+    permission_classes =[IsAuthenticated | HasUserAPIKey, NotReviewer]
     serializer_class = UserProjectSerializer
     
     @extend_schema(
@@ -863,24 +907,26 @@ class ListProjectsView(APIView):
         
         if user.is_staff or user.is_superuser:
             # Admin can see all projects
-            projects = Project.objects.all()
+            projects = Project.objects.prefetch_related("clusters")
         elif user.is_reviewer:
             # Reviewer can only see projects they are assigned to
-            projects = Project.objects.filter(members=user)
+            projects = Project.objects.prefetch_related("clusters").filter(clusters__assigned_reviewers=user).distinct()
         else:
             # Organization can only see their own projects
-            projects = Project.objects.filter(created_by=user)
-        
+            projects = Project.objects.prefetch_related("clusters").filter(created_by=user)
+                
         # Get task statistics for each project
         project_data = []
         for project in projects:
             project_dict = ProjectSerializer(project).data
             
             # Get task statistics
-            total_tasks = project.created_tasks.count()
-            completed_tasks = project.created_tasks.filter(processing_status="COMPLETED").count()
-            pending_review = project.created_tasks.filter(processing_status="REVIEW_NEEDED").count()
-            in_progress = project.created_tasks.filter(processing_status="PROCESSING").count()
+            total_tasks = project.clusters.count()
+            
+            completed_tasks = project.clusters.filter(status=TaskClusterStatusChoices.COMPLETED).count()
+
+            pending_review = project.clusters.filter(status=TaskClusterStatusChoices.PENDING).count()
+            in_progress = project.clusters.filter(status=TaskClusterStatusChoices.IN_REVIEW).count()
             
             completion_percentage = (completed_tasks / total_tasks * 100) if total_tasks > 0 else 0
             
@@ -976,8 +1022,8 @@ class UserDetailView(APIView):
             )
         }
     )
-
-    def get(self, request):
+    @cache_response_decorator('user_detail', cache_timeout=60 * 15, per_user=True)
+    def get(self, request):      
         user = request.user
         serializer = UserDetailSerializer(user)
         return Response(

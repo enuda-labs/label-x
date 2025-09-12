@@ -11,6 +11,7 @@ import stripe.error
 
 from account.models import CustomUser
 from common.responses import ErrorResponse, SuccessResponse, format_first_error
+from subscription.utils import get_request_origin
 
 from .models import (
     SubscriptionPlan,
@@ -240,11 +241,11 @@ class InitializeStripeSubscription(generics.GenericAPIView):
                 message="A price id has not been configured for this plan, please contact admin support"
             )
 
-        client_base_url = f"{request.scheme}://{request.get_host()}"
+        callback_url = f"{get_request_origin(request)}/client/overview"      
         try:
             session = stripe.checkout.Session.create(
-                success_url="https://label-x-website.onrender.com/dashboard",
-                cancel_url=f"https://label-x-website.onrender.com/dashboard",
+                success_url=callback_url,
+                cancel_url=callback_url,
                 mode="subscription",
                 customer_email=request.user.email,
                 line_items=[{"price": stripe_monthly_price_id, "quantity": 1}],

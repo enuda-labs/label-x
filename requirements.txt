@@ -27,6 +27,7 @@ dj-database-url==2.3.0
 Django==5.1.7
 django-cloudinary-storage==0.3.0
 django-cors-headers==4.7.0
+django-redis==6.0.0
 djangorestframework==3.15.2
 djangorestframework-api-key==3.1.0
 djangorestframework-simplejwt==5.3.1
