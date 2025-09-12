@@ -3,6 +3,10 @@ from django.db import models
 class TaskInputTypeChoices(models.TextChoices):
     TEXT = 'text', 'Text'
     MULTIPLE_CHOICE = 'multiple_choice', 'Multiple choice'
+    VOICE = 'voice', 'Voice'
+    IMAGE = 'image', 'Image'
+    VIDEO = 'video', 'Video'
+ 
 
 
 class AnnotationMethodChoices(models.TextChoices):

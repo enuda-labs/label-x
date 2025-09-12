@@ -12,6 +12,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenRefreshView
 
+from common.caching import cache_response_decorator
 from common.responses import ErrorResponse, SuccessResponse, format_first_error, get_first_error
 from common.utils import get_duration
 from subscription.models import UserDataPoints
@@ -19,6 +20,7 @@ from subscription.serializers import UserDataPointsSerializer
 from task.choices import TaskClusterStatusChoices
 from task.models import Task, TaskCluster
 from task.serializers import ListReviewersWithClustersSerializer, ProjectUpdateSerializer, TaskSerializer
+from django.db.models import Prefetch
 
 from .utils import IsAdminUser, IsSuperAdmin, NotReviewer, assign_default_plan
 from .serializers import (
@@ -129,10 +131,10 @@ class GetProjectChart(generics.GenericAPIView):
         The API looks back from today by the specified time_period in the given time_unit.
         
         **Examples:**
-        - `time_unit=day, time_period=7` → Data from 7 days ago to today
-        - `time_unit=week, time_period=2` → Data from 2 weeks ago to today  
-        - `time_unit=month, time_period=3` → Data from 3 months ago to today
-        - `time_unit=year, time_period=1` → Data from 1 year ago to today
+        - `time_unit=day, time_period=7` = Data from 7 days ago to today
+        - `time_unit=week, time_period=2` = Data from 2 weeks ago to today  
+        - `time_unit=month, time_period=3`= Data from 3 months ago to today
+        - `time_unit=year, time_period=1` = Data from 1 year ago to today
         ''',
         parameters=[
             OpenApiParameter(
@@ -290,6 +292,10 @@ class ProjectDetailView(generics.RetrieveAPIView):
             return Project.objects.all()
         else:
             return Project.objects.filter(created_by=self.request.user)
+    
+    @cache_response_decorator('project_detail')
+    def retrieve(self, request, *args, **kwargs):
+        return super().retrieve(request, *args, **kwargs)
 
 
 @extend_schema_view(
@@ -901,24 +907,26 @@ class ListProjectsView(APIView):
         
         if user.is_staff or user.is_superuser:
             # Admin can see all projects
-            projects = Project.objects.all()
+            projects = Project.objects.prefetch_related("clusters")
         elif user.is_reviewer:
             # Reviewer can only see projects they are assigned to
-            projects = Project.objects.filter(members=user)
+            projects = Project.objects.prefetch_related("clusters").filter(clusters__assigned_reviewers=user).distinct()
         else:
             # Organization can only see their own projects
-            projects = Project.objects.filter(created_by=user)
-        
+            projects = Project.objects.prefetch_related("clusters").filter(created_by=user)
+                
         # Get task statistics for each project
         project_data = []
         for project in projects:
             project_dict = ProjectSerializer(project).data
             
             # Get task statistics
-            total_tasks = project.created_tasks.count()
-            completed_tasks = project.created_tasks.filter(processing_status="COMPLETED").count()
-            pending_review = project.created_tasks.filter(processing_status="REVIEW_NEEDED").count()
-            in_progress = project.created_tasks.filter(processing_status="PROCESSING").count()
+            total_tasks = project.clusters.count()
+            
+            completed_tasks = project.clusters.filter(status=TaskClusterStatusChoices.COMPLETED).count()
+
+            pending_review = project.clusters.filter(status=TaskClusterStatusChoices.PENDING).count()
+            in_progress = project.clusters.filter(status=TaskClusterStatusChoices.IN_REVIEW).count()
             
             completion_percentage = (completed_tasks / total_tasks * 100) if total_tasks > 0 else 0
             
@@ -1014,8 +1022,8 @@ class UserDetailView(APIView):
             )
         }
     )
-
-    def get(self, request):
+    @cache_response_decorator('user_detail', cache_timeout=60 * 15, per_user=True)
+    def get(self, request):      
         user = request.user
         serializer = UserDetailSerializer(user)
         return Response(

@@ -342,3 +342,14 @@ DEFAULT_FILE_STORAGE = 'cloudinary_storage.storage.MediaCloudinaryStorage'
 if not DEBUG:    
     CSRF_TRUSTED_ORIGINS = [
         "https://label-x-dock.onrender.com"]
+    
+REDIS_CACHE_BACKEND = os.getenv("REDIS_CACHE_BACKEND")
+CACHES = {
+    "default": {
+        "BACKEND": "django_redis.cache.RedisCache",
+        "LOCATION": REDIS_CACHE_BACKEND,
+        "OPTIONS": {
+            "CLIENT_CLASS": "django_redis.client.DefaultClient",
+        }
+    }
+}
