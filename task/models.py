@@ -55,7 +55,7 @@ class TaskCluster(models.Model):
         all_cluster_labels = TaskLabel.objects.filter(task__cluster=self).count() #get the total number of labels that has been made on this cluster
         required_cluster_labels = self.labeller_per_item_count * self.tasks.count() #get the total number of labels that are required to be made on this cluster
         cluster_completion_percentage = (all_cluster_labels / required_cluster_labels) * 100 if required_cluster_labels > 0 else 0
-        self.completion_percentage = round(cluster_completion_percentage, 2)
+        self.completion_percentage = round(cluster_completion_percentage, 2) if cluster_completion_percentage else 0
         
         if cluster_completion_percentage >= 100:
             self.status = TaskClusterStatusChoices.COMPLETED

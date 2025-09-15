@@ -946,7 +946,8 @@ class TaskCompletionStatsView(generics.GenericAPIView):
             assigned_clusters = TaskCluster.objects.filter(assigned_reviewers=request.user).count()
             
             # Calculate percentage
-            completion_percentage = user_clusters.aggregate(completion_percentage=Avg("completion_percentage"))["completion_percentage"]        
+            completion_percentage = user_clusters.aggregate(completion_percentage=Avg("completion_percentage"))["completion_percentage"]  or 0
+            print(completion_percentage)      
             # completion_percentage = (completed_tasks / total_tasks * 100) if total_tasks > 0 else 0
         
             logger.info(f"User '{request.user.username}' fetched their task completion stats at {datetime.now()}")
