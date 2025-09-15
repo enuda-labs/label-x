@@ -6,7 +6,8 @@ from django.utils import timezone
 from datetime import timedelta
 from task.choices import TaskTypeChoices
 from account.models import CustomUser
-
+import math
+from task.models import TaskCluster
 
 def serialize_task(task):
     from task.serializers import FullTaskSerializer
@@ -75,6 +76,37 @@ def assign_reviewer(task):
     dispatch_task_message(reviewer.id, serialize_task(task), action='task_created')
 
     return True
+
+
+def calculate_labelling_required_data_points(cluster:TaskCluster)->int:
+    datapoint = 10 #you automatically spend 10 data points for creating a cluster
+    
+    response_type_datapoint_mapping = {
+        "video": 10,
+        "audio": 10,
+        "image": 5,
+        "text": 1,
+        "multiple_choice": 1,
+        "voice": 10,
+    }
+    
+    task_type_datapoint_mapping = {
+        TaskTypeChoices.TEXT: 5,
+        TaskTypeChoices.IMAGE: 10,
+        TaskTypeChoices.VIDEO: 20,
+        TaskTypeChoices.AUDIO: 15,
+        TaskTypeChoices.CSV: 8,
+    }
+    
+    datapoint += response_type_datapoint_mapping.get(cluster.input_type, 0)
+    datapoint += task_type_datapoint_mapping.get(cluster.task_type, 0)
+    dp_cost_per_labeller = 10
+    
+    #two extra datapoints for every 5 labellers
+    # datapoint += math.ceil((cluster.labeller_per_item_count / 5) * 2)
+    datapoint += cluster.labeller_per_item_count * dp_cost_per_labeller
+
+    return datapoint
 
 def calculate_required_data_points(task_type, text_data=None, file_size_bytes=None)->int:
     """
