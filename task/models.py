@@ -35,7 +35,7 @@ class TaskCluster(models.Model):
     input_type = models.CharField(max_length=25, help_text="The type of input the labeller is to provide for the tasks in this cluster", choices=TaskInputTypeChoices.choices, default=TaskInputTypeChoices.TEXT)
     labeller_instructions = models.TextField(default="Default")
     deadline = models.DateField(null=True, blank=True)
-    labeller_per_item_count = models.IntegerField(default=100)
+    labeller_per_item_count = models.IntegerField(default=15)
     project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name="clusters")
     assigned_reviewers = models.ManyToManyField(
         CustomUser,
@@ -49,6 +49,23 @@ class TaskCluster(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     status = models.CharField(max_length=50, choices=TaskClusterStatusChoices.choices, default=TaskClusterStatusChoices.PENDING)
+    completion_percentage = models.FloatField(default=0, help_text="The percentage of the tasks in this cluster that has been labelled by the reviewers")
+    
+    def update_completion_percentage(self):
+        all_cluster_labels = TaskLabel.objects.filter(task__cluster=self).count() #get the total number of labels that has been made on this cluster
+        required_cluster_labels = self.labeller_per_item_count * self.tasks.count() #get the total number of labels that are required to be made on this cluster
+        cluster_completion_percentage = (all_cluster_labels / required_cluster_labels) * 100 if required_cluster_labels > 0 else 0
+        self.completion_percentage = round(cluster_completion_percentage, 2)
+        
+        if cluster_completion_percentage >= 100:
+            self.status = TaskClusterStatusChoices.COMPLETED
+        elif cluster_completion_percentage > 0:
+            self.status = TaskClusterStatusChoices.IN_REVIEW
+        else:
+            self.status = TaskClusterStatusChoices.PENDING
+            
+        self.save()
+        
     class Meta:
         ordering = ["-created_at"]
 
