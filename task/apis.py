@@ -1240,7 +1240,10 @@ class TaskAnnotationView(generics.GenericAPIView):
             cluster = task.cluster
             
             completed_manual_review_sessions = ManualReviewSession.objects.filter(cluster=cluster, status=ManualReviewSessionStatusChoices.COMPLETED).count()
-            if completed_manual_review_sessions == cluster.assigned_reviewers.count(): #indicate that all the reviewers assigned to this cluster have completed the review for every task in the cluster
+            
+            # if completed_manual_review_sessions == cluster.assigned_reviewers.count(): 
+            if completed_manual_review_sessions == cluster.labeller_per_item_count: 
+                #indicate that all the reviewers assigned to this cluster have completed the review for every task in the cluster
                 cluster.status = TaskClusterStatusChoices.COMPLETED
                 cluster.save()
             
