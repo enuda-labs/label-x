@@ -3,6 +3,7 @@ from io import BytesIO
 import uuid
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
 from django.db import models
+from django.db.models import Avg
 import pyotp
 import qrcode
 from rest_framework_api_key.models import AbstractAPIKey
@@ -23,7 +24,9 @@ class Project(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
     status = models.CharField(max_length=20, choices=ProjectStatusChoices.choices, default=ProjectStatusChoices.PENDING)
 
-
+    def get_cluster_label_completion_percentage(self):
+        completion_percentage = self.clusters.aggregate(completion_percentage=Avg("completion_percentage"))["completion_percentage"]
+        return completion_percentage
     
     def create_log(self, message, task=None):
         return ProjectLog.objects.create(project=self, message=message, task=task)

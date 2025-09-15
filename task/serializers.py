@@ -169,12 +169,10 @@ class TaskClusterCreateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("AI annotation is currently only supported for text-based tasks.")
 
         tasks_data = attrs.get("tasks", [])
-        print("the tasks data", tasks_data)
         if len(tasks_data) == 0:
             raise serializers.ValidationError("Cannot create an empty cluster")
         
         labelling_choices = attrs.get('labelling_choices', [])
-        print(labelling_choices)
         if attrs.get('input_type') == TaskInputTypeChoices.MULTIPLE_CHOICE and len(labelling_choices) ==0:
             raise serializers.ValidationError(f"Must specify at least one labelling choice for a Multiple choice labelling input type")
 

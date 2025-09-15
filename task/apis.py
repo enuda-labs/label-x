@@ -30,7 +30,7 @@ from django.utils.decorators import method_decorator
 
 # import custom permissions
 from account.utils import HasUserAPIKey, IsAdminUser, IsReviewer
-from django.db.models import Q, Count
+from django.db.models import Q, Count, Avg
 # from task.choices import TaskClassificationChoices
 
 
@@ -946,7 +946,8 @@ class TaskCompletionStatsView(generics.GenericAPIView):
             assigned_clusters = TaskCluster.objects.filter(assigned_reviewers=request.user).count()
             
             # Calculate percentage
-            completion_percentage = (completed_tasks / total_tasks * 100) if total_tasks > 0 else 0
+            completion_percentage = user_clusters.aggregate(completion_percentage=Avg("completion_percentage"))["completion_percentage"]  or 0
+            # completion_percentage = (completed_tasks / total_tasks * 100) if total_tasks > 0 else 0
         
             logger.info(f"User '{request.user.username}' fetched their task completion stats at {datetime.now()}")
             
@@ -1220,15 +1221,18 @@ class TaskAnnotationView(generics.GenericAPIView):
                     )
                     created_labels.append(task_label)
             
+            cluster = task.cluster
+
+            review_session, created = ManualReviewSession.objects.get_or_create(labeller=request.user, cluster=cluster)
             
-            review_session, created = ManualReviewSession.objects.get_or_create(labeller=request.user, cluster=task.cluster)
-            task_ids = task.cluster.tasks.values_list("id", flat=True) #get the ids of all the tasks in a cluster
+
+            task_ids = cluster.tasks.values_list("id", flat=True) #get the ids of all the tasks in a cluster
             
-            labelled_tasks_ids = TaskLabel.objects.filter(task_id__in=task_ids, labeller=request.user).values_list("task_id", flat=True).distinct()  #get the ids of all the tasks the currently logged in user has labelled in this cluster
+            user_labelled_tasks_ids = TaskLabel.objects.filter(task_id__in=task_ids, labeller=request.user).values_list("task_id", flat=True).distinct()  #get the ids of all the tasks the currently logged in user has labelled in this cluster
             
-            session_complete= set(task_ids) == set(labelled_tasks_ids)
+            user_review_session_complete= set(task_ids) == set(user_labelled_tasks_ids)
             
-            if session_complete:
+            if user_review_session_complete:
                 review_session.status = ManualReviewSessionStatusChoices.COMPLETED
                 review_session.save()
      
@@ -1236,17 +1240,7 @@ class TaskAnnotationView(generics.GenericAPIView):
             task.human_reviewed = True
             task.save()
             
-            
-            cluster = task.cluster
-            
-            completed_manual_review_sessions = ManualReviewSession.objects.filter(cluster=cluster, status=ManualReviewSessionStatusChoices.COMPLETED).count()
-            if completed_manual_review_sessions == cluster.assigned_reviewers.count(): #indicate that all the reviewers assigned to this cluster have completed the review for every task in the cluster
-                cluster.status = TaskClusterStatusChoices.COMPLETED
-                cluster.save()
-            
-            if cluster.status == TaskClusterStatusChoices.PENDING:
-                cluster.status = TaskClusterStatusChoices.IN_REVIEW #indicate that at least one reviewer has reviewed at least one task in the cluster
-                cluster.save()
+            cluster.update_completion_percentage()
             
             # Send real-time update
             push_realtime_update(task, action='task_labels_completed')
