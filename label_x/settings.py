@@ -91,7 +91,8 @@ INSTALLED_APPS = [
     "subscription",
     'cloudinary',
     'cloudinary_storage',
-    "datasets"
+    "datasets",
+    "payment",
 ]
 
 MIDDLEWARE = [
@@ -246,6 +247,11 @@ LOGGING = {
             "level": "INFO",
             "propagate": True,
         },
+        "django.server": {  # <-- This captures HTTP requests
+            "handlers": ["console", "file"],
+            "level": "INFO",
+            "propagate": False,
+        },
     },
 }
 
@@ -353,3 +359,7 @@ CACHES = {
         }
     }
 }
+
+PAYSTACK_SECRET_KEY = os.getenv("PAYSTACK_SECRET_KEY")
+PAYSTACK_PUBLIC_KEY = os.getenv("PAYSTACK_PUBLIC_KEY")
+EXCHANGE_RATE_API_KEY = os.getenv("EXCHANGE_RATE_API_KEY")

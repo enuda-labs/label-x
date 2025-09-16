@@ -3,6 +3,13 @@ from rest_framework import serializers
 from rest_framework import status
 
 
+class ApiResponse():
+    def __init__(self, error:bool, body, message:str, status_code=200) -> None:
+        self.error = error
+        self.body = body
+        self.message = message
+        self.status_code = status_code
+
 #utility classes and functions to facilitate having consistent api responses 
 class SuccessResponse(Response):
     def __init__(self, data=None, message=None, status=200, **kwargs):

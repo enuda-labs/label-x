@@ -15,7 +15,7 @@ from common.caching import cache_response_decorator
 from common.responses import ErrorResponse, SuccessResponse, format_first_error
 from subscription.models import UserDataPoints, UserSubscription
 from task.choices import AnnotationMethodChoices, ManualReviewSessionStatusChoices, TaskClusterStatusChoices, TaskInputTypeChoices
-from task.utils import calculate_required_data_points, dispatch_task_message, push_realtime_update
+from task.utils import calculate_labelling_required_data_points, calculate_required_data_points, dispatch_task_message, push_realtime_update
 from .models import ManualReviewSession, MultiChoiceOption, Task, TaskCluster, UserReviewChatHistory, TaskLabel
 from .serializers import AcceptClusterIdSerializer, AssignedTaskSerializer, FullTaskSerializer, GetAndValidateReviewersSerializer, ListReviewersWithClustersSerializer, MultiChoiceOptionSerializer, TaskAnnotationSerializer, TaskClusterCreateSerializer, TaskClusterDetailSerializer, TaskClusterListSerializer, TaskIdSerializer, TaskSerializer, TaskStatusSerializer, TaskReviewSerializer, AssignTaskSerializer
 from .tasks import process_task, provide_feedback_to_ai_model
@@ -310,17 +310,20 @@ class TaskClusterCreateView(generics.GenericAPIView):
         
         # get the tasks before saving the cluster because they get popped out in the create method of the serializer
         tasks = serializer.validated_data.get('tasks')
-        required_data_points = serializer.validated_data.get('required_data_points')
+        # required_data_points = serializer.validated_data.get('required_data_points')
         labelling_choices = serializer.validated_data.get('labelling_choices', [])
         
         user_data_point, created = UserDataPoints.objects.get_or_create(user=request.user)
+    
+        required_data_points = calculate_labelling_required_data_points(serializer.validated_data)
+                
         if user_data_point.data_points_balance < required_data_points:
             return ErrorResponse(message="You do not have enough data points to satisfy this request")
-        
-        cluster= serializer.save(created_by=request.user)
+
+        cluster = serializer.save(created_by=request.user)
+        # cluster= serializer.save(created_by=request.user)
         task_type = serializer.validated_data.get('task_type')
         annotation_method = serializer.validated_data.get('annotation_method')
-        
         
         for task in tasks:
             if task_type == 'TEXT':
@@ -346,8 +349,9 @@ class TaskClusterCreateView(generics.GenericAPIView):
                 **extra_kwargs
             )
         
-        for choice in labelling_choices:
-            MultiChoiceOption.objects.create(cluster=cluster, option_text=choice.get('option_text'))
+        if cluster.input_type == TaskInputTypeChoices.MULTIPLE_CHOICE:
+            for choice in labelling_choices:
+                MultiChoiceOption.objects.create(cluster=cluster, option_text=choice.get('option_text'))
         
         user_data_point.deduct_data_points(required_data_points)
         
