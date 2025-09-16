@@ -35,7 +35,7 @@ urlpatterns = [
     path('api/v1/keys/', include('api_auth.urls')),
     path('api/v1/subscription/', include('subscription.urls')),
     path("api/v1/datasets/", include('datasets.urls')),
-    
+    path('api/v1/payment/', include('payment.urls')),
 ]
 
 

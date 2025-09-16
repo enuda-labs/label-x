@@ -1,0 +1,68 @@
+
+import decimal
+from django.conf import settings
+import requests
+
+from common.responses import ApiResponse
+from paystackapi.misc import Misc
+from django.conf import settings
+import hmac
+import hashlib
+
+
+def verify_paystack_origin(request)->bool:
+    secret = settings.PAYSTACK_SECRET_KEY
+    
+    raw_body = request.body
+    computed_signature = hmac.new(
+        key=bytes(secret, 'utf-8'),
+        msg=raw_body,
+        digestmod=hashlib.sha512,
+    ).hexdigest()
+    
+    received_signature = request.headers.get('x-paystack-signature')
+    
+    if computed_signature != received_signature:
+        return False
+    return True
+
+
+def convert_usd_to_ngn(amount) -> decimal.Decimal:
+    """
+    Convert USD to NGN
+    """
+    url = f"https://v6.exchangerate-api.com/v6/{settings.EXCHANGE_RATE_API_KEY}/latest/USD"
+    response = requests.get(url)
+    if response.status_code == 200:
+        data = response.json()
+        value = decimal.Decimal(data['conversion_rates']['NGN']) * decimal.Decimal(amount)
+        return value.quantize(decimal.Decimal('0.01')) #round to 2 decimal places
+    return decimal.Decimal('1500') * decimal.Decimal(amount)
+
+def find_bank_by_code(target_code):
+    response = Misc.list_banks(currency="NGN")
+    if response.get('status'):
+        bank = next((bank for bank in response['data'] if bank['code'] == target_code), None)
+        return bank
+    return None
+
+
+def request_paystack(path, method='get', data=None, params=None):
+    base_url = "https://api.paystack.co"
+    url = f"{base_url}{path}"
+    headers = {'Authorization': f"Bearer {settings.PAYSTACK_SECRET_KEY}"}
+
+    if method.lower() == 'get':
+        response = requests.get(url, headers=headers, params=params)
+    else:
+        response = requests.post(url, headers=headers, json=data)
+
+    if response.status_code == 200 or response.status_code == 201:
+        print(response.json())
+        return ApiResponse(error=False, body=response.json(), message="Success", status_code=response.status_code)
+    
+    
+    elif response.status_code == 400:
+        return ApiResponse(error=True, body=response.json(), message=response.json().get('message'), status_code=response.status_code)
+    else:
+        response.raise_for_status()

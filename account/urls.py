@@ -28,4 +28,5 @@ urlpatterns = [
     path('admin/project/<int:id>/', apis.AdminProjectDetailView.as_view(), name='admin-project-detail'),
     path('admin/deactivate-user/<int:user_id>/', apis.DeactivateUserView.as_view(), name='deactivate-user'),
     path('admin/set-user-active-status/', apis.SetUserActiveStatusView.as_view(), name='set-user-active-status'),
+    path('labeler/earnings/', apis.GetLabelersEarningsView.as_view(), name='get-labelers-earnings'),
 ]

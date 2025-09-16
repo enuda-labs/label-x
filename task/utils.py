@@ -78,9 +78,9 @@ def assign_reviewer(task):
     return True
 
 
-def calculate_labelling_required_data_points(cluster:TaskCluster)->int:
+def calculate_labelling_required_data_points(cluster_data:dict)->int:
     datapoint = 10 #you automatically spend 10 data points for creating a cluster
-    
+        
     response_type_datapoint_mapping = {
         "video": 10,
         "audio": 10,
@@ -98,13 +98,13 @@ def calculate_labelling_required_data_points(cluster:TaskCluster)->int:
         TaskTypeChoices.CSV: 8,
     }
     
-    datapoint += response_type_datapoint_mapping.get(cluster.input_type, 0)
-    datapoint += task_type_datapoint_mapping.get(cluster.task_type, 0)
+    datapoint += response_type_datapoint_mapping.get(cluster_data.get('input_type'), 0)
+    datapoint += task_type_datapoint_mapping.get(cluster_data.get('task_type'), 0)
     dp_cost_per_labeller = 10
     
     #two extra datapoints for every 5 labellers
     # datapoint += math.ceil((cluster.labeller_per_item_count / 5) * 2)
-    datapoint += cluster.labeller_per_item_count * dp_cost_per_labeller
+    datapoint += cluster_data.get('labeller_per_item_count') * dp_cost_per_labeller
 
     return datapoint
 

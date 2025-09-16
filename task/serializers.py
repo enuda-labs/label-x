@@ -175,7 +175,11 @@ class TaskClusterCreateSerializer(serializers.ModelSerializer):
         labelling_choices = attrs.get('labelling_choices', [])
         if attrs.get('input_type') == TaskInputTypeChoices.MULTIPLE_CHOICE and len(labelling_choices) ==0:
             raise serializers.ValidationError(f"Must specify at least one labelling choice for a Multiple choice labelling input type")
+        
+        if attrs.get("labeller_per_item_count") < 15:
+            raise serializers.ValidationError("The number of labellers must be 15 or greater")
 
+        #TODO: remove this later if not needed
         total_required_dp = 0
         # loop through the tasks data that were created and ensure accuracy
         for data in tasks_data:
@@ -194,9 +198,9 @@ class TaskClusterCreateSerializer(serializers.ModelSerializer):
             # if file and file.get('file_type') not in accepted_file_types:
             #     raise serializers.ValidationError(f"Unsupported file type for file `{file.get('file_name')}`")
             
-            required_data_points = calculate_required_data_points(task_type, text_data=data.get('data'), file_size_bytes=file.get('file_size_bytes') if file else None)
-            data['required_data_points'] = required_data_points
-            total_required_dp += required_data_points
+            # required_data_points = calculate_required_data_points(task_type, text_data=data.get('data'), file_size_bytes=file.get('file_size_bytes') if file else None)
+            # data['required_data_points'] = required_data_points
+            # total_required_dp += required_data_points
         
 
         
