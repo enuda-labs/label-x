@@ -26,6 +26,7 @@ from .utils import IsAdminUser, IsSuperAdmin, NotReviewer, assign_default_plan
 from .serializers import (
     AdminProjectDetailSerializer,
     Disable2faSerializer,
+    LabelerEarningsSerializer,
     LoginSerializer,
     LogoutSerializer,
     MakeAdminSerializer,
@@ -55,7 +56,7 @@ from .utils import (
     IsAdminUser,
     IsSuperAdmin,
 )
-from .models import CustomUser, OTPVerification, Project
+from .models import CustomUser, LabelerEarnings, OTPVerification, Project
 from django.contrib.auth import logout
 # Set up logger
 logger = logging.getLogger('account.apis')
@@ -64,6 +65,20 @@ from datetime import datetime
 from django.db.models.functions import TruncDate
 from django.db.models import Sum, Count, Q, Avg 
 from drf_spectacular.openapi import OpenApiTypes
+
+
+class GetLabelersEarningsView(generics.GenericAPIView):
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request, *args, **kwargs):
+        if not request.user.is_reviewer:
+            return ErrorResponse(message="User is not a labeler", status=status.HTTP_403_FORBIDDEN)
+        
+        earnings, _ = LabelerEarnings.objects.get_or_create(labeler=request.user)
+        return SuccessResponse(
+            message="Labelers earnings",
+            data = LabelerEarningsSerializer(earnings).data
+        )
 
 
 class SetUserActiveStatusView(generics.GenericAPIView):

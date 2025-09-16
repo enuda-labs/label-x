@@ -13,7 +13,13 @@ from task.models import Task, TaskCluster, TaskLabel
 from django.db.models import Sum, Count
 
 
-from .models import CustomUser, OTPVerification, Project, ProjectLog
+from .models import CustomUser, LabelerEarnings, OTPVerification, Project, ProjectLog
+
+
+class LabelerEarningsSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = LabelerEarnings
+        fields = "__all__"
 
 
 class SetUserActiveStatusSerializer(serializers.Serializer):

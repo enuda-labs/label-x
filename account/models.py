@@ -97,6 +97,16 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
 
 
 
+class LabelerEarnings(models.Model):
+    id = models.UUIDField(default=uuid.uuid4, unique=True, editable=False, primary_key=True)
+    labeler = models.OneToOneField(CustomUser, on_delete=models.CASCADE, related_name='labeler_earnings')
+    balance = models.DecimalField(max_digits=10, decimal_places=2, default=0, help_text="The balance of the labeler in USD")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    def __str__(self):
+        return f"Balance for {self.labeler.username}"
+
 class ApiKeyTypeChoices(models.TextChoices):
     PRODUCTION = 'production', 'Production',
     TEST = 'test', 'Test'
