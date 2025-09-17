@@ -8,6 +8,7 @@ from task.choices import TaskTypeChoices
 from account.models import CustomUser
 import math
 from task.models import TaskCluster
+from common.utils import get_dp_cost_settings
 
 def serialize_task(task):
     from task.serializers import FullTaskSerializer
@@ -78,35 +79,32 @@ def assign_reviewer(task):
     return True
 
 
-def calculate_labelling_required_data_points(cluster_data:dict)->int:
-    datapoint = 10 #you automatically spend 10 data points for creating a cluster
-        
-    response_type_datapoint_mapping = {
-        "video": 10,
-        "audio": 10,
-        "image": 5,
-        "text": 1,
-        "multiple_choice": 1,
-        "voice": 10,
-    }
-    
-    task_type_datapoint_mapping = {
-        TaskTypeChoices.TEXT: 5,
-        TaskTypeChoices.IMAGE: 10,
-        TaskTypeChoices.VIDEO: 20,
-        TaskTypeChoices.AUDIO: 15,
-        TaskTypeChoices.CSV: 8,
-    }
-    
-    datapoint += response_type_datapoint_mapping.get(cluster_data.get('input_type'), 0)
-    datapoint += task_type_datapoint_mapping.get(cluster_data.get('task_type'), 0)
-    dp_cost_per_labeller = 10
-    
-    #two extra datapoints for every 5 labellers
-    # datapoint += math.ceil((cluster.labeller_per_item_count / 5) * 2)
-    datapoint += cluster_data.get('labeller_per_item_count') * dp_cost_per_labeller
+def calculate_labelling_required_data_points(cluster_data: dict) -> int:
+    """
+    Calculate the total data points required for a cluster item.
+
+    Uses system settings for base cost, input type, task type, and per-labeller cost.
+    Caches settings via `get_dp_cost_settings()` to avoid repeated DB queries.
+
+    Returns:
+        int: Total data points required for labeling this item.
+    """
+    settings = get_dp_cost_settings()
+    datapoint = settings.get("base_cost", 10)
+
+    input_type = cluster_data.get("input_type")
+    if input_type:
+        datapoint += settings.get(f"{input_type}_cost", 0)
+
+    task_type = cluster_data.get("task_type")
+    if task_type:
+        datapoint += settings.get(f"task_{str(task_type).lower()}_cost", 0)
+
+    labeller_count = cluster_data.get("labeller_per_item_count", 0)
+    datapoint += labeller_count * settings.get("dp_cost_per_labeller", 10)
 
     return datapoint
+
 
 def calculate_required_data_points(task_type, text_data=None, file_size_bytes=None)->int:
     """
