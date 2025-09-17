@@ -19,3 +19,21 @@ def get_duration(time_unit:str, time_period:int):
         duration = now - relativedelta(days=time_period)
     
     return duration
+
+_settings_cache = None
+def get_dp_cost_settings():
+    """
+    Retrieve all system settings related to data point costs and cache them in memory.
+
+    This function uses a simple in-memory cache to avoid hitting the database
+    every time the settings are needed.
+
+    Returns:
+        dict: A dictionary of system settings keyed by their `key` values with integer values.
+    """
+    global _settings_cache
+    if _settings_cache is None:
+        from django.apps import apps
+        SystemSetting = apps.get_model("common", "SystemSetting")
+        _settings_cache = {s.key: int(s.value) for s in SystemSetting.objects.all()}
+    return _settings_cache
