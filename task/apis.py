@@ -13,7 +13,7 @@ from common.caching import cache_response_decorator
 from common.responses import ErrorResponse, SuccessResponse, format_first_error
 from subscription.models import UserDataPoints
 from task.choices import AnnotationMethodChoices, ManualReviewSessionStatusChoices, TaskClusterStatusChoices, TaskInputTypeChoices
-from task.utils import calculate_labelling_required_data_points, calculate_required_data_points, dispatch_task_message, push_realtime_update
+from task.utils import assign_reviewers_to_cluster, calculate_labelling_required_data_points, calculate_required_data_points, dispatch_task_message, push_realtime_update
 from .models import ManualReviewSession, MultiChoiceOption, Task, TaskCluster, UserReviewChatHistory, TaskLabel
 from .serializers import AcceptClusterIdSerializer, AssignedTaskSerializer, FullTaskSerializer, GetAndValidateReviewersSerializer, ListReviewersWithClustersSerializer, MultiChoiceOptionSerializer, TaskAnnotationSerializer, TaskClusterCreateSerializer, TaskClusterDetailSerializer, TaskClusterListSerializer, TaskIdSerializer, TaskSerializer, TaskReviewSerializer, AssignTaskSerializer
 from .tasks import process_task, provide_feedback_to_ai_model
@@ -25,6 +25,9 @@ from django.db.models import Q, Count, Avg
 
 
 logger = logging.getLogger('task.apis')
+
+
+
 
 class RemoveReviewersFromCluster(generics.GenericAPIView):
     
@@ -352,6 +355,7 @@ class TaskClusterCreateView(generics.GenericAPIView):
         
             return SuccessResponse(message="Cluster created successfully, tasks have been queued for AI annotation", data=TaskClusterDetailSerializer(cluster).data)
         
+        assign_reviewers_to_cluster.delay(cluster.id)
         return SuccessResponse(message="Cluster created successfully", data=TaskClusterDetailSerializer(cluster).data)
         
     

@@ -14,6 +14,10 @@ from django.db.models import Sum, Count
 
 
 from .models import CustomUser, LabelerEarnings, OTPVerification, Project, ProjectLog
+from reviewer.models import LabelerDomain
+from reviewer.serializers import LabelerDomainSerializer
+
+
 
 
 class LabelerEarningsSerializer(serializers.ModelSerializer):
@@ -230,6 +234,33 @@ class LoginSerializer(serializers.Serializer):
             raise serializers.ValidationError("User is not active")
         return user
 
+class CreateLabelerSerializer(serializers.ModelSerializer):
+    
+    class Meta:
+        model = CustomUser
+        fields = ["username", "email", "password", "domains"]
+        extra_kwargs = {
+            "username": {"error_messages": {"unique": "Username already exists"}},
+            "email": {"error_messages": {"unique": "Email already exists"}},
+        }
+    
+    def create(self, validated_data):
+        password = validated_data.pop("password")
+        
+        domains = validated_data.pop("domains")
+        user = CustomUser.objects.create(**validated_data, is_reviewer=True)
+        
+        user.domains.set(domains)
+        user.set_password(password)
+        user.save()
+        return user
+    
+    def validate_domains(self, value):
+        for domain in value:
+            if not LabelerDomain.objects.filter(domain=domain).exists():
+                raise serializers.ValidationError("Invalid domain")
+        return value
+
 
 class RegisterSerializer(serializers.ModelSerializer):
     """Serializer for user registration"""
@@ -384,9 +415,10 @@ class UserDetailSerializer(serializers.ModelSerializer):
 
 
 class SimpleUserSerializer(serializers.ModelSerializer):
+    domains = LabelerDomainSerializer(many=True)
     class Meta:
         model = CustomUser
-        fields = ["id", "username", "email", "is_active"]
+        fields = ["id", "username", "email", "is_active", "domains", 'is_reviewer']
 
 
 # Set of Serializers to use for api doc example and documentation

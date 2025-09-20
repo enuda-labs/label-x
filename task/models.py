@@ -2,9 +2,8 @@ from django.db import models
 import string
 import random
 from account.models import CustomUser, Project, ProjectLog
-import uuid
-
 from task.choices import AnnotationMethodChoices, ManualReviewSessionStatusChoices, TaskClusterStatusChoices, TaskInputTypeChoices, TaskTypeChoices
+from reviewer.models import LabelerDomain
 
 
 def generate_serial_no():
@@ -21,6 +20,10 @@ class TaskClassificationChoices(models.TextChoices):
     MILDLY_OFFENSIVE = "Mildly Offensive", "Mildly Offensive"
     HIGHLY_OFFENSIVE = "Highly Offensive", "Highly Offensive"
 
+
+def get_default_labeler_domain():
+    labeler_domain, created = LabelerDomain.objects.get_or_create(domain="Default")
+    return labeler_domain.id
 
 class TaskCluster(models.Model):
     """
@@ -50,6 +53,7 @@ class TaskCluster(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
     status = models.CharField(max_length=50, choices=TaskClusterStatusChoices.choices, default=TaskClusterStatusChoices.PENDING)
     completion_percentage = models.FloatField(default=0, help_text="The percentage of the tasks in this cluster that has been labelled by the reviewers")
+    labeler_domain = models.ForeignKey(LabelerDomain, on_delete=models.CASCADE, related_name='clusters', help_text="The domain of expertise that the labeler is allowed to label", default=get_default_labeler_domain)
     
     def update_completion_percentage(self):
         all_cluster_labels = TaskLabel.objects.filter(task__cluster=self).count() #get the total number of labels that has been made on this cluster
