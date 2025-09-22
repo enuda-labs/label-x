@@ -15,6 +15,7 @@ class WithdrawalRequest(models.Model):
     account_number = models.CharField(max_length=255)
     bank_code = models.CharField(max_length=255)
     bank_name = models.CharField(max_length=255)
+    is_user_balance_deducted = models.BooleanField(default=False, help_text="Whether the user's balance has been deducted for this withdrawal request")
     
     def __str__(self):
         return f"Withdrawal request of ${self.usd_amount} by {self.user.username} - {self.status}"
