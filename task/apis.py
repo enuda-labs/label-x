@@ -8,7 +8,7 @@ import logging
 from datetime import datetime
 from rest_framework.views import APIView
 from account.choices import ProjectStatusChoices
-from account.models import Project, CustomUser
+from account.models import Project, CustomUser, LabelerEarnings
 from common.caching import cache_response_decorator
 from common.responses import ErrorResponse, SuccessResponse, format_first_error
 from subscription.models import UserDataPoints
@@ -20,7 +20,7 @@ from .tasks import process_task, provide_feedback_to_ai_model
 
 # import custom permissions
 from account.utils import HasUserAPIKey, IsAdminUser, IsReviewer
-from django.db.models import Q, Count, Avg
+from django.db.models import Q, Count, Avg, F, Sum
 # from task.choices import TaskClassificationChoices
 
 
