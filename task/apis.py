@@ -30,7 +30,7 @@ from django.utils.decorators import method_decorator
 
 # import custom permissions
 from account.utils import HasUserAPIKey, IsAdminUser, IsReviewer
-from django.db.models import Q, Count, Avg
+from django.db.models import Q, Count, Avg, F, Sum
 # from task.choices import TaskClassificationChoices
 
 
