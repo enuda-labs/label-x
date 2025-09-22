@@ -128,7 +128,7 @@ class ProjectDetailSerializer(serializers.ModelSerializer):
         #     (completed_tasks / total_tasks * 100) if total_tasks > 0 else 0
         # )
         
-        completion_percentage = obj.get_cluster_label_completion_percentage() or 0
+        completion_percentage = obj.get_cluster_label_completion_percentage()
         return {
             "completion_percentage": round(completion_percentage, 2),
             "total_used_data_points": total_data_points.get("data_points", 0) or 0,
