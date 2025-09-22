@@ -234,7 +234,7 @@ class TaskClusterCreateSerializer(serializers.ModelSerializer):
         
         labeler_domain = validated_data.get('labeler_domain', None)
         if not labeler_domain:
-            default_domain = LabelerDomain.objects.get_or_create(domain="Default")
+            default_domain, created = LabelerDomain.objects.get_or_create(domain="Default")
             validated_data['labeler_domain'] = default_domain
         return super().create(validated_data)
     
