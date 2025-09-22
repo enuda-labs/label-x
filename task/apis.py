@@ -1245,6 +1245,8 @@ class TaskAnnotationView(generics.GenericAPIView):
             
             cluster.update_completion_percentage()
             
+            cluster.project.create_log(f"Reviewer '{request.user.username}' submitted {len(created_labels)} labels for task {task.serial_no} at {datetime.now()}")
+            
             # Send real-time update
             push_realtime_update(task, action='task_labels_completed')
             
