@@ -10,7 +10,7 @@ from rest_framework.views import APIView
 from django.utils import timezone
 
 from account.choices import ProjectStatusChoices
-from account.models import Project, CustomUser
+from account.models import Project, CustomUser, LabelerEarnings
 from common.caching import cache_response_decorator
 from common.responses import ErrorResponse, SuccessResponse, format_first_error
 from subscription.models import UserDataPoints, UserSubscription
