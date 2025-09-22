@@ -24,6 +24,9 @@ logger = logging.getLogger('payment.apis')
 
 paystack = Paystack(secret_key=settings.PAYSTACK_SECRET_KEY)
 
+class FetchUserTransactionHistoryView(generics.ListAPIView):
+    pass
+
 
 class InitiateLabelerWithdrawalView(generics.GenericAPIView):
     permission_classes = [IsAuthenticated | IsReviewer]
