@@ -15,7 +15,7 @@ import decimal
 
 from payment.choices import TransactionStatusChoices, TransactionTypeChoices
 from payment.models import Transaction, WithdrawalRequest
-from payment.serializers import PaystackWithdrawSerializer
+from payment.serializers import PaystackWithdrawSerializer, TransactionSerializer
 from account.models import LabelerEarnings
 from payment.utils import convert_usd_to_ngn, find_bank_by_code, request_paystack, verify_paystack_origin
 import json
@@ -25,7 +25,14 @@ logger = logging.getLogger('payment.apis')
 paystack = Paystack(secret_key=settings.PAYSTACK_SECRET_KEY)
 
 class FetchUserTransactionHistoryView(generics.ListAPIView):
-    pass
+    serializer_class = TransactionSerializer
+    def get_queryset(self):
+        return Transaction.objects.filter(user=self.request.user)
+    
+    @cache_response_decorator('user_transaction_history', cache_timeout=60 * 60 * 24, per_user=True)
+    @extend_schema(summary="Fetch the transaction history for the currently logged in user")
+    def get(self, request, *args, **kwargs):
+        return super().get(request, *args, **kwargs)
 
 
 class InitiateLabelerWithdrawalView(generics.GenericAPIView):
