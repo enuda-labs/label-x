@@ -22,10 +22,10 @@ class TaskClassificationChoices(models.TextChoices):
 
 
 def get_default_labeler_domain(as_id=True):
-    labeler_domain, created = LabelerDomain.objects.get_or_create(domain="Default")
-    if as_id:
-        return labeler_domain.id
-    return labeler_domain
+    # labeler_domain, created = LabelerDomain.objects.get_or_create(domain="Default")
+    # if as_id:
+    #     return labeler_domain.id
+    return None
 
 class TaskCluster(models.Model):
     """
@@ -55,7 +55,7 @@ class TaskCluster(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
     status = models.CharField(max_length=50, choices=TaskClusterStatusChoices.choices, default=TaskClusterStatusChoices.PENDING)
     completion_percentage = models.FloatField(default=0, help_text="The percentage of the tasks in this cluster that has been labelled by the reviewers")
-    labeler_domain = models.ForeignKey(LabelerDomain, on_delete=models.CASCADE, related_name='clusters', help_text="The domain of expertise that the labeler is allowed to label", default=get_default_labeler_domain)
+    labeler_domain = models.ForeignKey(LabelerDomain, on_delete=models.CASCADE, related_name='clusters', help_text="The domain of expertise that the labeler is allowed to label", null=True, blank=True)
     
     def update_completion_percentage(self):
         all_cluster_labels = TaskLabel.objects.filter(task__cluster=self).count() #get the total number of labels that has been made on this cluster
