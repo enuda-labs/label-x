@@ -40,6 +40,27 @@ def convert_usd_to_ngn(amount) -> decimal.Decimal:
     return decimal.Decimal('1500') * decimal.Decimal(amount)
 
 def find_bank_by_code(target_code):
+    """
+    Find a bank by its code from the list of Nigerian banks.
+        
+    Example return value:
+        {
+            "id": 1,
+            "name": "Access Bank",
+            "slug": "access-bank",
+            "code": "044",
+            "longcode": "044150149",
+            "gateway": "emandate",
+            "pay_with_bank": False,
+            "active": True,
+            "country": "Nigeria",
+            "currency": "NGN",
+            "type": "nuban",
+            "is_deleted": False,
+            "createdAt": "2016-07-14T10:04:29.000Z",
+            "updatedAt": "2020-02-18T08:06:44.000Z"
+        }
+    """
     response = Misc.list_banks(currency="NGN")
     if response.get('status'):
         bank = next((bank for bank in response['data'] if bank['code'] == target_code), None)

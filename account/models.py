@@ -105,12 +105,14 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
 
 class UserBankAccount(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    user = models.OneToOneField(CustomUser, on_delete=models.CASCADE)
+    user = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='bank_accounts')
     account_number = models.CharField(max_length=255)
     bank_code = models.CharField(max_length=255)
     bank_name = models.CharField(max_length=255)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    account_name = models.CharField(max_length=255, null=True, blank=True)
+    is_primary = models.BooleanField(default=False)
     
     def __str__(self):
         return f"{self.user.username}'s bank account - {self.bank_name} account number {self.account_number}"

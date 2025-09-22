@@ -1,7 +1,7 @@
 from django.db.models.signals import post_save, post_delete
 from django.dispatch import receiver
 from django.core.cache import cache
-from account.models import Project, CustomUser
+from account.models import Project, CustomUser, UserBankAccount
 
 @receiver([post_save, post_delete], sender=Project)
 def invalidate_project_cache(sender, instance, **kwargs):
@@ -11,3 +11,8 @@ def invalidate_project_cache(sender, instance, **kwargs):
 @receiver([post_save, post_delete], sender=CustomUser)
 def invalidate_user_cache(sender, instance, **kwargs):
     cache.delete_pattern(f"*user_detail_{instance.id}*")
+
+@receiver([post_save, post_delete], sender=UserBankAccount)
+def invalidate_user_bank_account_cache(sender, instance, **kwargs):
+    cache.delete_pattern(f"*user_bank_accounts_{instance.user.id}*")
+    

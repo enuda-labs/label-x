@@ -13,11 +13,61 @@ from task.models import Task, TaskCluster, TaskLabel
 from django.db.models import Sum, Count
 
 
-from .models import CustomUser, LabelerEarnings, OTPVerification, Project, ProjectLog
+from .models import CustomUser, LabelerEarnings, OTPVerification, Project, ProjectLog, UserBankAccount
 from reviewer.models import LabelerDomain
 from reviewer.serializers import LabelerDomainSerializer
+from payment.utils import find_bank_by_code
 
 
+
+class UserBankAccountSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = UserBankAccount
+        # fields =["account_number", "bank_code", "is_primary", "account_name"]
+        fields = "__all__"
+        read_only_fields = ["id", "created_at", "updated_at", "user", "bank_name", "is_primary"]
+        
+    
+            
+    def validate(self, attrs): 
+        bank_code = attrs.get('bank_code')
+        if bank_code:
+            bank = find_bank_by_code(attrs.get("bank_code"))
+            if not bank:
+                raise serializers.ValidationError("Invalid or unsupported bank code")
+        
+        existing_bank_code = UserBankAccount.objects.filter(user=self.context.get("request").user, bank_code=attrs.get("bank_code"), account_number=attrs.get("account_number")).exists()
+        if existing_bank_code:
+            raise serializers.ValidationError("You have already added this bank account, please edit the existing bank account instead")
+        
+        return attrs
+    
+    def create(self, validated_data):
+        request = self.context.get("request")
+        validated_data["user"] = request.user
+        
+        bank_code = validated_data.get('bank_code')
+        bank = find_bank_by_code(bank_code)
+        
+        print(bank)
+        print(validated_data)
+        
+        validated_data['bank_name'] = bank.get('name')
+        
+        if not UserBankAccount.objects.filter(user=request.user).exists():
+            validated_data['is_primary'] = True
+        else:
+            validated_data['is_primary'] = False
+        
+        return super().create(validated_data)
+    
+    def update(self, instance, validated_data):
+        bank_code = validated_data.get('bank_code')
+        if bank_code and bank_code != instance.bank_code: #this means the user is trying to change their bank entirely
+            bank = find_bank_by_code(validated_data.get('bank_code'))
+            validated_data['bank_name'] = bank.get('name')
+            
+        return super().update(instance, validated_data)
 
 
 class LabelerEarningsSerializer(serializers.ModelSerializer):

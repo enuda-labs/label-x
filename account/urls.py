@@ -30,4 +30,8 @@ urlpatterns = [
     path('admin/set-user-active-status/', apis.SetUserActiveStatusView.as_view(), name='set-user-active-status'),
     path('labeler/earnings/', apis.GetLabelersEarningsView.as_view(), name='get-labelers-earnings'),
     path('reviewer/create/', apis.CreateLabelerView.as_view(), name='create-labeler'),
+    path('bank/account/', apis.CreateUserBankAccountView.as_view(), name='create-user-bank-account'),
+    path('bank/account/<uuid:id>/', apis.DeleteUserBankAccountView.as_view(), name='delete-user-bank-account'),
+    path('bank/account/<uuid:id>/primary/', apis.UpdatePrimaryBankAccountView.as_view(), name='update-primary-bank-account'),
+    path('bank/account/<uuid:id>/edit/', apis.EditUserBankAccountView.as_view(), name='edit-user-bank-account'),
 ]
