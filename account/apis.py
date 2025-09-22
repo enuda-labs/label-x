@@ -968,7 +968,9 @@ class ListProjectsView(APIView):
             pending_review = project.clusters.filter(status=TaskClusterStatusChoices.PENDING).count()
             in_progress = project.clusters.filter(status=TaskClusterStatusChoices.IN_REVIEW).count()
             
-            completion_percentage = (completed_tasks / total_tasks * 100) if total_tasks > 0 else 0
+            # completion_percentage = (completed_tasks / total_tasks * 100) if total_tasks > 0 else 0
+            
+            completion_percentage = project.get_cluster_label_completion_percentage() or 0
             
             # Add task statistics to project data
             project_dict['task_stats'] = {
