@@ -1,9 +1,11 @@
+import decimal
 from email import message
 from io import BytesIO
 import uuid
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
 from django.db import models
 from django.db.models import Avg
+from django.db.models import F
 import pyotp
 import qrcode
 from rest_framework_api_key.models import AbstractAPIKey
@@ -12,6 +14,7 @@ from cloudinary.models import CloudinaryField
 import cloudinary.uploader
 
 from account.choices import ProjectStatusChoices
+from payment.choices import TransactionStatusChoices, TransactionTypeChoices
 from reviewer.models import LabelerDomain
 from task.choices import TaskInputTypeChoices
 
@@ -110,6 +113,40 @@ class LabelerEarnings(models.Model):
     
     def __str__(self):
         return f"Balance for {self.labeler.username}"
+    
+    def deduct_balance(self, usd_amount, reason=None, create_transaction=True):
+        from payment.models import Transaction
+
+        self.balance = F('balance') - decimal.Decimal(usd_amount)
+        self.save(update_fields=['balance'])
+        self.refresh_from_db()
+        
+        if create_transaction:
+            Transaction.objects.create(
+                user=self.labeler,
+                usd_amount=usd_amount,
+                transaction_type=TransactionTypeChoices.WITHDRAWAL,
+                description=reason,
+                status=TransactionStatusChoices.SUCCESS,
+            )
+        return self.balance
+    
+    def topup_balance(self, usd_amount, reason=None, create_transaction=True):
+        from payment.models import Transaction
+
+        self.balance = F('balance') + decimal.Decimal(usd_amount)
+        self.save(update_fields=['balance'])
+        self.refresh_from_db()
+        
+        if create_transaction:
+            Transaction.objects.create(
+                user=self.labeler,
+                usd_amount=usd_amount,
+                transaction_type=TransactionTypeChoices.DEPOSIT,
+                description=reason,
+                status=TransactionStatusChoices.SUCCESS,
+            )
+        return self.balance
 
 class ApiKeyTypeChoices(models.TextChoices):
     PRODUCTION = 'production', 'Production',
