@@ -1,14 +1,16 @@
-from celery import Task
+from celery import Task, shared_task
 from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
 from django.db import models
 from django.utils import timezone
 from datetime import timedelta
-from task.choices import TaskTypeChoices
+from task.choices import TaskClusterStatusChoices, TaskTypeChoices
 from account.models import CustomUser
 import math
 from task.models import TaskCluster
 from common.utils import get_dp_cost_settings
+import random
+from django.db.models import Count, Q
 
 def serialize_task(task):
     from task.serializers import FullTaskSerializer
@@ -78,6 +80,25 @@ def assign_reviewer(task):
 
     return True
 
+
+@shared_task
+def assign_reviewers_to_cluster(cluster_id):
+    """
+    Assign reviewers to a cluster
+    """
+    
+    try:
+        cluster = TaskCluster.objects.get(id=cluster_id)
+    except TaskCluster.DoesNotExist:
+        return False
+    
+    domain = cluster.labeler_domain
+    
+    #get reviewers in this domain and order them by the ones that have the least assigned clusters (i.e the less busy ones)
+    matching_reviewers = list(CustomUser.objects.filter(domains=domain, is_reviewer=True).annotate(assigned_count=Count('assigned_clusters', filter=~Q(assigned_clusters__status=TaskClusterStatusChoices.COMPLETED))).order_by('assigned_count'))    
+    cluster.assigned_reviewers.add(*matching_reviewers[:cluster.labeller_per_item_count]) #since matching_reviewers is already ordered by the least busy ones, we can just add the first cluster.labeller_per_item_count ones
+    cluster.save()
+    return True
 
 def calculate_labelling_required_data_points(cluster_data: dict) -> int:
     """
