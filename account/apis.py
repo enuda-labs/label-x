@@ -978,7 +978,7 @@ class ListProjectsView(APIView):
                 'completed_tasks': completed_tasks,
                 'pending_review': pending_review,
                 'in_progress': in_progress,
-                "completion_percentage": round(completion_percentage)
+                "completion_percentage": round(completion_percentage, 2)
             }
             
             project_data.append(project_dict)
