@@ -355,7 +355,7 @@ class TaskClusterCreateView(generics.GenericAPIView):
         
             return SuccessResponse(message="Cluster created successfully, tasks have been queued for AI annotation", data=TaskClusterDetailSerializer(cluster).data)
         
-        assign_reviewers_to_cluster.delay(cluster.id)
+        # assign_reviewers_to_cluster.delay(cluster.id)
         return SuccessResponse(message="Cluster created successfully", data=TaskClusterDetailSerializer(cluster).data)
         
     

@@ -37,6 +37,7 @@ urlpatterns = [
     path("api/v1/datasets/", include('datasets.urls')),
     path('api/v1/payment/', include('payment.urls')),
     path('api/v1/reviewer/', include('reviewer.urls')),
+    path('api/v1/system/', include('common.urls')),
 ]
 
 

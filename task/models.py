@@ -21,9 +21,11 @@ class TaskClassificationChoices(models.TextChoices):
     HIGHLY_OFFENSIVE = "Highly Offensive", "Highly Offensive"
 
 
-def get_default_labeler_domain():
+def get_default_labeler_domain(as_id=True):
     labeler_domain, created = LabelerDomain.objects.get_or_create(domain="Default")
-    return labeler_domain.id
+    if as_id:
+        return labeler_domain.id
+    return labeler_domain
 
 class TaskCluster(models.Model):
     """
