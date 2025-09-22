@@ -41,4 +41,5 @@ class WithdrawalRequest(models.Model):
     transaction = models.ForeignKey(Transaction, on_delete=models.CASCADE, null=True, blank=True, help_text="The transaction that this withdrawal request is associated with")
     
     def __str__(self):
-        return f"Withdrawal request of ${self.transaction.usd_amount} by {self.transaction.username} - {self.transaction.status}"
+        return f"Withdrawal request to {self.bank_name} account number {self.account_number}"
+        # return f"Withdrawal request of ${self.transaction.usd_amount} by {self.transaction.username} - {self.transaction.status}"
