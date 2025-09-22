@@ -25,6 +25,7 @@ from django.db.models import Prefetch
 from .utils import IsAdminUser, IsSuperAdmin, NotReviewer, assign_default_plan
 from .serializers import (
     AdminProjectDetailSerializer,
+    CreateLabelerSerializer,
     Disable2faSerializer,
     LabelerEarningsSerializer,
     LoginSerializer,
@@ -577,6 +578,30 @@ class LoginView(APIView):
             status=status.HTTP_401_UNAUTHORIZED,
         )
 
+
+class CreateLabelerView(generics.GenericAPIView):
+    permission_classes = [IsAuthenticated, IsAdminUser]
+    serializer_class = CreateLabelerSerializer
+    
+    @extend_schema(
+        summary="Create a new labeler",
+        description="Create a new labeler with username, email, password, and domains.",
+        request=CreateLabelerSerializer,
+        responses={201: CreateLabelerSerializer},
+    )
+    def post(self, request):
+        serializer = self.get_serializer(data=request.data)
+        
+        if not serializer.is_valid():
+            return ErrorResponse(message=format_first_error(serializer.errors))
+        
+        user = serializer.save()
+        #TODO: send an email to the labeler
+        return SuccessResponse(message="Labeler created successfully", data=SimpleUserSerializer(user).data)
+    
+
+    
+    
 
 class RegisterView(APIView):
     """User registration endpoint"""

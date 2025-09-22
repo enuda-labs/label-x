@@ -12,6 +12,7 @@ from cloudinary.models import CloudinaryField
 import cloudinary.uploader
 
 from account.choices import ProjectStatusChoices
+from reviewer.models import LabelerDomain
 from task.choices import TaskInputTypeChoices
 
 
@@ -71,6 +72,8 @@ class CustomUserManager(BaseUserManager):
         user.is_superuser = True
         user.save(using=self._db)
         return user
+    
+
 
 class CustomUser(AbstractBaseUser, PermissionsMixin):
     """Custom User model that uses username and email for authentication"""
@@ -86,6 +89,7 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     is_staff = models.BooleanField(default=False)
     is_superuser = models.BooleanField(default=False) 
     project = models.ForeignKey(Project, on_delete=models.SET_NULL, related_name='members', null=True, blank=True)
+    domains = models.ManyToManyField(LabelerDomain, related_name='labelers', blank=True, help_text="The domains of expertise that the labeler is allowed to label")
 
     objects = CustomUserManager()
 

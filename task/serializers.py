@@ -3,10 +3,12 @@ from rest_framework import serializers
 
 from account.models import CustomUser, Project
 from account.serializers import SimpleUserSerializer, UserSerializer
+from reviewer.models import LabelerDomain
 from subscription.models import UserDataPoints
 from task.choices import AnnotationMethodChoices, ManualReviewSessionStatusChoices, TaskInputTypeChoices, TaskTypeChoices
 from task.utils import calculate_required_data_points
-from .models import ManualReviewSession, MultiChoiceOption, Task, TaskClassificationChoices, TaskCluster, TaskLabel
+from .models import ManualReviewSession, MultiChoiceOption, Task, TaskClassificationChoices, TaskCluster, TaskLabel, get_default_labeler_domain
+
 
 
 
@@ -136,6 +138,11 @@ class TaskClusterCreateSerializer(serializers.ModelSerializer):
     """
     tasks = TaskCreateSerializer(many=True)
     labelling_choices = MultiChoiceOptionSerializer(many=True, required=False)
+    labeler_domain = serializers.PrimaryKeyRelatedField(
+        queryset=LabelerDomain.objects.all(),
+        required=False,
+        allow_null=True
+    )
 
     class Meta:
         model = TaskCluster
@@ -181,6 +188,7 @@ class TaskClusterCreateSerializer(serializers.ModelSerializer):
 
         #TODO: remove this later if not needed
         total_required_dp = 0
+        
         # loop through the tasks data that were created and ensure accuracy
         for data in tasks_data:
             file = data.get('file', None)
@@ -223,6 +231,11 @@ class TaskClusterCreateSerializer(serializers.ModelSerializer):
         validated_data.pop('tasks')
         validated_data.pop('required_data_points')
         validated_data.pop("labelling_choices")
+        
+        labeler_domain = validated_data.get('labeler_domain', None)
+        if not labeler_domain:
+            default_domain = LabelerDomain.objects.get_or_create(domain="Default")
+            validated_data['labeler_domain'] = default_domain
         return super().create(validated_data)
     
 class MultipleChoicesSerializer(serializers.ModelSerializer):

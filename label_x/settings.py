@@ -93,6 +93,7 @@ INSTALLED_APPS = [
     'cloudinary_storage',
     "datasets",
     "payment",
+    "reviewer",
 ]
 
 MIDDLEWARE = [

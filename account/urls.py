@@ -29,4 +29,5 @@ urlpatterns = [
     path('admin/deactivate-user/<int:user_id>/', apis.DeactivateUserView.as_view(), name='deactivate-user'),
     path('admin/set-user-active-status/', apis.SetUserActiveStatusView.as_view(), name='set-user-active-status'),
     path('labeler/earnings/', apis.GetLabelersEarningsView.as_view(), name='get-labelers-earnings'),
+    path('reviewer/create/', apis.CreateLabelerView.as_view(), name='create-labeler'),
 ]
