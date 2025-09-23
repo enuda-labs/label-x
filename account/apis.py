@@ -35,7 +35,6 @@ from .serializers import (
     OtpVerificationSerializer,
     ProjectCreateSerializer,
     ProjectDetailSerializer,
-    ProjectListResponseSerializer,
     ProjectSerializer,
     RegisterSerializer,
     RevokeReviewerSerializer,
@@ -44,6 +43,7 @@ from .serializers import (
     SuccessDetailResponseSerializer,
     TokenRefreshResponseSerializer,
     TokenRefreshSerializer,
+    UserBankAccountSerializer,
     UserDetailResponseSerializer,
     UserDetailSerializer,
     UserListResponseSerializer,
@@ -57,7 +57,7 @@ from .utils import (
     IsAdminUser,
     IsSuperAdmin,
 )
-from .models import CustomUser, LabelerEarnings, OTPVerification, Project
+from .models import CustomUser, LabelerEarnings, OTPVerification, Project, UserBankAccount
 from django.contrib.auth import logout
 # Set up logger
 logger = logging.getLogger('account.apis')
@@ -66,6 +66,107 @@ from datetime import datetime
 from django.db.models.functions import TruncDate
 from django.db.models import Sum, Count, Q, Avg 
 from drf_spectacular.openapi import OpenApiTypes
+
+
+class EditUserBankAccountView(generics.UpdateAPIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = UserBankAccountSerializer
+    lookup_field = 'id'
+    http_method_names = ['put']
+    def get_queryset(self):
+        return UserBankAccount.objects.filter(user=self.request.user)
+    
+    @extend_schema(summary="Edit a user's bank account")
+    def update(self, request, *args, **kwargs):
+        return super().update(request, *args, **kwargs)
+    
+    def put(self, request, *args, **kwargs):
+        return super().put(request, *args, **kwargs)
+    
+
+class UpdatePrimaryBankAccountView(generics.GenericAPIView):
+    permission_classes = [IsAuthenticated]
+    
+    @extend_schema(
+        summary="Update the primary bank account for the currently logged in user",
+        description="Sets the specified bank account as the primary bank account for the authenticated user. Only one bank account can be primary at a time.",
+        responses={
+            200: OpenApiResponse(
+                response=UserBankAccountSerializer,
+                description="Bank account updated successfully"
+            ),
+            404: OpenApiResponse(
+                description="Bank account not found"
+            )
+        }
+    )
+    def post(self, request, *args, **kwargs):
+        bank_id = kwargs.get('id')
+        
+        try:
+            bank = UserBankAccount.objects.get(id=bank_id, user=request.user)
+        except UserBankAccount.DoesNotExist:
+            return ErrorResponse(message="Bank account not found", status=status.HTTP_404_NOT_FOUND)
+        
+        for bank in UserBankAccount.objects.filter(user=request.user):
+            bank.is_primary = False
+            bank.save()
+
+        bank.is_primary = True
+        bank.save()
+        return SuccessResponse(message="Bank account updated successfully", data=UserBankAccountSerializer(bank).data)
+
+class GetUserBankAccountsView(generics.ListAPIView):
+    serializer_class = UserBankAccountSerializer
+    permission_classes = [IsAuthenticated]
+    
+    def get_queryset(self):
+        return UserBankAccount.objects.filter(user=self.request.user)
+    
+    def list(self, request, *args, **kwargs):
+        return super().list(request, *args, **kwargs)
+    
+    @extend_schema(summary="Get the bank accounts for the currently logged in user")
+    @cache_response_decorator('user_bank_accounts', cache_timeout=60 * 60 * 24, per_user=True)
+    def get(self, request, *args, **kwargs):
+        return super().get(request, *args, **kwargs)
+    
+
+
+class CreateUserPaystackBankAccountView(generics.CreateAPIView):
+    serializer_class = UserBankAccountSerializer
+    permission_classes = [IsAuthenticated]
+    
+    def get_queryset(self):
+        return UserBankAccount.objects.filter(user=self.request.user)
+    
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        if not serializer.is_valid():
+            return ErrorResponse(message=format_first_error(serializer.errors, with_key=False), status=status.HTTP_400_BAD_REQUEST)
+        
+        serializer.save()
+        return SuccessResponse(message="Bank account created successfully", data=serializer.data)
+        
+    @extend_schema(summary="Create a new paystack bank account for the currently logged in user")
+    def post(self, request, *args, **kwargs):
+        return super().post(request, *args, **kwargs)
+    
+
+
+class DeleteUserBankAccountView(generics.DestroyAPIView):
+    permission_classes = [IsAuthenticated]
+    lookup_field = 'id'
+    
+    def get_queryset(self):
+        return UserBankAccount.objects.filter(user=self.request.user)
+    
+    def destroy(self, request, *args, **kwargs):
+        bank = self.get_object()
+        
+        if bank.is_primary:
+            return ErrorResponse(message="You cannot delete your primary bank account", status=status.HTTP_409_CONFLICT)
+        return super().destroy(request, *args, **kwargs)
 
 
 class GetLabelersEarningsView(generics.GenericAPIView):

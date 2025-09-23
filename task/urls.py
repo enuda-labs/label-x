@@ -35,6 +35,7 @@ urlpatterns = [
     path('cluster/<int:cluster_id>/reviewers/', apis.GetClusterReviewers.as_view(), name='get-cluster-reviewers'),
     path('cluster/<int:cluster_id>/assign-reviewers/', apis.AssignReviewersToCluster.as_view(), name='assign-reviewers-to-cluster'),
     path('cluster/<int:cluster_id>/remove-reviewers/', apis.RemoveReviewersFromCluster.as_view(), name='remove-reviewers-from-cluster'),
+    path('cluster/<int:cluster_id>/export-to-csv/', apis.ExportClusterToCsvView.as_view(), name='export-cluster-to-csv'),
 
     # path('list/', apis.TaskListView.as_view(), name='list-tasks')
 ]

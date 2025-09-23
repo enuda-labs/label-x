@@ -13,7 +13,7 @@ from django.core.files.base import ContentFile
 from cloudinary.models import CloudinaryField
 import cloudinary.uploader
 
-from account.choices import ProjectStatusChoices
+from account.choices import BankPlatformChoices, ProjectStatusChoices
 from payment.choices import TransactionStatusChoices, TransactionTypeChoices
 from reviewer.models import LabelerDomain
 from task.choices import TaskInputTypeChoices
@@ -105,12 +105,15 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
 
 class UserBankAccount(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    user = models.OneToOneField(CustomUser, on_delete=models.CASCADE)
+    user = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='bank_accounts')
     account_number = models.CharField(max_length=255)
     bank_code = models.CharField(max_length=255)
     bank_name = models.CharField(max_length=255)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    account_name = models.CharField(max_length=255, null=True, blank=True)
+    is_primary = models.BooleanField(default=False)
+    platform = models.CharField(max_length=255, choices=BankPlatformChoices.choices, default=BankPlatformChoices.PAYSTACK, help_text="The platform of the bank account, e.g. paystack, flutterwave, etc.")
     
     def __str__(self):
         return f"{self.user.username}'s bank account - {self.bank_name} account number {self.account_number}"

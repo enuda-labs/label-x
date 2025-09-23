@@ -1,6 +1,7 @@
 from django.urls import path
 from . import apis
 app_name = 'account'
+
 urlpatterns = [
     path('login/', apis.LoginView.as_view(), name='login'),
     path('register/', apis.RegisterView.as_view(), name='register'),
@@ -30,4 +31,12 @@ urlpatterns = [
     path('admin/set-user-active-status/', apis.SetUserActiveStatusView.as_view(), name='set-user-active-status'),
     path('labeler/earnings/', apis.GetLabelersEarningsView.as_view(), name='get-labelers-earnings'),
     path('reviewer/create/', apis.CreateLabelerView.as_view(), name='create-labeler'),
+    
+    path('banks/', apis.GetUserBankAccountsView.as_view(), name='get-user-bank-accounts'),
+    
+    path('banks/<uuid:id>/', apis.DeleteUserBankAccountView.as_view(), name='delete-user-bank-account'),
+    path('banks/<uuid:id>/primary/', apis.UpdatePrimaryBankAccountView.as_view(), name='update-primary-bank-account'),
+    
+    path('banks/paystack/', apis.CreateUserPaystackBankAccountView.as_view(), name='create-user-bank-account'),
+    path('banks/paystack/<uuid:id>/edit/', apis.EditUserBankAccountView.as_view(), name='edit-user-bank-account'),
 ]
