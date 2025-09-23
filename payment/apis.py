@@ -8,6 +8,7 @@ from common.responses import ErrorResponse, SuccessResponse
 from paystackapi.misc import Misc
 from paystackapi.paystack import Paystack, TransferRecipient
 from django.conf import settings
+from rest_framework.response import Response
 import logging
 from rest_framework.permissions import IsAuthenticated
 import decimal
@@ -19,6 +20,10 @@ from account.models import LabelerEarnings
 from payment.utils import convert_usd_to_ngn, find_bank_by_code, request_paystack, verify_paystack_origin
 import json
 from django.db.models import F
+
+from task.utils import get_labeller_current_month_preview, get_labeller_monthly_history
+
+
 logger = logging.getLogger('payment.apis')
 
 paystack = Paystack(secret_key=settings.PAYSTACK_SECRET_KEY)
@@ -177,3 +182,62 @@ class GetPaystackBankCodesView(generics.ListAPIView):
     @extend_schema(summary="Get all the banks that paystack supports for withdrawal")
     def get(self, request, *args, **kwargs):
         return super().get(request, *args, **kwargs)
+
+
+
+class LabellerEarningsView(generics.GenericAPIView):
+    """
+    View for checking labeller current month earnings
+    """
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request):
+        """Get current month earnings preview for the logged-in labeller"""
+        try:
+            earnings_preview = get_labeller_current_month_preview(request.user)
+            
+            return Response({
+                'status': 'success',
+                'message': 'Current month earnings preview retrieved successfully',
+                'data': earnings_preview
+            }, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            logger.error(f"Error getting earnings preview for user {request.user.id}: {str(e)}", exc_info=True)
+            return Response({
+                'status': 'error',
+                'detail': f'Failed to get earnings preview: {str(e)}'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+class LabellerEarningsHistoryView(generics.GenericAPIView):
+    """
+    View for checking labeller earnings history
+    """
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request):
+        """Get earnings history for the logged-in labeller"""
+        try:
+            # Get months parameter from query params (default 6)
+            months_back = int(request.query_params.get('months', 6))
+            months_back = min(max(months_back, 1), 24)  # Limit between 1 and 24 months
+            
+            earnings_history = get_labeller_monthly_history(request.user, months_back)
+            
+            return Response({
+                'status': 'success',
+                'message': f'Earnings history for last {months_back} months retrieved successfully',
+                'data': earnings_history
+            }, status=status.HTTP_200_OK)
+            
+        except ValueError:
+            return Response({
+                'status': 'error',
+                'detail': 'Invalid months parameter. Please provide a valid number.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            logger.error(f"Error getting earnings history for user {request.user.id}: {str(e)}", exc_info=True)
+            return Response({
+                'status': 'error',
+                'detail': f'Failed to get earnings history: {str(e)}'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
