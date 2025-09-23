@@ -13,7 +13,7 @@ from django.core.files.base import ContentFile
 from cloudinary.models import CloudinaryField
 import cloudinary.uploader
 
-from account.choices import ProjectStatusChoices
+from account.choices import BankPlatformChoices, ProjectStatusChoices
 from payment.choices import TransactionStatusChoices, TransactionTypeChoices
 from reviewer.models import LabelerDomain
 from task.choices import TaskInputTypeChoices
@@ -113,6 +113,7 @@ class UserBankAccount(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
     account_name = models.CharField(max_length=255, null=True, blank=True)
     is_primary = models.BooleanField(default=False)
+    platform = models.CharField(max_length=255, choices=BankPlatformChoices.choices, default=BankPlatformChoices.PAYSTACK, help_text="The platform of the bank account, e.g. paystack, flutterwave, etc.")
     
     def __str__(self):
         return f"{self.user.username}'s bank account - {self.bank_name} account number {self.account_number}"

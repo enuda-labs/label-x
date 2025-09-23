@@ -23,6 +23,8 @@ def cache_response_decorator(cache_prefix: str, cache_timeout: int = 60 * 10, pe
         def get(self, request):
             # View logic here
             return Response(data)
+            
+    Important: Ensure to write an invalidation signal or strategy for every cache created with this decorator
     """
     def decorator(view_func):
         def wrapper(self, request, *args, **kwargs):

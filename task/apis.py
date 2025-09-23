@@ -1,19 +1,21 @@
-from django.core import cache
+from django.core.cache import cache
+from django.http import HttpResponse
 from django.shortcuts  import get_object_or_404
 from drf_spectacular.utils import extend_schema, OpenApiResponse, OpenApiExample
 from rest_framework import generics
 from rest_framework.response import Response
 from rest_framework import status
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import AllowAny, IsAuthenticated
 import logging
 from datetime import datetime
 from rest_framework.views import APIView
+from rest_framework_api_key.permissions import HasAPIKey
 from account.choices import ProjectStatusChoices
 from account.models import Project, CustomUser, LabelerEarnings
 from common.caching import cache_response_decorator
 from common.responses import ErrorResponse, SuccessResponse, format_first_error
 from subscription.models import UserDataPoints
-from task.choices import AnnotationMethodChoices, ManualReviewSessionStatusChoices, TaskClusterStatusChoices, TaskInputTypeChoices
+from task.choices import AnnotationMethodChoices, ManualReviewSessionStatusChoices, TaskClusterStatusChoices, TaskInputTypeChoices, TaskTypeChoices
 from task.utils import assign_reviewers_to_cluster, calculate_labelling_required_data_points, calculate_required_data_points, dispatch_task_message, push_realtime_update
 from .models import ManualReviewSession, MultiChoiceOption, Task, TaskCluster, UserReviewChatHistory, TaskLabel
 from .serializers import AcceptClusterIdSerializer, AssignedTaskSerializer, FullTaskSerializer, GetAndValidateReviewersSerializer, ListReviewersWithClustersSerializer, MultiChoiceOptionSerializer, TaskAnnotationSerializer, TaskClusterCreateSerializer, TaskClusterDetailSerializer, TaskClusterListSerializer, TaskIdSerializer, TaskSerializer, TaskReviewSerializer, AssignTaskSerializer
@@ -22,10 +24,58 @@ from .tasks import process_task, provide_feedback_to_ai_model
 # import custom permissions
 from account.utils import HasUserAPIKey, IsAdminUser, IsReviewer
 from django.db.models import Q, Count, Avg, F, Sum
+import csv
+
 # from task.choices import TaskClassificationChoices
 
 
 logger = logging.getLogger('task.apis')
+
+
+class ExportClusterToCsvView(generics.GenericAPIView):
+    permission_classes = [IsAuthenticated | HasAPIKey]
+    
+    @extend_schema(
+        summary="Export a cluster to CSV",
+        description="Export a cluster to CSV",
+        responses={
+            200: OpenApiResponse(response=None, description="Cluster exported to CSV"),
+            404: OpenApiResponse(response=None, description="Cluster not found"),
+        }
+    )
+    def get(self, request, *args, **kwargs):
+        cluster_id = kwargs.get('cluster_id')
+        
+        try:
+            cluster = TaskCluster.objects.get(id=cluster_id)
+        except TaskCluster.DoesNotExist:
+            return ErrorResponse(message="Cluster not found", status=status.HTTP_404_NOT_FOUND)
+        
+        if cluster.created_by != request.user:
+            return ErrorResponse(message="You are not authorized to export this data", status=status.HTTP_403_FORBIDDEN)
+        
+        labels = TaskLabel.objects.filter(task__cluster=cluster)
+        
+        response = HttpResponse(content_type='text/csv')
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"{cluster.project.name}_{cluster.id}_{timestamp}.csv"
+        response['Content-Disposition'] = f'attachment; filename="{filename}"'
+        
+        writer = csv.writer(response)
+        headers = ['Task ID', 'Task Data', 'Label', 'notes', 'Labeller', 'Created At', 'Updated At']
+        writer.writerow(headers)
+        
+        is_text_input_type = cluster.input_type  in [TaskInputTypeChoices.TEXT, TaskInputTypeChoices.MULTIPLE_CHOICE]
+        
+        for label in labels:
+            task_data = label.task.data if label.task.task_type == TaskTypeChoices.TEXT else label.task.file_url
+            task_label = label.label if is_text_input_type else label.label_file_url
+            
+            row = [label.task.id, task_data, task_label, label.notes, label.labeller.username, label.created_at, label.updated_at]
+            writer.writerow(row)
+        
+        return response
+        
 
 
 

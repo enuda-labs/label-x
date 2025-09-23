@@ -16,7 +16,7 @@ from django.db.models import Sum, Count
 from .models import CustomUser, LabelerEarnings, OTPVerification, Project, ProjectLog, UserBankAccount
 from reviewer.models import LabelerDomain
 from reviewer.serializers import LabelerDomainSerializer
-from payment.utils import find_bank_by_code
+from payment.utils import find_bank_by_code, request_paystack, resolve_bank_details
 
 
 
@@ -25,12 +25,14 @@ class UserBankAccountSerializer(serializers.ModelSerializer):
         model = UserBankAccount
         # fields =["account_number", "bank_code", "is_primary", "account_name"]
         fields = "__all__"
-        read_only_fields = ["id", "created_at", "updated_at", "user", "bank_name", "is_primary"]
-        
+        read_only_fields = ["id", "created_at", "updated_at", "user", "bank_name", "is_primary", "account_name"]
     
+ 
             
     def validate(self, attrs): 
+        print('validating bank the', attrs)
         bank_code = attrs.get('bank_code')
+        account_number = attrs.get('account_number')
         if bank_code:
             bank = find_bank_by_code(attrs.get("bank_code"))
             if not bank:
@@ -38,8 +40,19 @@ class UserBankAccountSerializer(serializers.ModelSerializer):
         
         existing_bank_code = UserBankAccount.objects.filter(user=self.context.get("request").user, bank_code=attrs.get("bank_code"), account_number=attrs.get("account_number")).exists()
         if existing_bank_code:
-            raise serializers.ValidationError("You have already added this bank account, please edit the existing bank account instead")
+            raise serializers.ValidationError(f"You already have an existing {bank.get('name')} bank account with this account number")
         
+        if bank_code and account_number:
+            bank_details = resolve_bank_details(bank_code, account_number)
+            if not bank_details:
+                raise serializers.ValidationError("Invalid bank details, please cross check the account number and try again")
+            
+            account_name = bank_details.get('data', {}).get('account_name', None)
+            
+            if not account_name:
+                raise serializers.ValidationError("Error resolving account name, please cross check the account number and try again")
+            
+            attrs['account_name'] = account_name
         return attrs
     
     def create(self, validated_data):

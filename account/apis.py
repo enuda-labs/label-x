@@ -72,13 +72,16 @@ class EditUserBankAccountView(generics.UpdateAPIView):
     permission_classes = [IsAuthenticated]
     serializer_class = UserBankAccountSerializer
     lookup_field = 'id'
-    
+    http_method_names = ['put']
     def get_queryset(self):
         return UserBankAccount.objects.filter(user=self.request.user)
     
     @extend_schema(summary="Edit a user's bank account")
     def update(self, request, *args, **kwargs):
         return super().update(request, *args, **kwargs)
+    
+    def put(self, request, *args, **kwargs):
+        return super().put(request, *args, **kwargs)
     
 
 class UpdatePrimaryBankAccountView(generics.GenericAPIView):
@@ -112,10 +115,25 @@ class UpdatePrimaryBankAccountView(generics.GenericAPIView):
         bank.is_primary = True
         bank.save()
         return SuccessResponse(message="Bank account updated successfully", data=UserBankAccountSerializer(bank).data)
+
+class GetUserBankAccountsView(generics.ListAPIView):
+    serializer_class = UserBankAccountSerializer
+    permission_classes = [IsAuthenticated]
+    
+    def get_queryset(self):
+        return UserBankAccount.objects.filter(user=self.request.user)
+    
+    def list(self, request, *args, **kwargs):
+        return super().list(request, *args, **kwargs)
+    
+    @extend_schema(summary="Get the bank accounts for the currently logged in user")
+    @cache_response_decorator('user_bank_accounts', cache_timeout=60 * 60 * 24, per_user=True)
+    def get(self, request, *args, **kwargs):
+        return super().get(request, *args, **kwargs)
     
 
 
-class CreateUserBankAccountView(generics.ListCreateAPIView):
+class CreateUserPaystackBankAccountView(generics.CreateAPIView):
     serializer_class = UserBankAccountSerializer
     permission_classes = [IsAuthenticated]
     
@@ -130,14 +148,11 @@ class CreateUserBankAccountView(generics.ListCreateAPIView):
         serializer.save()
         return SuccessResponse(message="Bank account created successfully", data=serializer.data)
         
-    @extend_schema(summary="Create a new bank account for the currently logged in user")
+    @extend_schema(summary="Create a new paystack bank account for the currently logged in user")
     def post(self, request, *args, **kwargs):
         return super().post(request, *args, **kwargs)
     
-    @extend_schema(summary="Get the bank accounts for the currently logged in user")
-    @cache_response_decorator('user_bank_accounts', cache_timeout=60 * 60 * 24, per_user=True)
-    def get(self, request, *args, **kwargs):
-        return super().get(request, *args, **kwargs)
+
 
 class DeleteUserBankAccountView(generics.DestroyAPIView):
     permission_classes = [IsAuthenticated]
