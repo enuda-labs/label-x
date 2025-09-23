@@ -390,12 +390,14 @@ class UserProjectSerializer(serializers.ModelSerializer):
     class Meta:
         model = Project
         fields = ["id", "name", "created_by", "description", "created_at", "status"]
-        read_only_fields = ["created_by", "created_at"]
+        read_only_fields = ["created_by", "created_at", 'status']
 
     def create(self, validated_data):
         request = self.context.get("request")
         validated_data["created_by"] = request.user
-        return super().create(validated_data)
+        project = super().create(validated_data)
+        project.create_log(f"Project created by {request.user.username}")
+        return project
 
 
 class UserDetailSerializer(serializers.ModelSerializer):

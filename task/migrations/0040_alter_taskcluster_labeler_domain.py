@@ -16,6 +16,6 @@ class Migration(migrations.Migration):
         migrations.AlterField(
             model_name='taskcluster',
             name='labeler_domain',
-            field=models.ForeignKey(default=task.models.get_default_labeler_domain, help_text='The domain of expertise that the labeler is allowed to label', on_delete=django.db.models.deletion.CASCADE, related_name='clusters', to='reviewer.labelerdomain'),
+            field=models.ForeignKey(blank=True, default=None, help_text='The domain of expertise that the labeler is allowed to label', null=True, on_delete=django.db.models.deletion.CASCADE, related_name='clusters', to='reviewer.labelerdomain'),
         ),
     ]

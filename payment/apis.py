@@ -1,4 +1,5 @@
 import uuid
+from django.db import transaction
 from rest_framework import generics, status
 from drf_spectacular.utils import extend_schema
 from rest_framework import permissions
@@ -13,9 +14,9 @@ import logging
 from rest_framework.permissions import IsAuthenticated
 import decimal
 
-from payment.choices import TransactionStatusChoices
-from payment.models import WithdrawalRequest
-from payment.serializers import PaystackWithdrawSerializer
+from payment.choices import TransactionStatusChoices, TransactionTypeChoices
+from payment.models import Transaction, WithdrawalRequest
+from payment.serializers import PaystackWithdrawSerializer, TransactionSerializer
 from account.models import LabelerEarnings
 from payment.utils import convert_usd_to_ngn, find_bank_by_code, request_paystack, verify_paystack_origin
 import json
@@ -27,6 +28,16 @@ from task.utils import get_labeller_current_month_preview, get_labeller_monthly_
 logger = logging.getLogger('payment.apis')
 
 paystack = Paystack(secret_key=settings.PAYSTACK_SECRET_KEY)
+
+class FetchUserTransactionHistoryView(generics.ListAPIView):
+    serializer_class = TransactionSerializer
+    def get_queryset(self):
+        return Transaction.objects.filter(user=self.request.user)
+    
+    @cache_response_decorator('user_transaction_history', cache_timeout=60 * 60 * 24, per_user=True)
+    @extend_schema(summary="Fetch the transaction history for the currently logged in user")
+    def get(self, request, *args, **kwargs):
+        return super().get(request, *args, **kwargs)
 
 
 class InitiateLabelerWithdrawalView(generics.GenericAPIView):
@@ -70,14 +81,20 @@ class InitiateLabelerWithdrawalView(generics.GenericAPIView):
         
         reference = str(uuid.uuid4())
         
+        transaction = Transaction.objects.create(
+            user=request.user,
+            usd_amount=amount,
+            ngn_amount=ngn_amount,
+            transaction_type=TransactionTypeChoices.WITHDRAWAL,
+            description="Withdrawal to bank account",
+        )
+        
         withdrawal_request = WithdrawalRequest.objects.create(
             account_number=account_number,
             bank_code=bank_code,
             bank_name=bank.get('name'),
             reference=reference,
-            ngn_amount = ngn_amount,
-            usd_amount = amount,
-            user=request.user
+            transaction=transaction
         )
         
         if decimal.Decimal(client_balance) < ngn_amount:
@@ -94,9 +111,8 @@ class InitiateLabelerWithdrawalView(generics.GenericAPIView):
         
         
         recipient_response = TransferRecipient.create(**recipient_data)
-        if not recipient_response.get("status"):
-            withdrawal_request.status = TransactionStatusChoices.FAILED
-            withdrawal_request.save()
+        if not recipient_response.get("status"):  
+            transaction.mark_failed()
             return ErrorResponse(message="Could not initiate transfer, please double check the account information and try again.", status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         
         recipient_code = recipient_response.get("data").get("recipient_code")
@@ -109,11 +125,15 @@ class InitiateLabelerWithdrawalView(generics.GenericAPIView):
         
         transfer_response = paystack.transfer.initiate(**transfer_data)
         if not transfer_response.get('status', False):
-            withdrawal_request.status = TransactionStatusChoices.FAILED
-            withdrawal_request.save()
+            transaction.mark_failed()
             error_message = transfer_response.get("message", "FATAL: Unable to initialize transfer, please contact support")
             #TODO: contact an admin and warn them about the error
             return ErrorResponse(message=error_message, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
+        
+        earnings.deduct_balance(withdrawal_request.transaction.usd_amount, create_transaction=False)
+        withdrawal_request.is_user_balance_deducted = True
+        withdrawal_request.save(update_fields=['is_user_balance_deducted'])
         
         return SuccessResponse(message="Withdrawal request initiated successfully, your funds will be available in your bank account in a few minutes")
 
@@ -132,13 +152,26 @@ class PaystackWebhookListener(generics.GenericAPIView):
             return None
         
         earnings, _ = LabelerEarnings.objects.get_or_create(labeler=withdrawal_request.user)
-        if earnings.balance >= withdrawal_request.usd_amount:
-            earnings.balance = F('balance') - withdrawal_request.usd_amount
-            earnings.save(update_fields=['balance'])
         
-        withdrawal_request.status = TransactionStatusChoices.SUCCESS
-        withdrawal_request.save()
-        
+        try:
+            with transaction.atomic():
+                if not withdrawal_request.is_user_balance_deducted:
+                    if earnings.balance >= withdrawal_request.transaction.usd_amount:
+                        
+                        earnings.deduct_balance(withdrawal_request.transaction.usd_amount, create_transaction=False)
+            
+                        withdrawal_request.is_user_balance_deducted = True
+                        withdrawal_request.save(update_fields=['is_user_balance_deducted'])
+                        
+                        withdrawal_request.transaction.mark_success()
+                        
+                    else:
+                        withdrawal_request.transaction.mark_failed()
+                        return withdrawal_request
+        except Exception as e:
+            withdrawal_request.transaction.mark_failed()
+            return withdrawal_request
+
         return withdrawal_request
     
     def handle_transfer_failed(self, payload):
@@ -149,9 +182,12 @@ class PaystackWebhookListener(generics.GenericAPIView):
         if not withdrawal_request:
             return None
         
-        withdrawal_request.status = TransactionStatusChoices.FAILED
-        withdrawal_request.save()
-        
+        #if the user's balance was previously deducted and the transfer failed, we need to topup the balance
+        if withdrawal_request.is_user_balance_deducted and withdrawal_request.transaction.status == TransactionStatusChoices.PENDING:
+            earnings, _ = LabelerEarnings.objects.get_or_create(labeler=withdrawal_request.user)
+            earnings.topup_balance(withdrawal_request.transaction.usd_amount, ngn_amount=withdrawal_request.transaction.ngn_amount)
+            
+        withdrawal_request.transaction.mark_failed()
         return withdrawal_request
     
     def post(self, request, *args, **kwargs):        

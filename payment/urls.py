@@ -9,5 +9,5 @@ urlpatterns = [
      # Earning-related endpoints
     path('earnings/current-month/', apis.LabellerEarningsView.as_view(), name='labeller-current-earnings'),
     path('earnings/history/', apis.LabellerEarningsHistoryView.as_view(), name='labeller-earnings-history'),
-
+    path('user/transactions/', apis.FetchUserTransactionHistoryView.as_view(), name='fetch-user-transaction-history'),
 ]

@@ -1,3 +1,4 @@
+from django.core import cache
 from django.shortcuts  import get_object_or_404
 from drf_spectacular.utils import extend_schema, OpenApiResponse, OpenApiExample
 from rest_framework import generics
@@ -945,6 +946,7 @@ class TaskCompletionStatsView(generics.GenericAPIView):
             
             # Calculate percentage
             completion_percentage = user_clusters.aggregate(completion_percentage=Avg("completion_percentage"))["completion_percentage"]  or 0
+            
             # completion_percentage = (completed_tasks / total_tasks * 100) if total_tasks > 0 else 0
         
             logger.info(f"User '{request.user.username}' fetched their task completion stats at {datetime.now()}")
@@ -1245,11 +1247,14 @@ class TaskAnnotationView(generics.GenericAPIView):
             
             cluster.update_completion_percentage()
             
+            cluster.project.create_log(f"Reviewer '{request.user.username}' submitted {len(created_labels)} labels for task {task.serial_no} at {datetime.now()}")
+            
             # Send real-time update
             push_realtime_update(task, action='task_labels_completed')
             
             logger.info(f"Reviewer '{request.user.username}' submitted {len(created_labels)} labels for task {task.serial_no} at {datetime.now()}")
             
+            cache.delete_pattern(f"*project_detail_GET_/api/v1/account/projects/{cluster.project.id}/*") #invalidate project detail cache when a label is provided, this is becuase project detail depends on logs and stats from here
             return Response({
                 'status': 'success',
                 'message': 'Task labels submitted successfully',
