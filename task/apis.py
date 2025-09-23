@@ -31,7 +31,6 @@ import csv
 
 logger = logging.getLogger('task.apis')
 
-
 class ExportClusterToCsvView(generics.GenericAPIView):
     permission_classes = [IsAuthenticated | HasAPIKey]
     
