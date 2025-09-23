@@ -9,6 +9,8 @@ class Command(BaseCommand):
         initial_settings = [
             {"key": "base_cost", "value": "10"},
             {"key": "dp_cost_per_labeller", "value": "10"},
+            {"key": "usd_per_dp_cents", "value": "10"},
+            {"key": "labeller_payout_percent", "value": "60"},
             {"key": "video_cost", "value": "10"},
             {"key": "audio_cost", "value": "10"},
             {"key": "image_cost", "value": "5"},

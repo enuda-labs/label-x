@@ -11,6 +11,13 @@ from task.models import TaskCluster
 from common.utils import get_dp_cost_settings
 import random
 from django.db.models import Count, Q
+from datetime import datetime
+from decimal import Decimal
+from django.db import models
+from django.utils import timezone
+from django.db.models import Count, Sum
+from account.models import LabelerEarnings
+
 
 def serialize_task(task):
     from task.serializers import FullTaskSerializer
@@ -169,3 +176,186 @@ def calculate_required_data_points(task_type, text_data=None, file_size_bytes=No
             # Video: 15 points per MB, minimum 10 points
             return max(10, round(15 * size_in_mb))        
     return 20
+
+
+
+def calculate_labeller_monthly_earning(labeler: CustomUser, year: int, month: int):
+    """
+    Calculate a labeller's earning for a given month using the formula:
+    labeller_earnings = dpt × n × CR × P
+    
+    Where:
+    - dpt = data points per task
+    - n = cumulative number of tasks for that month
+    - CR = Conversion rate from data points
+    - P = labeller payout percentage
+    """
+    settings = get_dp_cost_settings()
+    
+    # Get all tasks labeled by this labeller in the specified month
+    # Use timezone-aware datetimes
+    if timezone.is_aware(timezone.now()):
+        # If using timezone-aware datetime
+        start_date = timezone.make_aware(datetime(year, month, 1))
+        if month == 12:
+            end_date = timezone.make_aware(datetime(year + 1, 1, 1))
+        else:
+            end_date = timezone.make_aware(datetime(year, month + 1, 1))
+    else:
+        # If using naive datetime
+        start_date = datetime(year, month, 1)
+        if month == 12:
+            end_date = datetime(year + 1, 1, 1)
+        else:
+            end_date = datetime(year, month + 1, 1)
+    
+    # Get TaskLabels created by this labeller in the specified month
+    from task.models import TaskLabel
+    monthly_task_labels = TaskLabel.objects.filter(
+        labeller=labeler,
+        created_at__gte=start_date,
+        created_at__lt=end_date
+    ).select_related('task', 'task__cluster')
+    
+    # Get unique tasks labeled (since a task can have multiple labels from same user)
+    labeled_task_ids = monthly_task_labels.values_list('task_id', flat=True).distinct()
+    
+    # Calculate total data points and task count
+    total_data_points = 0
+    task_count = len(labeled_task_ids)
+    
+    # Get the actual tasks to calculate data points
+    from task.models import Task
+    labeled_tasks = Task.objects.filter(id__in=labeled_task_ids).select_related('cluster')
+    
+    for task in labeled_tasks:
+        task_dp = int(settings.get(f"task_{str(task.cluster.input_type).lower()}_cost", 0)) if task.task_type else 0
+        total_data_points += task_dp
+    
+    # Get conversion rate and payout percentage
+    cr_dollars = Decimal(settings.get("usd_per_dp_cents", 10)) / Decimal(100)  # Convert cents to dollars
+    payout_percent = Decimal(settings.get("labeller_payout_percent", 60)) / Decimal(100)  # Convert to decimal
+    
+    # Calculate using the formula: dpt × n × CR × P
+    # Note: This is equivalent to total_data_points × CR × P
+    total_company_revenue = total_data_points * cr_dollars
+    labeller_earning = total_company_revenue * payout_percent
+    return labeller_earning
+
+
+def credit_labeller_monthly_payment(labeler: CustomUser, year: int, month: int):
+    """
+    Calculate and credit a labeller's monthly earning to their balance.
+    This should typically be called once per month per labeller.
+    """
+    payment_summary = calculate_labeller_monthly_earning(labeler, year, month)
+    labeller_earning = payment_summary["labeller_earning_decimal"]
+    
+    if labeller_earning <= 0:
+        return {
+            "message": "No earnings to credit for this month",
+            "credited_usd": "$0.00",
+            **payment_summary
+        }
+    
+    # Credit the labeller's balance
+    earnings, _ = LabelerEarnings.objects.get_or_create(labeler=labeler)
+    earnings.balance = models.F('balance') + labeller_earning
+    earnings.save(update_fields=['balance'])
+    earnings.refresh_from_db(fields=['balance'])
+    
+    # Optional: Create a payment record for audit trail
+    # TODO : Have a separate model for monthly payment
+    try:
+        MonthlyPayment.objects.create(
+            labeler=labeler,
+            year=year,
+            month=month,
+            amount=labeller_earning,
+            created_at=timezone.now()
+        )
+    except:
+        pass  # Handle if MonthlyPayment model doesn't exist
+    
+    return {
+        "message": "Monthly payment credited successfully",
+        "credited_usd": f"${labeller_earning:.2f}",
+        "new_balance": f"${earnings.balance:.2f}",
+        **payment_summary,
+    }
+
+def track_task_labeling_earning(task, labeler: CustomUser):
+    """
+    Called when a labeler completes labeling a task.
+    This tracks their contribution for monthly payment calculation.
+    Returns information about the earning contribution without actually crediting balance.
+    """
+    settings = get_dp_cost_settings()
+    task_dp = int(settings.get(f"task_{str(task.cluster.task_type).lower()}_cost", 0)) if task.task_type else 0
+    
+    if task_dp <= 0:
+        return {
+            "message": "No data points assigned to this task type",
+            "task_dp": 0,
+            "task_earning_preview": "$0.00",
+            "labeler_id": labeler.id,
+            "task_id": task.id,
+            "task_serial": getattr(task, 'serial_no', 'N/A')
+        }
+    
+    # Calculate what this task contributes to their monthly earnings
+    cr_dollars = Decimal(settings.get("usd_per_dp_cents", 10)) / Decimal(100)
+    payout_percent = Decimal(settings.get("labeller_payout_percent", 60)) / Decimal(100)
+    
+    task_revenue = task_dp * cr_dollars
+    task_earning = task_revenue * payout_percent
+    
+    return task_earning
+
+def get_labeller_current_month_preview(labeler: CustomUser):
+    """
+    Get a preview of the current month's earnings for a labeller
+    """
+    now = timezone.now()
+    monthly_summary = {}
+    monthly_summary['amount'] = calculate_labeller_monthly_earning(labeler, now.year, now.month)
+    
+    # Add some additional helpful information
+    monthly_summary["current_month"] = now.strftime("%B %Y")
+    
+    # Calculate days left in month using timezone-aware datetime
+    if now.month == 12:
+        next_month_start = timezone.make_aware(datetime(now.year + 1, 1, 1)) if timezone.is_aware(now) else datetime(now.year + 1, 1, 1)
+    else:
+        next_month_start = timezone.make_aware(datetime(now.year, now.month + 1, 1)) if timezone.is_aware(now) else datetime(now.year, now.month + 1, 1)
+    
+    monthly_summary["days_left_in_month"] = (next_month_start - now).days
+    
+    return monthly_summary
+ 
+def get_labeller_monthly_history(labeler: CustomUser, months_back: int = 6):
+    """
+    Get earning history for the last N months for a labeller
+    """
+    now = timezone.now()
+    history = []
+    
+    for i in range(months_back):
+        # Calculate month and year going backwards
+        target_month = now.month - i
+        target_year = now.year
+        
+        while target_month <= 0:
+            target_month += 12
+            target_year -= 1
+        
+        monthly_earnings = {}
+        monthly_earnings['amount'] = calculate_labeller_monthly_earning(labeler, target_year, target_month)
+        monthly_earnings["month_year"] = datetime(target_year, target_month, 1).strftime("%B %Y")
+        history.append(monthly_earnings)
+    
+    return {
+        "labeller_username": labeler.username,
+        "months_included": months_back,
+        "history": history,
+    }
