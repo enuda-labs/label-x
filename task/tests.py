@@ -369,3 +369,136 @@ class TaskCompletionStatsTestCase(APITestCase):
         User.objects.all().delete()
         Project.objects.all().delete()
 
+
+class RequestAdditionalLabellersTestCase(APITestCase):
+    def setUp(self):
+        # Create test user
+        self.user = User.objects.create_user(
+            username='testuser', 
+            email='test@example.com', 
+            password='Testp@ssword123'
+        )
+        
+        # Create another user for testing permissions
+        self.other_user = User.objects.create_user(
+            username='otheruser', 
+            email='other@example.com', 
+            password='Testp@ssword123'
+        )
+        
+        # Create subscription plan and user data points
+        from subscription.models import SubscriptionPlan, UserDataPoints, UserSubscription
+        plan = SubscriptionPlan.objects.create(name="starter", included_data_points=4000, monthly_fee=19, included_requests=10, cost_per_extra_request=10)
+        
+        expires_at = timezone.now() + timedelta(days=30)
+        
+        user_data_points, created = UserDataPoints.objects.get_or_create(user=self.user)
+        user_data_points.topup_data_points(plan.included_data_points)
+        
+        UserSubscription.objects.create(user=self.user, plan=plan, renews_at=expires_at, expires_at=expires_at)
+        
+        # Get token for authentication
+        self.token = str(AccessToken.for_user(user=self.user))
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {self.token}")
+        
+        # Create project and cluster
+        self.project = Project.objects.create(name='testproject', created_by=self.user)
+        self.cluster = TaskCluster.objects.create(
+            project=self.project,
+            labeller_per_item_count=15,
+            input_type=TaskInputTypeChoices.TEXT,
+            task_type=TaskTypeChoices.TEXT,
+            annotation_method=AnnotationMethodChoices.MANUAL,
+            created_by=self.user
+        )
+        
+        # API endpoint
+        self.request_labellers_url = reverse('task:request-additional-labellers')
+        
+    def test_request_additional_labellers_success(self):
+        """Test successful request for additional labellers"""
+        data = {
+            'cluster_id': self.cluster.id,
+            'additional_labellers_count': 3
+        }
+        
+        response = self.client.post(self.request_labellers_url, data)
+        
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['status'], 'success')
+        self.assertEqual(response.data['data']['requested_labellers'], 10)
+        self.assertEqual(response.data['data']['dpt_charged'], 10)  # 3 * 10 DPT per labeller
+        
+        # Verify cluster was updated
+        self.cluster.refresh_from_db()
+        self.assertEqual(self.cluster.labeller_per_item_count, 25)  # 15 + 10
+        
+    def test_request_additional_labellers_insufficient_balance(self):
+        """Test request with insufficient DPT balance"""
+        # Set user's balance to a low amount
+        user_data_points = UserDataPoints.objects.get(user=self.user)
+        user_data_points.data_points_balance = 5  # Less than required
+        user_data_points.save()
+        
+        data = {
+            'cluster_id': self.cluster.id,
+            'additional_labellers_count': 10
+        }
+        
+        response = self.client.post(self.request_labellers_url, data)
+        
+        self.assertEqual(response.status_code, status.HTTP_402_PAYMENT_REQUIRED)
+        self.assertIn('Insufficient DPT balance', response.data['message'])
+        
+    def test_request_additional_labellers_invalid_cluster(self):
+        """Test request with non-existent cluster"""
+        data = {
+            'cluster_id': 99999,
+            'additional_labellers_count': 3
+        }
+        
+        response = self.client.post(self.request_labellers_url, data)
+        
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('Cluster not found', response.data['message'])
+        
+    def test_request_additional_labellers_unauthorized(self):
+        """Test request for cluster not owned by user"""
+        # Create cluster owned by other user
+        other_project = Project.objects.create(name='otherproject', created_by=self.other_user)
+        other_cluster = TaskCluster.objects.create(
+            project=other_project,
+            labeller_per_item_count=5,
+            input_type=TaskInputTypeChoices.TEXT,
+            task_type=TaskTypeChoices.TEXT,
+            annotation_method=AnnotationMethodChoices.MANUAL,
+            created_by=self.other_user
+        )
+        
+        data = {
+            'cluster_id': other_cluster.id,
+            'additional_labellers_count': 3
+        }
+        
+        response = self.client.post(self.request_labellers_url, data)
+        
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("don't have permission", response.data['message'])
+        
+    def test_request_additional_labellers_invalid_count(self):
+        """Test request with invalid labeller count"""
+        data = {
+            'cluster_id': self.cluster.id,
+            'additional_labellers_count': 0
+        }
+        
+        response = self.client.post(self.request_labellers_url, data)
+        
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        
+
+        
+    def tearDown(self):
+        TaskCluster.objects.all().delete()
+        Project.objects.all().delete()
+        User.objects.all().delete()
