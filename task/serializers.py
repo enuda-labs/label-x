@@ -54,7 +54,7 @@ class RequestAdditionalLabellersSerializer(serializers.Serializer):
         """
         Validate that the requested number of labellers doesn't exceed reasonable limits.
         """
-        if value != 0:
+        if value != 10:
             raise serializers.ValidationError("Number of additional labellers must be 10")
         return value
 
