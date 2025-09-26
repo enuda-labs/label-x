@@ -15,8 +15,11 @@ import logging
 from logging import config
 import os
 from pathlib import Path
+from celery.schedules import crontab
+from datetime import timedelta
 
 from dotenv import load_dotenv
+import pytz
 import sentry_sdk
 from sentry_sdk.integrations.django import DjangoIntegration
 from sentry_sdk.integrations.logging import LoggingIntegration
@@ -90,6 +93,7 @@ INSTALLED_APPS = [
     "common",
     "subscription",
     'cloudinary',
+    'django_celery_beat',
     'cloudinary_storage',
     "datasets",
     "payment",
@@ -248,11 +252,14 @@ LOGGING = {
             "level": "INFO",
             "propagate": True,
         },
-        "django.server": {  # <-- This captures HTTP requests
+        "django.server": { 
             "handlers": ["console", "file"],
-            "level": "INFO",
             "propagate": False,
         },
+        "default": {
+            "handlers": ["console", "file"],
+            "propagate": True,
+        }
     },
 }
 
@@ -364,3 +371,18 @@ CACHES = {
 PAYSTACK_SECRET_KEY = os.getenv("PAYSTACK_SECRET_KEY")
 PAYSTACK_PUBLIC_KEY = os.getenv("PAYSTACK_PUBLIC_KEY")
 EXCHANGE_RATE_API_KEY = os.getenv("EXCHANGE_RATE_API_KEY")
+
+
+
+CELERY_TIMEZONE = 'UTC'
+
+CELERY_BEAT_SCHEDULE = {
+   "process_pending_payments": {
+       "task": "payment.tasks.process_pending_payments",
+       "schedule": crontab(
+            minute="*",
+            hour="*",
+            day_of_month="26-31"
+        ),
+   }
+}

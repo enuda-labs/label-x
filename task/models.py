@@ -253,6 +253,9 @@ class TaskLabel(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     notes = models.TextField(null=True)
+    
+    def __str__(self):
+        return f"{self.task.serial_no} - {self.labeller.username}"
 
 class ManualReviewSession(models.Model):
     """

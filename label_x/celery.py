@@ -50,6 +50,8 @@ celery_app.conf.task_routes = {
     'task.tasks.submit_human_review_history': {'queue': 'default'},
     'datasets.tasks.upload_to_cohere_async': {'queue': 'default'},
     'task.utils.assign_reviewers_to_cluster': {'queue': 'default'},
+    'payment.tasks.process_pending_payments': {'queue': 'default'},
+    'payment.tasks.process_single_payment': {'queue': 'default'},
 }
 
 CELERY_TASK_QUEUES = {

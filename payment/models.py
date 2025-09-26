@@ -1,6 +1,6 @@
 from django.db import models
 from account.models import CustomUser
-from payment.choices import TransactionStatusChoices, TransactionTypeChoices
+from payment.choices import MonthlyPaymentStatusChoices, TransactionStatusChoices, TransactionTypeChoices
 import uuid
 # Create your models here.
 
@@ -16,10 +16,12 @@ class Transaction(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
     transaction_type = models.CharField(max_length=50, default=TransactionTypeChoices.WITHDRAWAL, choices=TransactionTypeChoices.choices)
     description = models.TextField(null=True, blank=True, help_text="The description of the transaction")
+    failed_reason = models.TextField(null=True, blank=True, help_text="The reason the transaction failed if any")
     
-    def mark_failed(self):
+    def mark_failed(self, reason=None):
         self.status = TransactionStatusChoices.FAILED
-        self.save(update_fields=['status'])
+        self.failed_reason = reason
+        self.save(update_fields=['status', 'failed_reason'])
     
     def mark_success(self):
         self.status = TransactionStatusChoices.SUCCESS
@@ -29,6 +31,18 @@ class Transaction(models.Model):
         return f"{self.transaction_type} transaction of ${self.usd_amount} by {self.user.username} - {self.status}"
 
 
+class MonthlyPayment(models.Model):
+    user= models.ForeignKey(CustomUser, on_delete=models.CASCADE)
+    year= models.IntegerField()#the year this payment is due for e.g 2025
+    month= models.IntegerField()#the month of the payment e.g 1 for January, 2 for February, etc
+    usd_amount= models.DecimalField(max_digits=10, decimal_places=2)
+    created_at= models.DateTimeField(auto_now_add=True)
+    updated_at= models.DateTimeField(auto_now=True)
+    status= models.CharField(max_length=50, choices=MonthlyPaymentStatusChoices.choices, default=MonthlyPaymentStatusChoices.PENDING)
+    
+    def __str__(self):
+        return f"Monthly payment of ${self.usd_amount} for {self.user.username} in {self.year}-{self.month}"
+    
 
 class WithdrawalRequest(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
