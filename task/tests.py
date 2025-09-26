@@ -419,7 +419,7 @@ class RequestAdditionalLabellersTestCase(APITestCase):
         """Test successful request for additional labellers"""
         data = {
             'cluster_id': self.cluster.id,
-            'additional_labellers_count': 3
+            'additional_labellers_count': 10
         }
         
         response = self.client.post(self.request_labellers_url, data)
@@ -448,19 +448,19 @@ class RequestAdditionalLabellersTestCase(APITestCase):
         response = self.client.post(self.request_labellers_url, data)
         
         self.assertEqual(response.status_code, status.HTTP_402_PAYMENT_REQUIRED)
-        self.assertIn('Insufficient DPT balance', response.data['message'])
+        self.assertIn('Insufficient DPT balance', response.data['error'])
         
     def test_request_additional_labellers_invalid_cluster(self):
         """Test request with non-existent cluster"""
         data = {
             'cluster_id': 99999,
-            'additional_labellers_count': 3
+            'additional_labellers_count': 10
         }
         
         response = self.client.post(self.request_labellers_url, data)
         
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn('Cluster not found', response.data['message'])
+        self.assertIn('Cluster not found', response.data['error'])
         
     def test_request_additional_labellers_unauthorized(self):
         """Test request for cluster not owned by user"""
@@ -477,13 +477,13 @@ class RequestAdditionalLabellersTestCase(APITestCase):
         
         data = {
             'cluster_id': other_cluster.id,
-            'additional_labellers_count': 3
+            'additional_labellers_count': 10
         }
         
         response = self.client.post(self.request_labellers_url, data)
         
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("don't have permission", response.data['message'])
+        self.assertIn("don't have permission", response.data['error'])
         
     def test_request_additional_labellers_invalid_count(self):
         """Test request with invalid labeller count"""
@@ -496,7 +496,6 @@ class RequestAdditionalLabellersTestCase(APITestCase):
         
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         
-
         
     def tearDown(self):
         TaskCluster.objects.all().delete()
