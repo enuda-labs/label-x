@@ -304,8 +304,9 @@ class RequestAdditionalLabellersView(generics.GenericAPIView):
                     status=status.HTTP_402_PAYMENT_REQUIRED
                 )
             
-            # Deduct DPT from user's balance
+            # Deduct DPT from user's balance and refresh to avoid returning CombinedExpression
             user_data_points.deduct_data_points(dpt_cost_per_labeller)
+            user_data_points.refresh_from_db()
             
             # Update cluster's labeller_per_item_count
             cluster.labeller_per_item_count += additional_labellers_count
@@ -322,7 +323,7 @@ class RequestAdditionalLabellersView(generics.GenericAPIView):
                     "cluster_id": cluster_id,
                     "requested_labellers": additional_labellers_count,
                     "dpt_charged": dpt_cost_per_labeller,
-                    "remaining_dpt_balance": user_data_points.data_points_balance
+                    "remaining_dpt_balance": int(user_data_points.data_points_balance)
                 }
             )
             
