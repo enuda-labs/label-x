@@ -19,7 +19,6 @@ logger = logging.getLogger('default')
 
 paystack = Paystack(secret_key=settings.PAYSTACK_SECRET_KEY)
 
-
 def initiate_monthly_usd_paystack_transfer(usd_amount, labeler):
     try:
         logger.info(f'Initiating monthly USD paystack transfer for {labeler.username} with amount {usd_amount}')
