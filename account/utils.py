@@ -1,5 +1,6 @@
 import uuid
-from rest_framework.permissions import BasePermission
+from django.contrib.auth.models import AnonymousUser
+from rest_framework.permissions import BasePermission, SAFE_METHODS
 from django.utils import timezone
 from datetime import timedelta
 from django.conf import settings
@@ -12,6 +13,15 @@ from .models import ApiKeyTypeChoices, UserAPIKey
 from rest_framework_api_key.permissions import BaseHasAPIKey
 
 from subscription.models import UserDataPoints, SubscriptionPlan, UserSubscription
+
+class IsAdminOrReadOnly(BasePermission):
+    def has_permission(self, request, view):
+        # Allow read-only access (GET) to all users.
+        if request.method in SAFE_METHODS:
+            return True
+
+        return request.user != AnonymousUser() and request.user and request.user.is_admin
+    
 
 class IsSuperAdmin(BasePermission):
     """Allow access to only users mark as admin"""
