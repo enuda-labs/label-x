@@ -22,6 +22,7 @@ class Command(BaseCommand):
             {"key": "task_video_cost", "value": "20"},
             {"key": "task_audio_cost", "value": "15"},
             {"key": "task_csv_cost", "value": "8"},
+            {"key": "task_multiple_choice_cost", "value": "5"},
         ]
 
         for setting in initial_settings:

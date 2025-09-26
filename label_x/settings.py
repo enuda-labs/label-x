@@ -377,12 +377,19 @@ EXCHANGE_RATE_API_KEY = os.getenv("EXCHANGE_RATE_API_KEY")
 CELERY_TIMEZONE = 'UTC'
 
 CELERY_BEAT_SCHEDULE = {
-   "process_pending_payments": {
+   "process_pending_payments": { #runs at 7 am at the end of the month to initiate payments
        "task": "payment.tasks.process_pending_payments",
        "schedule": crontab(
-            minute="*",
-            hour="*",
-            day_of_month="26-31"
+            minute="0",
+            hour="7",
+            day_of_month="28-31"
+        ),
+   },
+   "retry_failed_payments": { #runs at 9am everyday to retry failed payments
+       "task": "payment.tasks.retry_failed_payments",
+       "schedule": crontab(
+            minute="0",
+            hour="9",
         ),
    }
 }

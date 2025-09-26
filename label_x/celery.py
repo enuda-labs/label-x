@@ -52,6 +52,7 @@ celery_app.conf.task_routes = {
     'task.utils.assign_reviewers_to_cluster': {'queue': 'default'},
     'payment.tasks.process_pending_payments': {'queue': 'default'},
     'payment.tasks.process_single_payment': {'queue': 'default'},
+    'payment.tasks.retry_failed_payments': {'queue': 'default'},
 }
 
 CELERY_TASK_QUEUES = {
