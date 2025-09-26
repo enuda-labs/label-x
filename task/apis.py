@@ -298,7 +298,7 @@ class RequestAdditionalLabellersView(generics.GenericAPIView):
             # Check user's DPT balance
             user_data_points, created = UserDataPoints.objects.get_or_create(user=request.user)
             
-            if user_data_points.data_points_balance < total_dpt_cost:
+            if user_data_points.data_points_balance < dpt_cost_per_labeller:
                 return ErrorResponse(
                     message=f"Insufficient DPT balance. Required: {dpt_cost_per_labeller}, Available: {user_data_points.data_points_balance}",
                     status=status.HTTP_402_PAYMENT_REQUIRED
@@ -1277,7 +1277,7 @@ class TaskAnnotationView(generics.GenericAPIView):
         task_id = serializer.validated_data.get('task_id')
         labels = serializer.validated_data.get('labels', [])
         notes = serializer.validated_data.get('notes', None)  
-              
+        
         try:
             # Validate required fields
             if not task_id:
@@ -1328,6 +1328,19 @@ class TaskAnnotationView(generics.GenericAPIView):
                     'detail': f'Task is not available for labeling, current status: {task.processing_status}'
                 }, status=status.HTTP_400_BAD_REQUEST)
             
+            # Before proceeding, ensure the cluster owner has enough DPT for this task_type cost
+            from common.utils import get_dp_cost_settings
+            settings = get_dp_cost_settings()
+            # task_type is something like 'TEXT', 'IMAGE' etc. Build setting key: task_text_cost
+            required_dp_key = f"task_{str(task.cluster.task_type).lower()}_cost"
+            required_dp_for_task = int(settings.get(required_dp_key, 0))
+
+            # Get cluster owner's data points
+            owner = task.cluster.project.created_by
+            owner_data_points, _ = UserDataPoints.objects.get_or_create(user=owner)
+            if owner_data_points.data_points_balance < required_dp_for_task:
+                return ErrorResponse(message="Cluster owner does not have enough data points to satisfy this labeling request", status=status.HTTP_402_PAYMENT_REQUIRED)
+
             is_text_input_type = task.cluster.input_type  in [TaskInputTypeChoices.TEXT, TaskInputTypeChoices.MULTIPLE_CHOICE]
 
             if not is_text_input_type:
@@ -1377,6 +1390,10 @@ class TaskAnnotationView(generics.GenericAPIView):
             
             user_review_session_complete= set(task_ids) == set(user_labelled_tasks_ids)
             
+            # Deduct the DPT from the cluster owner's balance AFTER successful labeling of this task
+            if required_dp_for_task > 0:
+                owner_data_points.deduct_data_points(required_dp_for_task)
+
             if user_review_session_complete:
                 review_session.status = ManualReviewSessionStatusChoices.COMPLETED
                 review_session.save()
