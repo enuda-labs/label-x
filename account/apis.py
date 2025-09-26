@@ -108,12 +108,13 @@ class UpdatePrimaryBankAccountView(generics.GenericAPIView):
         except UserBankAccount.DoesNotExist:
             return ErrorResponse(message="Bank account not found", status=status.HTTP_404_NOT_FOUND)
         
-        for bank in UserBankAccount.objects.filter(user=request.user):
-            bank.is_primary = False
-            bank.save()
+        for user_bank in UserBankAccount.objects.filter(user=request.user):
+            if user_bank.id == bank.id:
+                user_bank.is_primary = True
+            else:
+                user_bank.is_primary = False
+            user_bank.save()
 
-        bank.is_primary = True
-        bank.save()
         return SuccessResponse(message="Bank account updated successfully", data=UserBankAccountSerializer(bank).data)
 
 class GetUserBankAccountsView(generics.ListAPIView):
