@@ -24,9 +24,10 @@ from django.db.models import F
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt
 from task.utils import get_labeller_current_month_preview, get_labeller_monthly_history
+from datetime import datetime
 
 
-logger = logging.getLogger('default')
+logger = logging.getLogger(__name__)
 
 paystack = Paystack(secret_key=settings.PAYSTACK_SECRET_KEY)
 
@@ -262,6 +263,8 @@ class LabellerEarningsHistoryView(generics.GenericAPIView):
     permission_classes = [IsAuthenticated]
     
     def get(self, request):
+        
+        logger.info(f"User '{request.user.username}' fetching earnings history at {datetime.now()}")
         """Get earnings history for the logged-in labeller"""
         try:
             # Get months parameter from query params (default 6)
