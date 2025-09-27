@@ -329,16 +329,20 @@ class CreatedClusterListView(generics.ListAPIView):
 class GetAvailableClusters(generics.ListAPIView):
     serializer_class = TaskClusterListSerializer
     def get_queryset(self):
-        return TaskCluster.objects.filter(
+        user_domains = self.request.user.domains.all()
+ 
+        return TaskCluster.objects.annotate(reviewer_count=Count("assigned_reviewers")).filter(
             ~Q(status=TaskClusterStatusChoices.COMPLETED) & 
-            ~Q(annotation_method=AnnotationMethodChoices.AI_AUTOMATED)
-        )
+            ~Q(annotation_method=AnnotationMethodChoices.AI_AUTOMATED) &
+            Q(reviewer_count__lt=F("labeller_per_item_count"))
+            & Q(labeler_domain__in=user_domains)
+        ).exclude(assigned_reviewers=self.request.user)
     
     @extend_schema(
         summary="Get all the clusters that are available for assignment",
         description="Ideal for when a reviewer is looking for clusters to assign to themselves"
     )
-    @cache_response_decorator('available_clusters')
+    @cache_response_decorator('available_clusters', per_user=True)
     def get(self, request, *args, **kwargs):
         return super().get(request, *args, **kwargs)
 
@@ -571,6 +575,7 @@ class AssignClusterToSelf(generics.GenericAPIView):
         else:
             return ErrorResponse(message="You are already assigned to this cluster")
 
+        cache.delete_pattern(f"*available_clusters_{request.user.id}*")
         return SuccessResponse(message="Successfully added user to assigned reviewers")
 
 class AssignTaskToSelfView(APIView):
