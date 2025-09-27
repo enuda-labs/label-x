@@ -31,6 +31,33 @@ class GetAndValidateReviewersSerializer(serializers.Serializer):
                 raise serializers.ValidationError(f"Reviewer {reviewer_id} not found")
         return value
 
+class RequestAdditionalLabellersSerializer(serializers.Serializer):
+    """
+    Serializer for requesting additional labellers to be added to a cluster.
+    """
+    cluster_id = serializers.IntegerField()
+    additional_labellers_count = serializers.IntegerField(min_value=1, max_value=50)
+    
+    def validate_cluster_id(self, value):
+        """
+        Validate that the cluster exists and belongs to the requesting user.
+        """
+        try:
+            cluster = TaskCluster.objects.get(id=value)
+            if cluster.project.created_by != self.context['request'].user:
+                raise serializers.ValidationError("You don't have permission to modify this cluster")
+            return value
+        except TaskCluster.DoesNotExist:
+            raise serializers.ValidationError("Cluster not found")
+    
+    def validate_additional_labellers_count(self, value):
+        """
+        Validate that the requested number of labellers doesn't exceed reasonable limits.
+        """
+        if value != 10:
+            raise serializers.ValidationError("Number of additional labellers must be 10")
+        return value
+
 class AcceptClusterIdSerializer(serializers.Serializer):
     """
     Serializer for accepting a cluster ID from request data.

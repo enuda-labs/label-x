@@ -63,7 +63,8 @@ class UserDataPoints(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     def deduct_data_points(self, amount:int):
-        if self.data_points_balance > int(amount):
+        # Allow deduction when balance is equal to the required amount
+        if self.data_points_balance >= int(amount):
             self.data_points_balance = F("data_points_balance") - amount
             
             self.used_data_points = F('used_data_points') + amount
