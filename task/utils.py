@@ -1,4 +1,5 @@
-from celery import Task, shared_task
+import logging
+from celery import shared_task
 from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
 from django.db import models
@@ -17,6 +18,9 @@ from django.db import models
 from django.utils import timezone
 from django.db.models import Count, Sum, F
 from account.models import LabelerEarnings
+from task.models import Task
+
+logger = logging.getLogger(__name__)
 
 
 def serialize_task(task):
@@ -281,9 +285,19 @@ def track_task_labeling_earning(task) -> dict:
     }
 
 @shared_task
-def credit_labeller_monthly_payment(task, labeler):
+def credit_labeller_monthly_payment(task_id, labeler_id):
+    logger.info(f"Crediting labeller monthly payment for task {task_id} and labeler {labeler_id}")
+    try:
+        task = Task.objects.get(id=task_id)
+        labeler = CustomUser.objects.get(id=labeler_id)
+    except Task.DoesNotExist:
+        return False
+    except CustomUser.DoesNotExist:
+        return False
+
     response = track_task_labeling_earning(task)
     if not response["success"]:
+        logger.error(f"Failed to track task labeling earning for task {task.id}")
         return False
     
     now = timezone.now()
@@ -293,6 +307,7 @@ def credit_labeller_monthly_payment(task, labeler):
     monthly_earning, _ = MonthlyReviewerEarnings.objects.get_or_create(reviewer=labeler, year=year, month=month)
     monthly_earning.usd_balance = F('usd_balance') + response["task_earning"]
     monthly_earning.save(update_fields=['usd_balance'])
+    logger.info(f"Credited {response['task_earning']} USD to {labeler.username} for task {task.id}")
     return True
 
 

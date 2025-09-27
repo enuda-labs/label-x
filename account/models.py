@@ -170,7 +170,6 @@ class MonthlyReviewerEarnings(models.Model):
     reviewer = models.ForeignKey(CustomUser, on_delete=models.CASCADE)
     year = models.IntegerField() #a year e.g 2025
     month = models.IntegerField() #a month e.g 1 for January
-    earnings = models.DecimalField(max_digits=10, decimal_places=2)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     paid = models.BooleanField(default=False)
