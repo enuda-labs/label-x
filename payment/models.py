@@ -1,5 +1,6 @@
 from django.db import models
 from account.models import CustomUser
+from payment.choices import TransactionStatusChoices, TransactionTypeChoices, WithdrawalRequestInitiatedByChoices
 from payment.choices import MonthlyPaymentStatusChoices, TransactionStatusChoices, TransactionTypeChoices
 import uuid
 # Create your models here.
@@ -53,6 +54,7 @@ class WithdrawalRequest(models.Model):
     bank_name = models.CharField(max_length=255)
     is_user_balance_deducted = models.BooleanField(default=False, help_text="Whether the user's balance has been deducted for this withdrawal request")
     transaction = models.ForeignKey(Transaction, on_delete=models.CASCADE, null=True, blank=True, help_text="The transaction that this withdrawal request is associated with")
+    initiated_by = models.CharField(max_length=50, choices=WithdrawalRequestInitiatedByChoices.choices, default=WithdrawalRequestInitiatedByChoices.USER, help_text="Whether the withdrawal request was initiated by the user or the system")
     
     def __str__(self):
         return f"Withdrawal request to {self.bank_name} account number {self.account_number}"

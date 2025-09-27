@@ -15,3 +15,8 @@ class MonthlyPaymentStatusChoices(models.TextChoices):
     PENDING = 'pending', 'Pending'
     FAILED = 'failed', 'Failed'
     SUCCESS = 'success', 'Success'
+    
+
+class WithdrawalRequestInitiatedByChoices(models.TextChoices):
+    USER = 'user', 'User'
+    SYSTEM = 'system', 'System'

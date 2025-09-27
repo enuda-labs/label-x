@@ -225,7 +225,7 @@ LOGGING = {
     },
     "handlers": {
         "file": {
-            "level": "INFO",
+            "level": "INFO", #Level is the minimum severity that will be handled in order of DEBUG < INFO < WARNING < ERROR < CRITICAL
             "class": "logging.FileHandler",
             "filename": "logs/api_activity.log",
             "formatter": "verbose",
@@ -236,21 +236,26 @@ LOGGING = {
             "formatter": "verbose",
         },
     },
+    "root": {
+        "handlers": ["console", "file"],
+        "level": "INFO",
+        "propagate": True,
+    },
     "loggers": {
         "django": {
-            "handlers": ["file"],
-            "level": "ERROR",
-            "propagate": True,
+            "handlers": ["console", "file"],
+            "level": "INFO",
+            "propagate": False,
         },
         "account": {
             "handlers": ["console", "file"],
             "level": "INFO",
-            "propagate": True,
+            "propagate": False,
         },
         "account.apis": {
             "handlers": ["console", "file"],
             "level": "INFO",
-            "propagate": True,
+            "propagate": False,
         },
         "django.server": { 
             "handlers": ["console", "file"],
