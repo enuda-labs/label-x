@@ -5,7 +5,7 @@ from django.db import models
 from django.utils import timezone
 from datetime import timedelta
 from task.choices import TaskClusterStatusChoices, TaskTypeChoices
-from account.models import CustomUser
+from account.models import CustomUser, MonthlyReviewerEarnings
 import math
 from task.models import TaskCluster
 from common.utils import get_dp_cost_settings
@@ -15,7 +15,7 @@ from datetime import datetime
 from decimal import Decimal
 from django.db import models
 from django.utils import timezone
-from django.db.models import Count, Sum
+from django.db.models import Count, Sum, F
 from account.models import LabelerEarnings
 
 
@@ -136,6 +136,7 @@ def calculate_labelling_required_data_points(cluster_data: dict) -> int:
 
 def calculate_required_data_points(task_type, text_data=None, file_size_bytes=None)->int:
     """
+    Deprecated: Use calculate_labelling_required_data_points instead
     Calculate the number of data points required to process a task based on its type and content.
     
     This function determines the cost (in data points) for processing different types of tasks.
@@ -229,7 +230,8 @@ def calculate_labeller_monthly_earning(labeler: CustomUser, year: int, month: in
     labeled_tasks = Task.objects.filter(id__in=labeled_task_ids).select_related('cluster')
     
     for task in labeled_tasks:
-        task_dp = int(settings.get(f"task_{str(task.cluster.input_type).lower()}_cost", 0)) if task.task_type else 0
+        task_dp = int(settings.get(f"task_{str(task.cluster.input_type).lower()}_cost", 0)) if task.cluster.input_type else 0
+        task_dp += int(settings.get(f"task_{str(task.task_type).lower()}_cost", 0)) if task.task_type else 0
         total_data_points += task_dp
     
     # Get conversion rate and payout percentage
@@ -243,74 +245,56 @@ def calculate_labeller_monthly_earning(labeler: CustomUser, year: int, month: in
     return labeller_earning
 
 
-def credit_labeller_monthly_payment(labeler: CustomUser, year: int, month: int):
-    """
-    Calculate and credit a labeller's monthly earning to their balance.
-    This should typically be called once per month per labeller.
-    """
-    payment_summary = calculate_labeller_monthly_earning(labeler, year, month)
-    labeller_earning = payment_summary["labeller_earning_decimal"]
     
-    if labeller_earning <= 0:
-        return {
-            "message": "No earnings to credit for this month",
-            "credited_usd": "$0.00",
-            **payment_summary
-        }
-    
-    # Credit the labeller's balance
-    earnings, _ = LabelerEarnings.objects.get_or_create(labeler=labeler)
-    earnings.balance = models.F('balance') + labeller_earning
-    earnings.save(update_fields=['balance'])
-    earnings.refresh_from_db(fields=['balance'])
-    
-    # Optional: Create a payment record for audit trail
-    # TODO : Have a separate model for monthly payment
-    try:
-        MonthlyPayment.objects.create(
-            labeler=labeler,
-            year=year,
-            month=month,
-            amount=labeller_earning,
-            created_at=timezone.now()
-        )
-    except:
-        pass  # Handle if MonthlyPayment model doesn't exist
-    
-    return {
-        "message": "Monthly payment credited successfully",
-        "credited_usd": f"${labeller_earning:.2f}",
-        "new_balance": f"${earnings.balance:.2f}",
-        **payment_summary,
-    }
 
-def track_task_labeling_earning(task, labeler: CustomUser):
+def track_task_labeling_earning(task) -> dict:
     """
-    Called when a labeler completes labeling a task.
-    This tracks their contribution for monthly payment calculation.
-    Returns information about the earning contribution without actually crediting balance.
+    Calculates how much a labeller will earn if they label this task
     """
-    settings = get_dp_cost_settings()
-    task_dp = int(settings.get(f"task_{str(task.cluster.task_type).lower()}_cost", 0)) if task.task_type else 0
+    settings = get_dp_cost_settings() 
+    
+    #TODO: Update this to use the actual datapoints the client paid, incase the settings are changed
+    task_dp = int(settings.get(f"task_{str(task.cluster.input_type).lower()}_cost", 0)) if task.cluster.input_type else 0 #the amount of datapoints paid by the client for the response4 format of the labeler
+    task_dp += int(settings.get(f"task_{str(task.task_type).lower()}_cost", 0)) if task.task_type else 0 #the amount of datapoints paid by the labeller for the type of task they submitted
     
     if task_dp <= 0:
         return {
+            "success": False,
+            "task_earning": 0,
             "message": "No data points assigned to this task type",
-            "task_dp": 0,
-            "task_earning_preview": "$0.00",
-            "labeler_id": labeler.id,
-            "task_id": task.id,
-            "task_serial": getattr(task, 'serial_no', 'N/A')
+            "task_dp": task_dp,
         }
     
     # Calculate what this task contributes to their monthly earnings
-    cr_dollars = Decimal(settings.get("usd_per_dp_cents", 10)) / Decimal(100)
+    
+    cr_dollars = Decimal(settings.get("usd_per_dp_cents", 10)) / Decimal(100) #100 cents makes 1 dollar, so we divide by 100 to get the dollar value
     payout_percent = Decimal(settings.get("labeller_payout_percent", 60)) / Decimal(100)
     
     task_revenue = task_dp * cr_dollars
     task_earning = task_revenue * payout_percent
     
-    return task_earning
+    return {
+        "success": True,
+        "task_earning": task_earning,
+        "task_dp": task_dp,
+        "message": "",
+    }
+
+@shared_task
+def credit_labeller_monthly_payment(task, labeler):
+    response = track_task_labeling_earning(task)
+    if not response["success"]:
+        return False
+    
+    now = timezone.now()
+    year = now.year
+    month = now.month
+    
+    monthly_earning, _ = MonthlyReviewerEarnings.objects.get_or_create(reviewer=labeler, year=year, month=month)
+    monthly_earning.usd_balance = F('usd_balance') + response["task_earning"]
+    monthly_earning.save(update_fields=['usd_balance'])
+    return True
+
 
 def get_labeller_current_month_preview(labeler: CustomUser):
     """

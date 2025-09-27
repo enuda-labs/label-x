@@ -141,7 +141,6 @@ class InitiateLabelerWithdrawalView(generics.GenericAPIView):
         return SuccessResponse(message="Withdrawal request initiated successfully, your funds will be available in your bank account in a few minutes")
 
 
-
 class PaystackWebhookListener(generics.GenericAPIView):
     permission_classes = [permissions.AllowAny]
     
