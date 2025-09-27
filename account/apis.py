@@ -731,7 +731,6 @@ class RegisterView(APIView):
             )
 
         # Custom error messages for validation errors
-
         error_message = ""
         if "username" in serializer.errors:
             error_message = "Username already exists"
@@ -739,12 +738,18 @@ class RegisterView(APIView):
             error_message = "Email already exists"
         elif "password" in serializer.errors:
             error_message = serializer.errors["password"][0]
+        elif "domains" in serializer.errors:
+            error_message = serializer.errors["domains"][0]
+        elif "role" in serializer.errors:
+            error_message = serializer.errors["role"][0]
+        elif "non_field_errors" in serializer.errors:
+            error_message = serializer.errors["non_field_errors"][0]
         else:
             error_message = "Invalid data provided"
 
         logger.warning(f"Failed registration attempt for username '{request.data.get('username')}' at {datetime.now()}. Error: {error_message}")
         return Response(
-            {"status": "error", "error": error_message},
+            {"status": "error", "error": error_message,},
             status=status.HTTP_400_BAD_REQUEST,
         )
 
