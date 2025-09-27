@@ -21,11 +21,12 @@ from account.models import LabelerEarnings
 from payment.utils import convert_usd_to_ngn, find_bank_by_code, request_paystack, verify_paystack_origin
 import json
 from django.db.models import F
-
+from django.utils.decorators import method_decorator
+from django.views.decorators.csrf import csrf_exempt
 from task.utils import get_labeller_current_month_preview, get_labeller_monthly_history
 
 
-logger = logging.getLogger('payment.apis')
+logger = logging.getLogger('default')
 
 paystack = Paystack(secret_key=settings.PAYSTACK_SECRET_KEY)
 
@@ -120,7 +121,8 @@ class InitiateLabelerWithdrawalView(generics.GenericAPIView):
             "source": "balance",
             "reason": "Withdrawal to bank account",
             "amount": int(float(ngn_amount) * 100),
-            "recipient": recipient_code
+            "recipient": recipient_code,
+            "reference": reference
         }
         
         transfer_response = paystack.transfer.initiate(**transfer_data)
@@ -131,9 +133,9 @@ class InitiateLabelerWithdrawalView(generics.GenericAPIView):
             return ErrorResponse(message=error_message, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         
         
-        earnings.deduct_balance(withdrawal_request.transaction.usd_amount, create_transaction=False)
-        withdrawal_request.is_user_balance_deducted = True
-        withdrawal_request.save(update_fields=['is_user_balance_deducted'])
+        # earnings.deduct_balance(withdrawal_request.transaction.usd_amount, create_transaction=False) #not creating a transaction here because the transaction is already created above
+        # withdrawal_request.is_user_balance_deducted = True
+        # withdrawal_request.save(update_fields=['is_user_balance_deducted'])
         
         return SuccessResponse(message="Withdrawal request initiated successfully, your funds will be available in your bank account in a few minutes")
 
@@ -142,27 +144,28 @@ class InitiateLabelerWithdrawalView(generics.GenericAPIView):
 class PaystackWebhookListener(generics.GenericAPIView):
     permission_classes = [permissions.AllowAny]
     
+    @method_decorator(csrf_exempt, name='dispatch')
+    def dispatch(self, *args, **kwargs):
+        return super().dispatch(*args, **kwargs)
+    
     def handle_transfer_success(self, payload):
         data = payload.get('data')
         
         reference = data.get('reference')
         
         withdrawal_request = WithdrawalRequest.objects.filter(reference=reference).first()
+        
         if not withdrawal_request:
             return None
         
-        earnings, _ = LabelerEarnings.objects.get_or_create(labeler=withdrawal_request.user)
-        
+        earnings, _ = LabelerEarnings.objects.get_or_create(labeler=withdrawal_request.transaction.user)
         try:
             with transaction.atomic():
                 if not withdrawal_request.is_user_balance_deducted:
                     if earnings.balance >= withdrawal_request.transaction.usd_amount:
-                        
                         earnings.deduct_balance(withdrawal_request.transaction.usd_amount, create_transaction=False)
-            
                         withdrawal_request.is_user_balance_deducted = True
                         withdrawal_request.save(update_fields=['is_user_balance_deducted'])
-                        
                         withdrawal_request.transaction.mark_success()
                         
                     else:
@@ -184,24 +187,31 @@ class PaystackWebhookListener(generics.GenericAPIView):
         
         #if the user's balance was previously deducted and the transfer failed, we need to topup the balance
         if withdrawal_request.is_user_balance_deducted and withdrawal_request.transaction.status == TransactionStatusChoices.PENDING:
-            earnings, _ = LabelerEarnings.objects.get_or_create(labeler=withdrawal_request.user)
+            earnings, _ = LabelerEarnings.objects.get_or_create(labeler=withdrawal_request.transaction.user)
             earnings.topup_balance(withdrawal_request.transaction.usd_amount, ngn_amount=withdrawal_request.transaction.ngn_amount)
             
         withdrawal_request.transaction.mark_failed()
         return withdrawal_request
     
-    def post(self, request, *args, **kwargs):        
+    def post(self, request, *args, **kwargs):   
+        logger.info(f"PAYSTACK WEBHOOK RECEIVED")
         is_valid_origin = verify_paystack_origin(request)
+        
+                
         if not is_valid_origin:
             return ErrorResponse(message="Invalid origin", status=status.HTTP_400_BAD_REQUEST)
         
         payload = json.loads(request.body)
         event_type = payload.get('event')
         
+        print("EVENT TYPE", event_type)
+        
         if event_type == 'transfer.success':
+            logger.info(f"Received transfer.success webhook")
             self.handle_transfer_success(payload)
         
         if event_type == 'transfer.failed':
+            logger.info(f"Received transfer.failed webhook")
             self.handle_transfer_failed(payload)
         
         return SuccessResponse(message="OK Response")
