@@ -61,7 +61,7 @@ class ExportClusterToCsvView(generics.GenericAPIView):
         response['Content-Disposition'] = f'attachment; filename="{filename}"'
         
         writer = csv.writer(response)
-        headers = ['Task ID', 'Task Data', 'Label', 'notes', 'Labeller', 'Created At', 'Updated At']
+        headers = ['Task Data', 'Label', 'notes', 'Labeller', 'Created At', 'Updated At']
         writer.writerow(headers)
         
         is_text_input_type = cluster.input_type  in [TaskInputTypeChoices.TEXT, TaskInputTypeChoices.MULTIPLE_CHOICE]
@@ -70,7 +70,7 @@ class ExportClusterToCsvView(generics.GenericAPIView):
             task_data = label.task.data if label.task.task_type == TaskTypeChoices.TEXT else label.task.file_url
             task_label = label.label if is_text_input_type else label.label_file_url
             
-            row = [label.task.id, task_data, task_label, label.notes, label.labeller.username, label.created_at, label.updated_at]
+            row = [task_data, task_label, label.notes, label.labeller.username, label.created_at, label.updated_at]
             writer.writerow(row)
         
         return response
@@ -439,7 +439,7 @@ class GetAvailableClusters(generics.ListAPIView):
         summary="Get all the clusters that are available for assignment",
         description="Ideal for when a reviewer is looking for clusters to assign to themselves"
     )
-    @cache_response_decorator('available_clusters', per_user=True)
+    # @cache_response_decorator('available_clusters', per_user=True)
     def get(self, request, *args, **kwargs):
         return super().get(request, *args, **kwargs)
 
