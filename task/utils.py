@@ -248,8 +248,14 @@ def calculate_labeller_monthly_earning(labeler: CustomUser, year: int, month: in
     labeller_earning = total_company_revenue * payout_percent
     return labeller_earning
 
+def calculate_static_labeller_monthly_earning(labeler: CustomUser, year: int, month: int):
+    """
+    Calculate a labeller's static earning using the curated earnings saved in the database
+    """
+    monthly_earning, _ = MonthlyReviewerEarnings.objects.get_or_create(reviewer=labeler, year=year, month=month)
+    return monthly_earning.usd_balance
 
-    
+
 
 def track_task_labeling_earning(task) -> dict:
     """
@@ -283,6 +289,7 @@ def track_task_labeling_earning(task) -> dict:
         "task_dp": task_dp,
         "message": "",
     }
+
 
 @shared_task
 def credit_labeller_monthly_payment(task_id, labeler_id):

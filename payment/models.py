@@ -1,5 +1,5 @@
 from django.db import models
-from account.models import CustomUser
+from account.models import CustomUser, MonthlyReviewerEarnings
 from payment.choices import TransactionStatusChoices, TransactionTypeChoices, WithdrawalRequestInitiatedByChoices
 from payment.choices import MonthlyPaymentStatusChoices, TransactionStatusChoices, TransactionTypeChoices
 import uuid
@@ -33,16 +33,20 @@ class Transaction(models.Model):
 
 
 class MonthlyPayment(models.Model):
-    user= models.ForeignKey(CustomUser, on_delete=models.CASCADE)
-    year= models.IntegerField()#the year this payment is due for e.g 2025
-    month= models.IntegerField()#the month of the payment e.g 1 for January, 2 for February, etc
-    usd_amount= models.DecimalField(max_digits=10, decimal_places=2)
+    """
+    This table indicates an attempt to pay a labeller for a given month
+    """
+    # user= models.ForeignKey(CustomUser, on_delete=models.CASCADE)
+    # year= models.IntegerField()#the year this payment is due for e.g 2025
+    # month= models.IntegerField()#the month of the payment e.g 1 for January, 2 for February, etc
+    # usd_amount= models.DecimalField(max_digits=10, decimal_places=2)
     created_at= models.DateTimeField(auto_now_add=True)
     updated_at= models.DateTimeField(auto_now=True)
     status= models.CharField(max_length=50, choices=MonthlyPaymentStatusChoices.choices, default=MonthlyPaymentStatusChoices.PENDING)
+    earning = models.ForeignKey(MonthlyReviewerEarnings, on_delete=models.CASCADE, null=True, blank=True, help_text="The earning that this payment is associated with")
     
     def __str__(self):
-        return f"Monthly payment of ${self.usd_amount} for {self.user.username} in {self.year}-{self.month}"
+        return f"Monthly payment of ${self.earning.usd_balance} for {self.earning.reviewer.username} in {self.earning.year}-{self.earning.month}"
     
 
 class WithdrawalRequest(models.Model):
