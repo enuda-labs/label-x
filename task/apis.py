@@ -1390,9 +1390,7 @@ class TaskAnnotationView(generics.GenericAPIView):
                 review_session.save()
                 earnings, _ = LabelerEarnings.objects.get_or_create(labeler=request.user)
 
-               # TODO: UPDATE TO ACTUALLY CALCULATE THE DATA POINTS
-                earnings.balance = F('balance') + 10 # dummy 10 data points for completing the review session
-                earnings.save()
+            
      
       
             task.human_reviewed = True
