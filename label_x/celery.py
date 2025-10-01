@@ -53,6 +53,7 @@ celery_app.conf.task_routes = {
     'payment.tasks.process_pending_payments': {'queue': 'default'},
     'payment.tasks.process_single_payment': {'queue': 'default'},
     'task.utils.credit_labeller_monthly_payment': {'queue': 'default'},
+    'payment.tasks.test_task': {'queue': 'default'},
 }
 
 CELERY_TASK_QUEUES = {
