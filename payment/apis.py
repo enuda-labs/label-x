@@ -1,5 +1,6 @@
 import uuid
 from django.db import transaction
+from account.choices import MonthlyEarningsReleaseStatusChoices
 from rest_framework import generics, status
 from drf_spectacular.utils import extend_schema
 from rest_framework import permissions
@@ -14,16 +15,16 @@ import logging
 from rest_framework.permissions import IsAuthenticated
 import decimal
 
-from payment.choices import TransactionStatusChoices, TransactionTypeChoices
+from payment.choices import TransactionStatusChoices, TransactionTypeChoices, WithdrawalRequestInitiatedByChoices
 from payment.models import Transaction, WithdrawalRequest
 from payment.serializers import PaystackWithdrawSerializer, TransactionSerializer
-from account.models import LabelerEarnings
+from account.models import MonthlyReviewerEarnings
 from payment.utils import convert_usd_to_ngn, find_bank_by_code, request_paystack, verify_paystack_origin
 import json
-from django.db.models import F
+from django.db.models import F, Sum, Q
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt
-from task.utils import get_labeller_current_month_preview, get_labeller_monthly_history
+from task.utils import get_labeller_current_month_preview, get_labeller_monthly_history, get_unreleased_reviewer_earnings
 from datetime import datetime
 
 
@@ -61,7 +62,10 @@ class InitiateLabelerWithdrawalView(generics.GenericAPIView):
         if not serializer.is_valid():
             return ErrorResponse(message=serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         
-        earnings, _ = LabelerEarnings.objects.get_or_create(labeler=request.user)
+        if WithdrawalRequest.objects.filter(transaction__user=request.user, transaction__status=TransactionStatusChoices.PENDING, initiated_by=WithdrawalRequestInitiatedByChoices.USER).exists():
+            return ErrorResponse(message="You already have a pending withdrawal request, please wait for it to be processed or contact support", status=status.HTTP_400_BAD_REQUEST)
+                
+        user_total_earnings = get_unreleased_reviewer_earnings(request.user)
         
         account_number = serializer.validated_data.get('account_number')
         bank_code = serializer.validated_data.get('bank_code')
@@ -70,7 +74,7 @@ class InitiateLabelerWithdrawalView(generics.GenericAPIView):
         ngn_amount = convert_usd_to_ngn(amount)
         
         #ensure that the labeler has enough in his balance
-        if earnings.balance < amount: 
+        if user_total_earnings < amount: 
             return ErrorResponse(message="You don't have enough funds to withdraw this amount", status=status.HTTP_400_BAD_REQUEST)
         
         bank = find_bank_by_code(bank_code)
@@ -96,7 +100,8 @@ class InitiateLabelerWithdrawalView(generics.GenericAPIView):
             bank_code=bank_code,
             bank_name=bank.get('name'),
             reference=reference,
-            transaction=transaction
+            transaction=transaction,
+            initiated_by=WithdrawalRequestInitiatedByChoices.USER,
         )
         
         if decimal.Decimal(client_balance) < ngn_amount:
@@ -132,14 +137,8 @@ class InitiateLabelerWithdrawalView(generics.GenericAPIView):
             error_message = transfer_response.get("message", "FATAL: Unable to initialize transfer, please contact support")
             #TODO: contact an admin and warn them about the error
             return ErrorResponse(message=error_message, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-        
-        
-        # earnings.deduct_balance(withdrawal_request.transaction.usd_amount, create_transaction=False) #not creating a transaction here because the transaction is already created above
-        # withdrawal_request.is_user_balance_deducted = True
-        # withdrawal_request.save(update_fields=['is_user_balance_deducted'])
-        
+                
         return SuccessResponse(message="Withdrawal request initiated successfully, your funds will be available in your bank account in a few minutes")
-
 
 class PaystackWebhookListener(generics.GenericAPIView):
     permission_classes = [permissions.AllowAny]
@@ -153,45 +152,85 @@ class PaystackWebhookListener(generics.GenericAPIView):
         
         reference = data.get('reference')
         
-        withdrawal_request = WithdrawalRequest.objects.filter(reference=reference).first()
+        withdrawal_request = WithdrawalRequest.objects.select_related('transaction', 'monthly_earning').filter(reference=reference).first()
         
-        if not withdrawal_request:
+        if not withdrawal_request or withdrawal_request.is_user_balance_deducted:
+            withdrawal_request.transaction.mark_failed()
             return None
         
-        earnings, _ = LabelerEarnings.objects.get_or_create(labeler=withdrawal_request.transaction.user)
-        try:
-            with transaction.atomic():
-                if not withdrawal_request.is_user_balance_deducted:
-                    if earnings.balance >= withdrawal_request.transaction.usd_amount:
-                        earnings.deduct_balance(withdrawal_request.transaction.usd_amount, create_transaction=False)
-                        withdrawal_request.is_user_balance_deducted = True
-                        withdrawal_request.save(update_fields=['is_user_balance_deducted'])
-                        withdrawal_request.transaction.mark_success()
-                        
-                    else:
-                        withdrawal_request.transaction.mark_failed()
-                        return withdrawal_request
-        except Exception as e:
-            withdrawal_request.transaction.mark_failed()
+        if withdrawal_request.initiated_by == WithdrawalRequestInitiatedByChoices.USER:
+            user_earnings = MonthlyReviewerEarnings.objects.filter(Q(reviewer=withdrawal_request.transaction.user) & ~Q(release_status=MonthlyEarningsReleaseStatusChoices.RELEASED)).order_by('-usd_balance')
+            total_earnings = user_earnings.aggregate(total_earnings=Sum('total_earnings_usd'))['total_earnings']
+            
+            if total_earnings < withdrawal_request.transaction.usd_amount:
+                withdrawal_request.transaction.mark_failed()
+                return withdrawal_request
+            
+            amount_to_deduct = withdrawal_request.transaction.usd_amount
+            
+            for earning in user_earnings:
+                if amount_to_deduct <= 0:
+                    break
+                
+                if earning.usd_balance >= amount_to_deduct:
+                    earning.deduct_balance(amount_to_deduct)
+                    amount_to_deduct = 0
+                else:
+                    earning.deduct_balance(earning.usd_balance)
+                    amount_to_deduct -= earning.usd_balance
+                    
+            withdrawal_request.transaction.mark_success()
             return withdrawal_request
+        
 
+        if withdrawal_request.initiated_by == WithdrawalRequestInitiatedByChoices.SYSTEM:
+            if not withdrawal_request.monthly_earning:
+                withdrawal_request.transaction.mark_failed()
+                return None
+            
+            monthly_earning = withdrawal_request.monthly_earning
+            
+            if monthly_earning.usd_balance < withdrawal_request.transaction.usd_amount:
+                withdrawal_request.transaction.mark_failed()
+                
+                monthly_earning.release_status = MonthlyEarningsReleaseStatusChoices.FAILED
+                monthly_earning.save(update_fields=['release_status'])
+                return None
+            
+            try:
+                with transaction.atomic():
+                    monthly_earning.deduct_balance(withdrawal_request.transaction.usd_amount)
+                    monthly_earning.release_status = MonthlyEarningsReleaseStatusChoices.RELEASED
+                    monthly_earning.save(update_fields=['release_status'])
+            except Exception as e:
+                withdrawal_request.transaction.mark_failed()
+                return withdrawal_request
+            
         return withdrawal_request
     
     def handle_transfer_failed(self, payload):
         data = payload.get('data')
         reference = data.get('reference')
         
-        withdrawal_request = WithdrawalRequest.objects.filter(reference=reference).first()
+        withdrawal_request = WithdrawalRequest.objects.select_related('transaction', 'monthly_earning').filter(reference=reference).first()
         if not withdrawal_request:
             return None
         
-        #if the user's balance was previously deducted and the transfer failed, we need to topup the balance
-        if withdrawal_request.is_user_balance_deducted and withdrawal_request.transaction.status == TransactionStatusChoices.PENDING:
-            earnings, _ = LabelerEarnings.objects.get_or_create(labeler=withdrawal_request.transaction.user)
-            earnings.topup_balance(withdrawal_request.transaction.usd_amount, ngn_amount=withdrawal_request.transaction.ngn_amount)
+        if withdrawal_request.initiated_by == WithdrawalRequestInitiatedByChoices.SYSTEM:
+            if not withdrawal_request.monthly_earning:
+                withdrawal_request.transaction.mark_failed()
+                return None
             
-        withdrawal_request.transaction.mark_failed()
-        return withdrawal_request
+            monthly_earning = withdrawal_request.monthly_earning
+            
+            #if the user's balance was previously deducted and the transfer failed, we need to topup the balance
+            if withdrawal_request.is_user_balance_deducted and withdrawal_request.transaction.status == TransactionStatusChoices.PENDING:
+                monthly_earning.topup_balance(withdrawal_request.transaction.usd_amount, increment_total_earnings=False)
+                
+            withdrawal_request.transaction.mark_failed()
+            monthly_earning.release_status = MonthlyEarningsReleaseStatusChoices.FAILED
+            monthly_earning.save(update_fields=['release_status'])
+            return withdrawal_request
     
     def post(self, request, *args, **kwargs):   
         logger.info(f"PAYSTACK WEBHOOK RECEIVED")

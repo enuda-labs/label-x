@@ -11,7 +11,7 @@ from datetime import datetime
 from rest_framework.views import APIView
 from rest_framework_api_key.permissions import HasAPIKey
 from account.choices import ProjectStatusChoices
-from account.models import Project, CustomUser, LabelerEarnings
+from account.models import Project, CustomUser
 from common.caching import cache_response_decorator
 from common.responses import ErrorResponse, SuccessResponse, format_first_error
 from subscription.models import UserDataPoints

@@ -13,7 +13,7 @@ from task.models import Task, TaskCluster, TaskLabel
 from django.db.models import Sum, Count
 
 
-from .models import CustomUser, LabelerEarnings, OTPVerification, Project, ProjectLog, UserBankAccount
+from .models import CustomUser, OTPVerification, Project, ProjectLog, UserBankAccount
 from reviewer.models import LabelerDomain
 from reviewer.serializers import LabelerDomainSerializer
 from payment.utils import find_bank_by_code, request_paystack, resolve_bank_details
@@ -82,11 +82,6 @@ class UserBankAccountSerializer(serializers.ModelSerializer):
             
         return super().update(instance, validated_data)
 
-
-class LabelerEarningsSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = LabelerEarnings
-        fields = "__all__"
 
 
 class SetUserActiveStatusSerializer(serializers.Serializer):

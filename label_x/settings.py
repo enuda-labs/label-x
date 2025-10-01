@@ -381,20 +381,16 @@ EXCHANGE_RATE_API_KEY = os.getenv("EXCHANGE_RATE_API_KEY")
 
 CELERY_TIMEZONE = 'UTC'
 
+
+#runs at 7 am, 12pm and 4pm starting from the 28th of the month to the 10th of the next month
+#the reason i start at 28th is because of February which has only 28 days
 CELERY_BEAT_SCHEDULE = {
-   "process_pending_payments": { #runs at 7 am at the end of the month to initiate payments
+   "process_pending_payments": { 
        "task": "payment.tasks.process_pending_payments",
        "schedule": crontab(
-            minute="0",
-            hour="7",
-            day_of_month="28-31"
+            minute=0,
+            hour="7,12,16",
+            day_of_month="28-31,1-10"
         ),
    },
-   "retry_failed_payments": { #runs at 9am everyday to retry failed payments
-       "task": "payment.tasks.retry_failed_payments",
-       "schedule": crontab(
-            minute="0",
-            hour="9",
-        ),
-   }
 }

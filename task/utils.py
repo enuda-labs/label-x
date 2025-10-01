@@ -17,7 +17,8 @@ from decimal import Decimal
 from django.db import models
 from django.utils import timezone
 from django.db.models import Count, Sum, F
-from account.models import LabelerEarnings
+from account.models import MonthlyReviewerEarnings
+from account.choices import MonthlyEarningsReleaseStatusChoices
 from task.models import Task
 
 logger = logging.getLogger(__name__)
@@ -256,6 +257,10 @@ def calculate_static_labeller_monthly_earning(labeler: CustomUser, year: int, mo
     return monthly_earning.usd_balance
 
 
+def get_unreleased_reviewer_earnings(labeler: CustomUser) -> Decimal:
+    user_earnings = MonthlyReviewerEarnings.objects.filter(Q(reviewer=labeler) & ~Q(release_status=MonthlyEarningsReleaseStatusChoices.RELEASED)).order_by('-usd_balance')
+    return user_earnings.aggregate(total_earnings=Sum('usd_balance'))['total_earnings']
+
 
 def track_task_labeling_earning(task) -> dict:
     """
@@ -312,8 +317,7 @@ def credit_labeller_monthly_payment(task_id, labeler_id):
     month = now.month
     
     monthly_earning, _ = MonthlyReviewerEarnings.objects.get_or_create(reviewer=labeler, year=year, month=month)
-    monthly_earning.usd_balance = F('usd_balance') + response["task_earning"]
-    monthly_earning.save(update_fields=['usd_balance'])
+    monthly_earning.topup_balance(response["task_earning"])
     logger.info(f"Credited {response['task_earning']} USD to {labeler.username} for task {task.id}")
     return True
 

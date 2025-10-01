@@ -1,32 +1,30 @@
 import decimal
 import uuid
 from celery import shared_task
-from datetime import timedelta
-from django.utils import timezone
-from account.choices import BankPlatformChoices
-from account.models import CustomUser, UserBankAccount
-from payment.choices import MonthlyPaymentStatusChoices, TransactionTypeChoices
+from account.choices import BankPlatformChoices, MonthlyEarningsReleaseStatusChoices
+from account.models import MonthlyReviewerEarnings, UserBankAccount
+from payment.choices import TransactionTypeChoices, WithdrawalRequestInitiatedByChoices
 from payment.utils import convert_usd_to_ngn
-from task.models import ManualReviewSession
-from payment.models import MonthlyPayment, Transaction
-from task.utils import calculate_labeller_monthly_earning
+from payment.models import Transaction, WithdrawalRequest
 from paystackapi.paystack import Paystack, TransferRecipient
 from django.conf import settings
 import logging
+from django.db.models import Q
 
-logger = logging.getLogger('default')
 
+logger = logging.getLogger(__name__)
 
 paystack = Paystack(secret_key=settings.PAYSTACK_SECRET_KEY)
 
-def initiate_monthly_usd_paystack_transfer(usd_amount, labeler):
+def initiate_monthly_usd_paystack_transfer(monthly_earning):
+    labeler = monthly_earning.reviewer
+    usd_amount = monthly_earning.usd_balance
+    
     try:
         logger.info(f'Initiating monthly USD paystack transfer for {labeler.username} with amount {usd_amount}')
         
         ngn_amount = convert_usd_to_ngn(usd_amount)
         logger.info(f'Converted USD to NGN for {labeler.username} with amount {usd_amount} is {ngn_amount}')
-        
-        reference = str(uuid.uuid4())
         
         transaction = Transaction.objects.create(
             user=labeler,
@@ -45,9 +43,22 @@ def initiate_monthly_usd_paystack_transfer(usd_amount, labeler):
             #TODO: SEND EMAIL TO THE LABELLER TELLING THEM TO ADD A BANK ACCOUNT
             return False
         
+        reference = str(uuid.uuid4())
+    
+        withdrawal_request= WithdrawalRequest.objects.create(
+            account_number=bank_account.account_number,
+            bank_code=bank_account.bank_code,
+            bank_name=bank_account.bank_name,
+            reference=reference,
+            transaction=transaction,
+            initiated_by=WithdrawalRequestInitiatedByChoices.SYSTEM,
+            monthly_earning=monthly_earning,
+        )
+        
         if bank_account.platform != BankPlatformChoices.PAYSTACK:
             logger.error(f'Tried to initiate a paystack transfer for a non-paystack bank account for {labeler.username}, skipping payment processing')
             transaction.mark_failed(reason="Tried to initiate a paystack transfer for a non-paystack bank account")
+            #TODO: send an email to the labeller telling them that the transfer failed because their primary bank account is not a Nigerian account
             return False
         
         recipient_data = {
@@ -62,6 +73,7 @@ def initiate_monthly_usd_paystack_transfer(usd_amount, labeler):
         if not recipient_response.get("status"):
             logger.error(f'Could not initiate transfer for {labeler.username}, skipping payment processing')
             transaction.mark_failed(reason="Could not initiate transfer, please double check the account information and try again.")
+            #TODO: send an email to the labeller telling them that the transfer failed because the account information is invalid
             return False
         
         recipient_code = recipient_response.get("data").get("recipient_code")
@@ -70,17 +82,18 @@ def initiate_monthly_usd_paystack_transfer(usd_amount, labeler):
             "source": "balance",
             "reason": "Monthly payment",
             "amount": int(float(ngn_amount) * 100),
-            "recipient": recipient_code
+            "recipient": recipient_code,
+            "reference": reference
         }
         
         transfer_response = paystack.transfer.initiate(**transfer_data)
         if not transfer_response.get("status"):
             logger.error(f'Could not initiate transfer for {labeler.username}, internal paystack error likely due to insufficent balance or invalid account information')
-            transaction.mark_failed(reason="Could not initiate transfer, please double check the account information and try again.")
+            #TODO: send an email to the labeller telling them that the transfer failed 
+            transaction.mark_failed(reason="Could not initiate transfer, account information might be invalid")           
             return False
         
         logger.info(f'Successfully initiated transfer for {labeler.username} with amount {usd_amount}')
-        transaction.mark_success()
         return True
     except Exception as e:
         if transaction:
@@ -88,66 +101,57 @@ def initiate_monthly_usd_paystack_transfer(usd_amount, labeler):
 
 
 @shared_task
-def process_single_payment(labeler_id, year, month):
+def process_single_payment(monthly_earning_id):
     try:
-        labeler= CustomUser.objects.get(id=labeler_id)
-        
-        #check if we have already tried to pay the user for that month
-        monthly_payment, created = MonthlyPayment.objects.get_or_create(user=labeler, year=year, month=month, defaults={'usd_amount': 0, 'status': MonthlyPaymentStatusChoices.PENDING})
-        
-        if monthly_payment.status != MonthlyPaymentStatusChoices.SUCCESS: #only process payments that are either pending or failed
-            earning = calculate_labeller_monthly_earning(labeler, year, month) if created else monthly_payment.usd_amount
-            logger.info(f'Calculated earning for {labeler.username} in {year}-{month} is {earning}')
+        monthly_earning = MonthlyReviewerEarnings.objects.get(id=monthly_earning_id)
+
+        if monthly_earning.usd_balance <= decimal.Decimal('0.00'):
+            logger.info(f'{monthly_earning.reviewer.username} did not earn any money in {monthly_earning.year}-{monthly_earning.month}, skipping payment processing')
+            return
+
+        if monthly_earning.release_status in [MonthlyEarningsReleaseStatusChoices.PENDING, MonthlyEarningsReleaseStatusChoices.FAILED]: #only process payments that are either pending or failed
             
-            if earning <= decimal.Decimal('0.00'):
-                monthly_payment.status = MonthlyPaymentStatusChoices.SUCCESS
-                monthly_payment.save(update_fields=['status'])
-                return
-            success = initiate_monthly_usd_paystack_transfer(earning, labeler)
+            success = initiate_monthly_usd_paystack_transfer(monthly_earning)
             
-            monthly_payment.status = MonthlyPaymentStatusChoices.SUCCESS if success else MonthlyPaymentStatusChoices.FAILED
-            monthly_payment.usd_amount = earning
-            monthly_payment.save(update_fields=['status', 'usd_amount'])
-            
-            
-    except CustomUser.DoesNotExist:
-        logger.error(f'Labeler {labeler_id} not found, skipping payment processing')
+            monthly_earning.release_status = MonthlyEarningsReleaseStatusChoices.INITIATED if success else MonthlyEarningsReleaseStatusChoices.FAILED
+            monthly_earning.save(update_fields=['release_status'])
+        else:
+            logger.info(f"Monthly earning release status for {monthly_earning.reviewer.username} in {monthly_earning.year}-{monthly_earning.month} is {monthly_earning.release_status}, skipping payment processing")           
+            return
+    except MonthlyReviewerEarnings.DoesNotExist:
+        logger.error(f'Monthly earning {monthly_earning_id} not found, skipping payment processing')
+        return
+    except Exception as e:
+        logger.error(f'Error processing payment for {monthly_earning_id}: {str(e)}', exc_info=True)
         return
     
     
 
 @shared_task
-def process_pending_payments():
-    #get all the labellers who had at least one manual review session in the current month
+def process_pending_payments():    
+    logger.info(f'Processing pending payments for all reviewers')
     
-    now = timezone.now()
-    logger.info(f'Processing pending payments for {now.year}-{now.month}')
+    #get all monthly earnings that are either pending or the previous attempt to release the earnings failed
+    pending_monthly_earnings = MonthlyReviewerEarnings.objects.filter(Q(release_status=MonthlyEarningsReleaseStatusChoices.PENDING) | Q(release_status=MonthlyEarningsReleaseStatusChoices.FAILED))
     
-    today = now.date()
+    logger.info(f'Found {pending_monthly_earnings.count()} pending monthly earnings.. attempting to process them now')
     
-    tomorrow = today + timedelta(days=1)
-    if tomorrow.day == 1:
-        #if tomorrow is the first day of the month, then we need to credit the labellers
+    for earning in pending_monthly_earnings:
+        process_single_payment.delay(earning.id)
     
-        #the all the reviewers who labeled tasks in the current month
-        labeler_ids = ManualReviewSession.objects.filter(created_at__month=now.month, created_at__year=now.year).values_list('labeller', flat=True).distinct()
-        
-        for labeler_id in labeler_ids:
-            process_single_payment.delay(labeler_id, now.year, now.month)
-        
-    logger.info(f'Processing pending payments for {now.year}-{now.month} queued successfully')
+    logger.info(f'Processing pending payments for all reviewers queued successfully')
 
-@shared_task
-def retry_failed_payments():
-    try:
-        logger.info(f'Retrying all failed payments')
+# @shared_task
+# def retry_failed_payments():
+#     try:
+#         logger.info(f'Retrying all failed payments')
         
-        failed_payments = MonthlyPayment.objects.filter(status=MonthlyPaymentStatusChoices.FAILED)
+#         failed_payments = MonthlyPayment.objects.filter(status=MonthlyPaymentStatusChoices.FAILED)
         
-        logger.info(f'Found {failed_payments.count()} failed payments')
+#         logger.info(f'Found {failed_payments.count()} failed payments')
         
-        for payment in failed_payments:
-            process_single_payment.delay(payment.user.id, payment.year, payment.month)
+#         for payment in failed_payments:
+#             process_single_payment.delay(payment.user.id, payment.year, payment.month)
             
-    except Exception as e:
-        logger.error(f'Error retrying failed payments: {str(e)}', exc_info=True)
+#     except Exception as e:
+#         logger.error(f'Error retrying failed payments: {str(e)}', exc_info=True)

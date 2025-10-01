@@ -18,5 +18,5 @@ class MonthlyPaymentStatusChoices(models.TextChoices):
     
 
 class WithdrawalRequestInitiatedByChoices(models.TextChoices):
-    USER = 'user', 'User'
-    SYSTEM = 'system', 'System'
+    USER = 'user', 'User'#user tried to withdraw money from their account
+    SYSTEM = 'system', 'System'#the system tried to payout the user (used during monthly payment processing)
