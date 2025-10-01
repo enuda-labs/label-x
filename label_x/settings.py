@@ -393,8 +393,8 @@ CELERY_BEAT_SCHEDULE = {
             day_of_month="28-31,1-10"
         ),
    },
-    "test_task_every_2_minutes": {
-        "task": "payment.tasks.test_task",
-        "schedule": crontab(minute="*/2"),
-    },
+    # "test_task_every_2_minutes": {
+    #     "task": "payment.tasks.test_task",
+    #     "schedule": crontab(minute="*/2"),
+    # },
 }
