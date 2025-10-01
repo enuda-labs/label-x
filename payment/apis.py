@@ -24,9 +24,9 @@ import json
 from django.db.models import F, Sum, Q
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt
-from task.utils import get_labeller_current_month_preview, get_labeller_monthly_history, get_unreleased_reviewer_earnings
+from task.utils import calculate_static_labeller_monthly_earning, get_labeller_monthly_history, get_unreleased_reviewer_earnings
 from datetime import datetime
-
+from django.utils import timezone
 
 logger = logging.getLogger(__name__)
 
@@ -268,8 +268,6 @@ class GetPaystackBankCodesView(generics.ListAPIView):
     def get(self, request, *args, **kwargs):
         return super().get(request, *args, **kwargs)
 
-
-
 class LabellerEarningsView(generics.GenericAPIView):
     """
     View for checking labeller current month earnings
@@ -279,12 +277,22 @@ class LabellerEarningsView(generics.GenericAPIView):
     def get(self, request):
         """Get current month earnings preview for the logged-in labeller"""
         try:
-            earnings_preview = get_labeller_current_month_preview(request.user)
+            now = timezone.now()
+            earnings = calculate_static_labeller_monthly_earning(request.user, now.year, now.month)
             
+            if now.month == 12:
+                next_month_start = timezone.make_aware(datetime(now.year + 1, 1, 1)) if timezone.is_aware(now) else datetime(now.year + 1, 1, 1)
+            else:
+                next_month_start = timezone.make_aware(datetime(now.year, now.month + 1, 1)) if timezone.is_aware(now) else datetime(now.year, now.month + 1, 1)
+                            
             return Response({
                 'status': 'success',
                 'message': 'Current month earnings preview retrieved successfully',
-                'data': earnings_preview
+                'data': {
+                    "amount": earnings,
+                    "current_month": now.strftime("%B %Y"),
+                    "days_left_in_month": (next_month_start - now).days
+                }
             }, status=status.HTTP_200_OK)
             
         except Exception as e:

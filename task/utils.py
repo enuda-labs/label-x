@@ -254,7 +254,7 @@ def calculate_static_labeller_monthly_earning(labeler: CustomUser, year: int, mo
     Calculate a labeller's static earning using the curated earnings saved in the database
     """
     monthly_earning, _ = MonthlyReviewerEarnings.objects.get_or_create(reviewer=labeler, year=year, month=month)
-    return monthly_earning.usd_balance
+    return monthly_earning.total_earnings_usd
 
 
 def get_unreleased_reviewer_earnings(labeler: CustomUser) -> Decimal:
@@ -321,51 +321,24 @@ def credit_labeller_monthly_payment(task_id, labeler_id):
     logger.info(f"Credited {response['task_earning']} USD to {labeler.username} for task {task.id}")
     return True
 
-
-def get_labeller_current_month_preview(labeler: CustomUser):
-    """
-    Get a preview of the current month's earnings for a labeller
-    """
-    now = timezone.now()
-    monthly_summary = {}
-    monthly_summary['amount'] = calculate_labeller_monthly_earning(labeler, now.year, now.month)
-    
-    # Add some additional helpful information
-    monthly_summary["current_month"] = now.strftime("%B %Y")
-    
-    # Calculate days left in month using timezone-aware datetime
-    if now.month == 12:
-        next_month_start = timezone.make_aware(datetime(now.year + 1, 1, 1)) if timezone.is_aware(now) else datetime(now.year + 1, 1, 1)
-    else:
-        next_month_start = timezone.make_aware(datetime(now.year, now.month + 1, 1)) if timezone.is_aware(now) else datetime(now.year, now.month + 1, 1)
-    
-    monthly_summary["days_left_in_month"] = (next_month_start - now).days
-    
-    return monthly_summary
  
 def get_labeller_monthly_history(labeler: CustomUser, months_back: int = 6):
     """
     Get earning history for the last N months for a labeller
     """
-    now = timezone.now()
-    history = []
+    earnings = MonthlyReviewerEarnings.objects.filter(reviewer=labeler).order_by('-year', '-month')[:months_back]
     
-    for i in range(months_back):
-        # Calculate month and year going backwards
-        target_month = now.month - i
-        target_year = now.year
-        
-        while target_month <= 0:
-            target_month += 12
-            target_year -= 1
-        
-        monthly_earnings = {}
-        monthly_earnings['amount'] = calculate_labeller_monthly_earning(labeler, target_year, target_month)
-        monthly_earnings["month_year"] = datetime(target_year, target_month, 1).strftime("%B %Y")
+    history = []
+    for earning in earnings:
+        monthly_earnings = {
+            "amount": earning.total_earnings_usd,
+            "month_year": datetime(earning.year, earning.month, 1).strftime("%B %Y"),
+        }
         history.append(monthly_earnings)
     
     return {
         "labeller_username": labeler.username,
-        "months_included": months_back,
+        "months_included": len(history),
         "history": history,
     }
+
