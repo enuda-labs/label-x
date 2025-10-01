@@ -16,6 +16,13 @@ logger = logging.getLogger(__name__)
 
 paystack = Paystack(secret_key=settings.PAYSTACK_SECRET_KEY)
 
+
+@shared_task
+def test_task():
+    print("Test task executed successfully")
+    logger.info(f'Test task executed successfully')
+
+
 def initiate_monthly_usd_paystack_transfer(monthly_earning):
     labeler = monthly_earning.reviewer
     usd_amount = monthly_earning.usd_balance
