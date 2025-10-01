@@ -37,6 +37,8 @@ class TaskCluster(models.Model):
     - Support for both manual and AI-automated annotation methods
     Each cluster can contain multiple tasks and can be assigned to multiple reviewers simultaneously.
     """
+    name= models.CharField(max_length=100, default="Default")
+    description= models.TextField(default="Default")
     input_type = models.CharField(max_length=25, help_text="The type of input the labeller is to provide for the tasks in this cluster", choices=TaskInputTypeChoices.choices, default=TaskInputTypeChoices.TEXT)
     labeller_instructions = models.TextField(default="Default")
     deadline = models.DateField(null=True, blank=True)
@@ -253,6 +255,9 @@ class TaskLabel(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     notes = models.TextField(null=True)
+    
+    def __str__(self):
+        return f"{self.task.serial_no} - {self.labeller.username}"
 
 class ManualReviewSession(models.Model):
     """

@@ -170,6 +170,8 @@ class TaskClusterCreateSerializer(serializers.ModelSerializer):
         required=False,
         allow_null=True
     )
+    name = serializers.CharField(required=True)
+    description = serializers.CharField(required=True)
 
     class Meta:
         model = TaskCluster
@@ -294,7 +296,8 @@ class ListReviewersWithClustersSerializer(serializers.ModelSerializer):
             "email",
             "is_active",
             "assigned_clusters",
-            "completed_clusters"
+            "completed_clusters",
+            
         ]
     
     def get_completed_clusters(self, obj):

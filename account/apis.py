@@ -13,21 +13,21 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenRefreshView
 
 from common.caching import cache_response_decorator
-from common.responses import ErrorResponse, SuccessResponse, format_first_error, get_first_error
+from common.responses import ErrorResponse, SuccessResponse, format_first_error
 from common.utils import get_duration
 from subscription.models import UserDataPoints
 from subscription.serializers import UserDataPointsSerializer
 from task.choices import TaskClusterStatusChoices
 from task.models import Task, TaskCluster
-from task.serializers import ListReviewersWithClustersSerializer, ProjectUpdateSerializer, TaskSerializer
-from django.db.models import Prefetch
+from task.serializers import ListReviewersWithClustersSerializer, ProjectUpdateSerializer
+
+from task.utils import get_unreleased_reviewer_earnings
 
 from .utils import IsAdminUser, IsSuperAdmin, NotReviewer, assign_default_plan
 from .serializers import (
     AdminProjectDetailSerializer,
     CreateLabelerSerializer,
     Disable2faSerializer,
-    LabelerEarningsSerializer,
     LoginSerializer,
     LogoutSerializer,
     MakeAdminSerializer,
@@ -57,7 +57,7 @@ from .utils import (
     IsAdminUser,
     IsSuperAdmin,
 )
-from .models import CustomUser, LabelerEarnings, OTPVerification, Project, UserBankAccount
+from .models import CustomUser,  OTPVerification, Project, UserBankAccount
 from django.contrib.auth import logout
 # Set up logger
 logger = logging.getLogger('account.apis')
@@ -177,10 +177,12 @@ class GetLabelersEarningsView(generics.GenericAPIView):
         if not request.user.is_reviewer:
             return ErrorResponse(message="User is not a labeler", status=status.HTTP_403_FORBIDDEN)
         
-        earnings, _ = LabelerEarnings.objects.get_or_create(labeler=request.user)
+        earnings = get_unreleased_reviewer_earnings(request.user)
         return SuccessResponse(
             message="Labelers earnings",
-            data = LabelerEarningsSerializer(earnings).data
+            data = {
+                "balance": earnings
+            }
         )
 
 

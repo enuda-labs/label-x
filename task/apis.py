@@ -11,12 +11,12 @@ from datetime import datetime
 from rest_framework.views import APIView
 from rest_framework_api_key.permissions import HasAPIKey
 from account.choices import ProjectStatusChoices
-from account.models import Project, CustomUser, LabelerEarnings
+from account.models import Project, CustomUser
 from common.caching import cache_response_decorator
 from common.responses import ErrorResponse, SuccessResponse, format_first_error
 from subscription.models import UserDataPoints
 from task.choices import AnnotationMethodChoices, ManualReviewSessionStatusChoices, TaskClusterStatusChoices, TaskInputTypeChoices, TaskTypeChoices
-from task.utils import assign_reviewers_to_cluster, calculate_labelling_required_data_points, calculate_required_data_points, dispatch_task_message, push_realtime_update
+from task.utils import assign_reviewers_to_cluster, calculate_labelling_required_data_points, calculate_required_data_points, credit_labeller_monthly_payment, dispatch_task_message, push_realtime_update
 from .models import ManualReviewSession, MultiChoiceOption, Task, TaskCluster, UserReviewChatHistory, TaskLabel
 from .serializers import AcceptClusterIdSerializer, AssignedTaskSerializer, FullTaskSerializer, GetAndValidateReviewersSerializer, ListReviewersWithClustersSerializer, MultiChoiceOptionSerializer, RequestAdditionalLabellersSerializer, TaskAnnotationSerializer, TaskClusterCreateSerializer, TaskClusterDetailSerializer, TaskClusterListSerializer, TaskIdSerializer, TaskSerializer, TaskReviewSerializer, AssignTaskSerializer
 from .tasks import process_task, provide_feedback_to_ai_model
@@ -1188,7 +1188,10 @@ class MyAssignedClustersView(APIView):
                     'tasks_count': cluster.tasks_count,
                     'pending_tasks': cluster.tasks_count - cluster.user_labels_count,
                     "user_labels_count": cluster.user_labels_count,
-                    "choices": MultiChoiceOptionSerializer(cluster.choices.all(), many=True).data
+                    "choices": MultiChoiceOptionSerializer(cluster.choices.all(), many=True).data,
+                    "name": cluster.name,
+                    "description": cluster.description
+                    
                 })
             
             logger.info(f"User '{request.user.username}' fetched {len(clusters_data)} assigned clusters at {datetime.now()}")
@@ -1388,15 +1391,12 @@ class TaskAnnotationView(generics.GenericAPIView):
             if user_review_session_complete:
                 review_session.status = ManualReviewSessionStatusChoices.COMPLETED
                 review_session.save()
-                earnings, _ = LabelerEarnings.objects.get_or_create(labeler=request.user)
-
-            
-     
       
             task.human_reviewed = True
             task.save()
             
             cluster.update_completion_percentage()
+            credit_labeller_monthly_payment.delay(task.id, request.user.id)
             
             cluster.project.create_log(f"Reviewer '{request.user.username}' submitted {len(created_labels)} labels for task {task.serial_no} at {datetime.now()}")
             
