@@ -15,8 +15,11 @@ import logging
 from logging import config
 import os
 from pathlib import Path
+from celery.schedules import crontab
+from datetime import timedelta
 
 from dotenv import load_dotenv
+import pytz
 import sentry_sdk
 from sentry_sdk.integrations.django import DjangoIntegration
 from sentry_sdk.integrations.logging import LoggingIntegration
@@ -90,6 +93,7 @@ INSTALLED_APPS = [
     "common",
     "subscription",
     'cloudinary',
+    'django_celery_beat',
     'cloudinary_storage',
     "datasets",
     "payment",
@@ -221,7 +225,7 @@ LOGGING = {
     },
     "handlers": {
         "file": {
-            "level": "INFO",
+            "level": "INFO", #Level is the minimum severity that will be handled in order of DEBUG < INFO < WARNING < ERROR < CRITICAL
             "class": "logging.FileHandler",
             "filename": "logs/api_activity.log",
             "formatter": "verbose",
@@ -232,27 +236,35 @@ LOGGING = {
             "formatter": "verbose",
         },
     },
+    "root": {
+        "handlers": ["console", "file"],
+        "level": "INFO",
+        "propagate": True,
+    },
     "loggers": {
         "django": {
-            "handlers": ["file"],
-            "level": "ERROR",
-            "propagate": True,
-        },
-        "account": {
-            "handlers": ["console", "file"],
-            "level": "INFO",
-            "propagate": True,
-        },
-        "account.apis": {
-            "handlers": ["console", "file"],
-            "level": "INFO",
-            "propagate": True,
-        },
-        "django.server": {  # <-- This captures HTTP requests
             "handlers": ["console", "file"],
             "level": "INFO",
             "propagate": False,
         },
+        "account": {
+            "handlers": ["console", "file"],
+            "level": "INFO",
+            "propagate": False,
+        },
+        "account.apis": {
+            "handlers": ["console", "file"],
+            "level": "INFO",
+            "propagate": False,
+        },
+        "django.server": { 
+            "handlers": ["console", "file"],
+            "propagate": False,
+        },
+        "default": {
+            "handlers": ["console", "file"],
+            "propagate": True,
+        }
     },
 }
 
@@ -364,3 +376,21 @@ CACHES = {
 PAYSTACK_SECRET_KEY = os.getenv("PAYSTACK_SECRET_KEY")
 PAYSTACK_PUBLIC_KEY = os.getenv("PAYSTACK_PUBLIC_KEY")
 EXCHANGE_RATE_API_KEY = os.getenv("EXCHANGE_RATE_API_KEY")
+
+
+
+CELERY_TIMEZONE = 'UTC'
+
+
+#runs at 7 am, 12pm and 4pm starting from the 28th of the month to the 10th of the next month
+#the reason i start at 28th is because of February which has only 28 days
+CELERY_BEAT_SCHEDULE = {
+   "process_pending_payments": { 
+       "task": "payment.tasks.process_pending_payments",
+       "schedule": crontab(
+            minute=0,
+            hour="7,12,16",
+            day_of_month="28-31,1-10"
+        ),
+   },
+}

@@ -1,6 +1,7 @@
 from django.db import models
-from account.models import CustomUser
-from payment.choices import TransactionStatusChoices, TransactionTypeChoices
+from account.models import CustomUser, MonthlyReviewerEarnings
+from payment.choices import TransactionStatusChoices, TransactionTypeChoices, WithdrawalRequestInitiatedByChoices
+from payment.choices import MonthlyPaymentStatusChoices, TransactionStatusChoices, TransactionTypeChoices
 import uuid
 # Create your models here.
 
@@ -16,10 +17,12 @@ class Transaction(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
     transaction_type = models.CharField(max_length=50, default=TransactionTypeChoices.WITHDRAWAL, choices=TransactionTypeChoices.choices)
     description = models.TextField(null=True, blank=True, help_text="The description of the transaction")
+    failed_reason = models.TextField(null=True, blank=True, help_text="The reason the transaction failed if any")
     
-    def mark_failed(self):
+    def mark_failed(self, reason=None):
         self.status = TransactionStatusChoices.FAILED
-        self.save(update_fields=['status'])
+        self.failed_reason = reason
+        self.save(update_fields=['status', 'failed_reason'])
     
     def mark_success(self):
         self.status = TransactionStatusChoices.SUCCESS
@@ -27,6 +30,7 @@ class Transaction(models.Model):
     
     def __str__(self):
         return f"{self.transaction_type} transaction of ${self.usd_amount} by {self.user.username} - {self.status}"
+
 
 
 
@@ -39,9 +43,16 @@ class WithdrawalRequest(models.Model):
     bank_name = models.CharField(max_length=255)
     is_user_balance_deducted = models.BooleanField(default=False, help_text="Whether the user's balance has been deducted for this withdrawal request")
     transaction = models.ForeignKey(Transaction, on_delete=models.CASCADE, null=True, blank=True, help_text="The transaction that this withdrawal request is associated with")
+    initiated_by = models.CharField(max_length=50, choices=WithdrawalRequestInitiatedByChoices.choices, default=WithdrawalRequestInitiatedByChoices.USER, help_text="Whether the withdrawal request was initiated by the user or the system")
+    monthly_earning = models.ForeignKey(MonthlyReviewerEarnings, on_delete=models.CASCADE, null=True, blank=True, help_text="If this withdrawal request was made for a particular monthly earning, this field will be populated")
     
     def __str__(self):
         return f"Withdrawal request to {self.bank_name} account number {self.account_number}"
         # return f"Withdrawal request of ${self.transaction.usd_amount} by {self.transaction.username} - {self.transaction.status}"
+        
+    class Meta:
+        indexes = [
+            models.Index(fields=['reference']),
+        ]
     
 

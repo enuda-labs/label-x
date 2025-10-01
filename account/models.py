@@ -13,7 +13,7 @@ from django.core.files.base import ContentFile
 from cloudinary.models import CloudinaryField
 import cloudinary.uploader
 
-from account.choices import BankPlatformChoices, ProjectStatusChoices
+from account.choices import BankPlatformChoices, MonthlyEarningsReleaseStatusChoices, ProjectStatusChoices
 from payment.choices import TransactionStatusChoices, TransactionTypeChoices
 from reviewer.models import LabelerDomain
 from task.choices import TaskInputTypeChoices
@@ -163,6 +163,35 @@ class LabelerEarnings(models.Model):
                 status=TransactionStatusChoices.SUCCESS,
             )
         return self.balance
+
+
+
+class MonthlyReviewerEarnings(models.Model):
+    reviewer = models.ForeignKey(CustomUser, on_delete=models.CASCADE)
+    year = models.IntegerField() #a year e.g 2025
+    month = models.IntegerField() #a month e.g 1 for January
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    total_earnings_usd = models.DecimalField(max_digits=10, decimal_places=4, default=0, help_text="The total earnings of the reviewer in USD for this month")
+    usd_balance = models.DecimalField(max_digits=10, decimal_places=4, default=0, help_text="The balance of the reviewer in USD")
+    release_status = models.CharField(max_length=50, choices=MonthlyEarningsReleaseStatusChoices.choices, default=MonthlyEarningsReleaseStatusChoices.PENDING, help_text="Indicates if the earnings for this month has been released to the reviewer")
+    
+    def topup_balance(self, usd_amount, increment_total_earnings=True):
+        amount = decimal.Decimal(usd_amount)
+        self.usd_balance = F('usd_balance') + amount
+        if increment_total_earnings:
+            self.total_earnings_usd = F('total_earnings_usd') + amount
+        self.save(update_fields=['usd_balance', 'total_earnings_usd'])
+        return self.usd_balance
+    
+    def deduct_balance(self, usd_amount):
+        amount = decimal.Decimal(usd_amount)
+        self.usd_balance = F('usd_balance') - amount
+        self.save(update_fields=['usd_balance'])
+        return self.usd_balance
+    
+    def __str__(self):
+        return f"{self.reviewer.username} - {self.month} - {self.year}"
 
 class ApiKeyTypeChoices(models.TextChoices):
     PRODUCTION = 'production', 'Production',

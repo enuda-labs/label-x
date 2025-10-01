@@ -11,12 +11,12 @@ from datetime import datetime
 from rest_framework.views import APIView
 from rest_framework_api_key.permissions import HasAPIKey
 from account.choices import ProjectStatusChoices
-from account.models import Project, CustomUser, LabelerEarnings
+from account.models import Project, CustomUser
 from common.caching import cache_response_decorator
 from common.responses import ErrorResponse, SuccessResponse, format_first_error
 from subscription.models import UserDataPoints
 from task.choices import AnnotationMethodChoices, ManualReviewSessionStatusChoices, TaskClusterStatusChoices, TaskInputTypeChoices, TaskTypeChoices
-from task.utils import assign_reviewers_to_cluster, calculate_labelling_required_data_points, calculate_required_data_points, dispatch_task_message, push_realtime_update
+from task.utils import assign_reviewers_to_cluster, calculate_labelling_required_data_points, calculate_required_data_points, credit_labeller_monthly_payment, dispatch_task_message, push_realtime_update
 from .models import ManualReviewSession, MultiChoiceOption, Task, TaskCluster, UserReviewChatHistory, TaskLabel
 from .serializers import AcceptClusterIdSerializer, AssignedTaskSerializer, FullTaskSerializer, GetAndValidateReviewersSerializer, ListReviewersWithClustersSerializer, MultiChoiceOptionSerializer, RequestAdditionalLabellersSerializer, TaskAnnotationSerializer, TaskClusterCreateSerializer, TaskClusterDetailSerializer, TaskClusterListSerializer, TaskIdSerializer, TaskSerializer, TaskReviewSerializer, AssignTaskSerializer
 from .tasks import process_task, provide_feedback_to_ai_model
@@ -61,7 +61,7 @@ class ExportClusterToCsvView(generics.GenericAPIView):
         response['Content-Disposition'] = f'attachment; filename="{filename}"'
         
         writer = csv.writer(response)
-        headers = ['Task ID', 'Task Data', 'Label', 'notes', 'Labeller', 'Created At', 'Updated At']
+        headers = ['Task Data', 'Label', 'notes', 'Labeller', 'Created At', 'Updated At']
         writer.writerow(headers)
         
         is_text_input_type = cluster.input_type  in [TaskInputTypeChoices.TEXT, TaskInputTypeChoices.MULTIPLE_CHOICE]
@@ -70,7 +70,7 @@ class ExportClusterToCsvView(generics.GenericAPIView):
             task_data = label.task.data if label.task.task_type == TaskTypeChoices.TEXT else label.task.file_url
             task_label = label.label if is_text_input_type else label.label_file_url
             
-            row = [label.task.id, task_data, task_label, label.notes, label.labeller.username, label.created_at, label.updated_at]
+            row = [task_data, task_label, label.notes, label.labeller.username, label.created_at, label.updated_at]
             writer.writerow(row)
         
         return response
@@ -426,16 +426,20 @@ class CreatedClusterListView(generics.ListAPIView):
 class GetAvailableClusters(generics.ListAPIView):
     serializer_class = TaskClusterListSerializer
     def get_queryset(self):
-        return TaskCluster.objects.filter(
+        user_domains = self.request.user.domains.all()
+ 
+        return TaskCluster.objects.annotate(reviewer_count=Count("assigned_reviewers")).filter(
             ~Q(status=TaskClusterStatusChoices.COMPLETED) & 
-            ~Q(annotation_method=AnnotationMethodChoices.AI_AUTOMATED)
-        )
+            ~Q(annotation_method=AnnotationMethodChoices.AI_AUTOMATED) &
+            Q(reviewer_count__lt=F("labeller_per_item_count"))
+            & Q(labeler_domain__in=user_domains)
+        ).exclude(assigned_reviewers=self.request.user)
     
     @extend_schema(
         summary="Get all the clusters that are available for assignment",
         description="Ideal for when a reviewer is looking for clusters to assign to themselves"
     )
-    @cache_response_decorator('available_clusters')
+    # @cache_response_decorator('available_clusters', per_user=True)
     def get(self, request, *args, **kwargs):
         return super().get(request, *args, **kwargs)
 
@@ -668,6 +672,7 @@ class AssignClusterToSelf(generics.GenericAPIView):
         else:
             return ErrorResponse(message="You are already assigned to this cluster")
 
+        cache.delete_pattern(f"*available_clusters_{request.user.id}*")
         return SuccessResponse(message="Successfully added user to assigned reviewers")
 
 class AssignTaskToSelfView(APIView):
@@ -1183,7 +1188,10 @@ class MyAssignedClustersView(APIView):
                     'tasks_count': cluster.tasks_count,
                     'pending_tasks': cluster.tasks_count - cluster.user_labels_count,
                     "user_labels_count": cluster.user_labels_count,
-                    "choices": MultiChoiceOptionSerializer(cluster.choices.all(), many=True).data
+                    "choices": MultiChoiceOptionSerializer(cluster.choices.all(), many=True).data,
+                    "name": cluster.name,
+                    "description": cluster.description
+                    
                 })
             
             logger.info(f"User '{request.user.username}' fetched {len(clusters_data)} assigned clusters at {datetime.now()}")
@@ -1383,17 +1391,12 @@ class TaskAnnotationView(generics.GenericAPIView):
             if user_review_session_complete:
                 review_session.status = ManualReviewSessionStatusChoices.COMPLETED
                 review_session.save()
-                earnings, _ = LabelerEarnings.objects.get_or_create(labeler=request.user)
-
-               # TODO: UPDATE TO ACTUALLY CALCULATE THE DATA POINTS
-                earnings.balance = F('balance') + 10 # dummy 10 data points for completing the review session
-                earnings.save()
-     
       
             task.human_reviewed = True
             task.save()
             
             cluster.update_completion_percentage()
+            credit_labeller_monthly_payment.delay(task.id, request.user.id)
             
             cluster.project.create_log(f"Reviewer '{request.user.username}' submitted {len(created_labels)} labels for task {task.serial_no} at {datetime.now()}")
             

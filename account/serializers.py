@@ -13,7 +13,7 @@ from task.models import Task, TaskCluster, TaskLabel
 from django.db.models import Sum, Count
 
 
-from .models import CustomUser, LabelerEarnings, OTPVerification, Project, ProjectLog, UserBankAccount
+from .models import CustomUser, OTPVerification, Project, ProjectLog, UserBankAccount
 from reviewer.models import LabelerDomain
 from reviewer.serializers import LabelerDomainSerializer
 from payment.utils import find_bank_by_code, request_paystack, resolve_bank_details
@@ -82,11 +82,6 @@ class UserBankAccountSerializer(serializers.ModelSerializer):
             
         return super().update(instance, validated_data)
 
-
-class LabelerEarningsSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = LabelerEarnings
-        fields = "__all__"
 
 
 class SetUserActiveStatusSerializer(serializers.Serializer):
@@ -332,17 +327,16 @@ class RegisterSerializer(serializers.ModelSerializer):
         write_only=True,
         min_length=8,
     )
-    role = serializers.CharField(
+    role = serializers.ChoiceField(
+        choices=[("organization", "Organization"), ("reviewer", "Reviewer")],
         write_only=True,
-        min_length=8,
     )
-    user_type = serializers.ChoiceField(
-        choices=[("individual", "Individual"), ("reviewer", "Reviewer")], required=False
-    )
+    
+ 
 
     class Meta:
         model = CustomUser
-        fields = ["id", "username", "email", "password", "role", "user_type"]
+        fields = ["id", "username", "email", "password", "role", "domains"]
         extra_kwargs = {
             "username": {"error_messages": {"unique": "Username already exists"}},
             "email": {"error_messages": {"unique": "Email already exists"}},
@@ -352,21 +346,30 @@ class RegisterSerializer(serializers.ModelSerializer):
         # Pop the password and role from validated_data
         password = validated_data.pop("password")
         role = validated_data.pop("role")
-        user_type = validated_data.pop("user_type", None)
-
-        if user_type == "reviewer":
-            validated_data["is_reviewer"] = True
-        else:
-            validated_data["is_reviewer"] = False
-
+        domains = validated_data.pop("domains")
+        
+        
+        validated_data['is_reviewer'] = role == "reviewer"
+     
         # Create user instance
         user = CustomUser.objects.create(**validated_data)
 
         # Set the password (this will hash it)
         user.set_password(password)
         user.save()
+        user.domains.set(domains)
 
         return user, role
+    
+    def validate(self, attrs):
+        role = attrs.get("role")
+        if role == "reviewer":
+            domain = attrs.get('domains', [])
+            if not domain or len(domain) == 0:
+                raise serializers.ValidationError("Domains are required for reviewers")
+        else:
+            attrs['domains'] = []
+        return attrs
 
     def validate_email(self, value):
         if CustomUser.objects.filter(email=value).exists():

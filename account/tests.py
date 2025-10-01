@@ -7,6 +7,7 @@ from rest_framework import status
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from account.models import CustomUser, Project
+from reviewer.models import LabelerDomain
 from task.choices import AnnotationMethodChoices, TaskInputTypeChoices, TaskTypeChoices
 from task.models import Task, TaskCluster
 
@@ -15,11 +16,18 @@ class RegisterTestCase(APITransactionTestCase):
         self.register_path = reverse("account:register")
         self.login_path = reverse('account:login')
         CustomUser.objects.create_user(username='dama', email="test@gmail.com")
+        self.test_domain = LabelerDomain.objects.create(domain="test")
 
-    def test_register_individual_success(self):
+    
+    def test_register_reviewer_success(self):
         response = self.client.post(
-            self.register_path, data={'username': 'dama1', "email": "test1@gmail.com", 
-            'password': '123456789ASas@', 'role': "individual"}
+            self.register_path, data={
+                'username': 'dama1', 
+                "email": "test1@gmail.com", 
+                'password': '123456789ASas@', 
+                'role': "reviewer", 
+                'domains': [self.test_domain.id]
+            }
         )
         for field in {"status", "user_data"}:
             self.assertTrue(field in response.data)

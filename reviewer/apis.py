@@ -1,14 +1,15 @@
 from drf_spectacular.utils import extend_schema
 from rest_framework import generics
+from account.utils import IsAdminOrReadOnly
 from common.caching import cache_response_decorator
 from account.models import LabelerDomain
 from .serializers import LabelerDomainSerializer
 
-class GetLabelerDomains(generics.ListAPIView):
+class GetLabelerDomains(generics.ListCreateAPIView):
     serializer_class = LabelerDomainSerializer
     queryset = LabelerDomain.objects.all()
-    
-    
+    permission_classes = [IsAdminOrReadOnly]
+ 
     @cache_response_decorator('labeler_domains')
     def list(self, request, *args, **kwargs):
         return super().list(request, *args, **kwargs)
