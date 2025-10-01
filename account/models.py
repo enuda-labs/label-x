@@ -172,7 +172,7 @@ class MonthlyReviewerEarnings(models.Model):
     month = models.IntegerField() #a month e.g 1 for January
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-    paid = models.BooleanField(default=False)
+    paid = models.BooleanField(default=False, help_text="Whether the reviewer has been paid for this month")
     usd_balance = models.DecimalField(max_digits=10, decimal_places=4, default=0, help_text="The balance of the reviewer in USD")
     
     def __str__(self):

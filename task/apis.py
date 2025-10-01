@@ -18,7 +18,7 @@ from subscription.models import UserDataPoints
 from task.choices import AnnotationMethodChoices, ManualReviewSessionStatusChoices, TaskClusterStatusChoices, TaskInputTypeChoices, TaskTypeChoices
 from task.utils import assign_reviewers_to_cluster, calculate_labelling_required_data_points, calculate_required_data_points, credit_labeller_monthly_payment, dispatch_task_message, push_realtime_update
 from .models import ManualReviewSession, MultiChoiceOption, Task, TaskCluster, UserReviewChatHistory, TaskLabel
-from .serializers import AcceptClusterIdSerializer, AssignedTaskSerializer, FullTaskSerializer, GetAndValidateReviewersSerializer, ListReviewersWithClustersSerializer, MultiChoiceOptionSerializer, TaskAnnotationSerializer, TaskClusterCreateSerializer, TaskClusterDetailSerializer, TaskClusterListSerializer, TaskIdSerializer, TaskSerializer, TaskReviewSerializer, AssignTaskSerializer
+from .serializers import AcceptClusterIdSerializer, AssignedTaskSerializer, FullTaskSerializer, GetAndValidateReviewersSerializer, ListReviewersWithClustersSerializer, MultiChoiceOptionSerializer, RequestAdditionalLabellersSerializer, TaskAnnotationSerializer, TaskClusterCreateSerializer, TaskClusterDetailSerializer, TaskClusterListSerializer, TaskIdSerializer, TaskSerializer, TaskReviewSerializer, AssignTaskSerializer
 from .tasks import process_task, provide_feedback_to_ai_model
 
 # import custom permissions
@@ -61,7 +61,7 @@ class ExportClusterToCsvView(generics.GenericAPIView):
         response['Content-Disposition'] = f'attachment; filename="{filename}"'
         
         writer = csv.writer(response)
-        headers = ['Task ID', 'Task Data', 'Label', 'notes', 'Labeller', 'Created At', 'Updated At']
+        headers = ['Task Data', 'Label', 'notes', 'Labeller', 'Created At', 'Updated At']
         writer.writerow(headers)
         
         is_text_input_type = cluster.input_type  in [TaskInputTypeChoices.TEXT, TaskInputTypeChoices.MULTIPLE_CHOICE]
@@ -70,7 +70,7 @@ class ExportClusterToCsvView(generics.GenericAPIView):
             task_data = label.task.data if label.task.task_type == TaskTypeChoices.TEXT else label.task.file_url
             task_label = label.label if is_text_input_type else label.label_file_url
             
-            row = [label.task.id, task_data, task_label, label.notes, label.labeller.username, label.created_at, label.updated_at]
+            row = [task_data, task_label, label.notes, label.labeller.username, label.created_at, label.updated_at]
             writer.writerow(row)
         
         return response
@@ -237,6 +237,103 @@ class GetClusterReviewers(generics.GenericAPIView):
             return ErrorResponse(message="Cluster not found", status=status.HTTP_404_NOT_FOUND)
     
 
+class RequestAdditionalLabellersView(generics.GenericAPIView):
+    """
+    API endpoint to allow clients to request additional labellers for their cluster.
+    Charges DPT based on system settings.
+    """
+    permission_classes = [IsAuthenticated]
+    serializer_class = RequestAdditionalLabellersSerializer
+    
+    @extend_schema(
+        summary="Request additional labellers for a cluster",
+        description="Request additional labellers to be added to a cluster. Charges DPT based on system settings.",
+        request=RequestAdditionalLabellersSerializer,
+        responses={
+            200: OpenApiResponse(
+                response=None,
+                description="Additional labellers requested successfully",
+                examples=[
+                    OpenApiExample(
+                        "Successful Response",
+                        value={
+                            "status": "success",
+                            "message": "Additional labellers requested successfully",
+                            "data": {
+                                "cluster_id": 1,
+                                "requested_labellers": 10,
+                                "dpt_charged": 10,
+                                "remaining_dpt_balance": 450
+                            }
+                        },
+                        response_only=True
+                    )
+                ]
+            ),
+            400: OpenApiResponse(description="Invalid request data"),
+            402: OpenApiResponse(description="Insufficient DPT balance"),
+            404: OpenApiResponse(description="Cluster not found"),
+            403: OpenApiResponse(description="Permission denied")
+        }
+    )
+    def post(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data, context={'request': request})
+        
+        if not serializer.is_valid():
+            return ErrorResponse(message=format_first_error(serializer.errors, False))
+        
+        cluster_id = serializer.validated_data['cluster_id']
+        additional_labellers_count = serializer.validated_data['additional_labellers_count']
+        
+        try:
+            # Get the cluster
+            cluster = TaskCluster.objects.get(id=cluster_id)
+            
+            # Get system settings for DPT cost per labeller
+            from common.utils import get_dp_cost_settings
+            settings = get_dp_cost_settings()
+            dpt_cost_per_labeller = settings.get('dp_cost_per_labeller', 10)
+            
+            
+            # Check user's DPT balance
+            user_data_points, created = UserDataPoints.objects.get_or_create(user=request.user)
+            
+            if user_data_points.data_points_balance < dpt_cost_per_labeller:
+                return ErrorResponse(
+                    message=f"Insufficient DPT balance. Required: {dpt_cost_per_labeller}, Available: {user_data_points.data_points_balance}",
+                    status=status.HTTP_402_PAYMENT_REQUIRED
+                )
+            
+            # Deduct DPT from user's balance and refresh to avoid returning CombinedExpression
+            user_data_points.deduct_data_points(dpt_cost_per_labeller)
+            user_data_points.refresh_from_db()
+            
+            # Update cluster's labeller_per_item_count
+            cluster.labeller_per_item_count += additional_labellers_count
+            cluster.save()
+            
+            # Trigger automatic assignment of new labellers
+            assign_reviewers_to_cluster.delay(cluster.id)
+            
+            logger.info(f"User '{request.user.username}' requested {additional_labellers_count} additional labellers for cluster {cluster_id} at {datetime.now()}")
+            
+            return SuccessResponse(
+                message="Additional labellers requested successfully",
+                data={
+                    "cluster_id": cluster_id,
+                    "requested_labellers": additional_labellers_count,
+                    "dpt_charged": dpt_cost_per_labeller,
+                    "remaining_dpt_balance": int(user_data_points.data_points_balance)
+                }
+            )
+            
+        except TaskCluster.DoesNotExist:
+            return ErrorResponse(message="Cluster not found", status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            logger.error(f"Error requesting additional labellers: {str(e)}")
+            return ErrorResponse(message="An error occurred while processing your request", status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
 class GetProjectClusters(generics.ListAPIView):
     serializer_class = TaskClusterListSerializer
     def get_queryset(self):
@@ -342,7 +439,7 @@ class GetAvailableClusters(generics.ListAPIView):
         summary="Get all the clusters that are available for assignment",
         description="Ideal for when a reviewer is looking for clusters to assign to themselves"
     )
-    @cache_response_decorator('available_clusters', per_user=True)
+    # @cache_response_decorator('available_clusters', per_user=True)
     def get(self, request, *args, **kwargs):
         return super().get(request, *args, **kwargs)
 
@@ -1186,7 +1283,7 @@ class TaskAnnotationView(generics.GenericAPIView):
         task_id = serializer.validated_data.get('task_id')
         labels = serializer.validated_data.get('labels', [])
         notes = serializer.validated_data.get('notes', None)  
-              
+        
         try:
             # Validate required fields
             if not task_id:
@@ -1237,6 +1334,7 @@ class TaskAnnotationView(generics.GenericAPIView):
                     'detail': f'Task is not available for labeling, current status: {task.processing_status}'
                 }, status=status.HTTP_400_BAD_REQUEST)
             
+            
             is_text_input_type = task.cluster.input_type  in [TaskInputTypeChoices.TEXT, TaskInputTypeChoices.MULTIPLE_CHOICE]
 
             if not is_text_input_type:
@@ -1286,6 +1384,7 @@ class TaskAnnotationView(generics.GenericAPIView):
             
             user_review_session_complete= set(task_ids) == set(user_labelled_tasks_ids)
             
+
             if user_review_session_complete:
                 review_session.status = ManualReviewSessionStatusChoices.COMPLETED
                 review_session.save()
