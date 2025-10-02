@@ -169,7 +169,7 @@ class LabelerEarnings(models.Model):
 class MonthlyReviewerEarnings(models.Model):
     reviewer = models.ForeignKey(CustomUser, on_delete=models.CASCADE)
     year = models.IntegerField() #a year e.g 2025
-    month = models.IntegerField() #a month e.g 1 for January
+    month = models.IntegerField() #a month e.g 1 for January and 12 for December
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     total_earnings_usd = models.DecimalField(max_digits=10, decimal_places=4, default=0, help_text="The total earnings of the reviewer in USD for this month")

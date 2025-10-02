@@ -10,6 +10,7 @@ from paystackapi.paystack import Paystack, TransferRecipient
 from django.conf import settings
 import logging
 from django.db.models import Q
+from django.utils import timezone
 
 
 logger = logging.getLogger(__name__)
@@ -138,8 +139,14 @@ def process_single_payment(monthly_earning_id):
 def process_pending_payments():    
     logger.info(f'Processing pending payments for all reviewers')
     
+    now = timezone.now()
+    
     #get all monthly earnings that are either pending or the previous attempt to release the earnings failed
-    pending_monthly_earnings = MonthlyReviewerEarnings.objects.filter(Q(release_status=MonthlyEarningsReleaseStatusChoices.PENDING) | Q(release_status=MonthlyEarningsReleaseStatusChoices.FAILED))
+    if now.day < 28: 
+        #if we are in a new month, we don't want to process the monthly earnings for the current month
+        pending_monthly_earnings = MonthlyReviewerEarnings.objects.filter(Q(release_status=MonthlyEarningsReleaseStatusChoices.PENDING) | Q(release_status=MonthlyEarningsReleaseStatusChoices.FAILED)).exclude(month=now.month, year=now.year)
+    else:
+        pending_monthly_earnings = MonthlyReviewerEarnings.objects.filter(Q(release_status=MonthlyEarningsReleaseStatusChoices.PENDING) | Q(release_status=MonthlyEarningsReleaseStatusChoices.FAILED))
     
     logger.info(f'Found {pending_monthly_earnings.count()} pending monthly earnings.. attempting to process them now')
     
@@ -147,18 +154,3 @@ def process_pending_payments():
         process_single_payment.delay(earning.id)
     
     logger.info(f'Processing pending payments for all reviewers queued successfully')
-
-# @shared_task
-# def retry_failed_payments():
-#     try:
-#         logger.info(f'Retrying all failed payments')
-        
-#         failed_payments = MonthlyPayment.objects.filter(status=MonthlyPaymentStatusChoices.FAILED)
-        
-#         logger.info(f'Found {failed_payments.count()} failed payments')
-        
-#         for payment in failed_payments:
-#             process_single_payment.delay(payment.user.id, payment.year, payment.month)
-            
-#     except Exception as e:
-#         logger.error(f'Error retrying failed payments: {str(e)}', exc_info=True)
