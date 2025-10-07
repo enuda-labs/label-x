@@ -58,6 +58,7 @@ from .utils import (
     IsSuperAdmin,
 )
 from .models import CustomUser,  OTPVerification, Project, UserBankAccount, UserStripeConnectAccount
+from .choices import StripeConnectAccountStatusChoices, BankPlatformChoices
 from django.contrib.auth import logout
 # Set up logger
 logger = logging.getLogger('account.apis')
@@ -70,6 +71,7 @@ import stripe
 from common.utils import get_request_origin
 
 from .serializers import UserStripeConnectAccountSerializer
+from payment.tasks import get_user_payment_preference
 
 stripe.api_key = settings.STRIPE_SECRET_KEY
 
@@ -773,6 +775,78 @@ class CreateLabelerView(generics.GenericAPIView):
         user = serializer.save()
         #TODO: send an email to the labeler
         return SuccessResponse(message="Labeler created successfully", data=SimpleUserSerializer(user).data)
+
+
+class GetUserPaymentPreferenceView(generics.GenericAPIView):
+    permission_classes = [IsAuthenticated]
+    
+    @extend_schema(
+        summary="Get user's payment preference and available payment methods",
+        responses={
+            200: OpenApiResponse(
+                description="Payment preference retrieved successfully",
+                examples=[
+                    OpenApiExample(
+                        "Payment Preference",
+                        value={
+                            "status": "success",
+                            "data": {
+                                "preferred_method": "stripe",
+                                "available_methods": ["stripe", "paystack"],
+                                "stripe_status": "completed",
+                                "paystack_status": "available"
+                            }
+                        },
+                        response_only=True
+                    )
+                ]
+            )
+        }
+    )
+    def get(self, request, *args, **kwargs):
+        user = request.user
+        
+        # Get payment preference
+        preferred_method = get_user_payment_preference(user)
+        
+        # Check available methods
+        has_stripe = UserStripeConnectAccount.objects.filter(
+            user=user,
+            status=StripeConnectAccountStatusChoices.COMPLETED,
+            payouts_enabled=True
+        ).exists()
+        
+        has_paystack = UserBankAccount.objects.filter(
+            user=user,
+            is_primary=True,
+            platform=BankPlatformChoices.PAYSTACK
+        ).exists()
+        
+        available_methods = []
+        if has_stripe:
+            available_methods.append("stripe")
+        if has_paystack:
+            available_methods.append("paystack")
+        
+        # Get detailed status
+        stripe_status = "not_setup"
+        if has_stripe:
+            stripe_account = UserStripeConnectAccount.objects.get(user=user)
+            stripe_status = stripe_account.status
+        
+        paystack_status = "not_setup"
+        if has_paystack:
+            paystack_status = "available"
+        
+        return SuccessResponse(
+            message="Payment preference retrieved successfully",
+            data={
+                "preferred_method": preferred_method,
+                "available_methods": available_methods,
+                "stripe_status": stripe_status,
+                "paystack_status": paystack_status
+            }
+        )
     
 
     
