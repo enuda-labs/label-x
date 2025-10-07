@@ -1,8 +1,8 @@
 import decimal
 import uuid
 from celery import shared_task
-from account.choices import BankPlatformChoices, MonthlyEarningsReleaseStatusChoices
-from account.models import MonthlyReviewerEarnings, UserBankAccount
+from account.choices import BankPlatformChoices, MonthlyEarningsReleaseStatusChoices, StripeConnectAccountStatusChoices
+from account.models import MonthlyReviewerEarnings, UserBankAccount, UserStripeConnectAccount
 from payment.choices import TransactionTypeChoices, WithdrawalRequestInitiatedByChoices
 from payment.utils import convert_usd_to_ngn
 from payment.models import Transaction, WithdrawalRequest
@@ -11,6 +11,7 @@ from django.conf import settings
 import logging
 from django.db.models import Q
 from django.utils import timezone
+import stripe
 
 
 logger = logging.getLogger(__name__)
@@ -108,6 +109,135 @@ def initiate_monthly_usd_paystack_transfer(monthly_earning):
             transaction.mark_failed(reason=str(e))
 
 
+def initiate_monthly_usd_stripe_transfer(monthly_earning):
+    """
+    Initiate a monthly USD transfer via Stripe Connect to a labeler's Stripe account
+    """
+    labeler = monthly_earning.reviewer
+    usd_amount = monthly_earning.usd_balance
+    
+    try:
+        logger.info(f'Initiating monthly USD Stripe transfer for {labeler.username} with amount {usd_amount}')
+        
+        # Get user's Stripe Connect account
+        try:
+            stripe_connect_account = UserStripeConnectAccount.objects.get(user=labeler)
+        except UserStripeConnectAccount.DoesNotExist:
+            logger.error(f'No Stripe Connect account found for {labeler.username}, skipping payment processing')
+            return False
+        
+        # Check if Stripe account is properly set up
+        if stripe_connect_account.status != StripeConnectAccountStatusChoices.COMPLETED:
+            logger.error(f'Stripe Connect account for {labeler.username} is not completed (status: {stripe_connect_account.status}), skipping payment processing')
+            return False
+        
+        if not stripe_connect_account.payouts_enabled:
+            logger.error(f'Payouts not enabled for {labeler.username} Stripe Connect account, skipping payment processing')
+            return False
+        
+        # Create transaction record
+        transaction = Transaction.objects.create(
+            user=labeler,
+            usd_amount=usd_amount,
+            ngn_amount=None,  # Stripe handles USD directly
+            transaction_type=TransactionTypeChoices.MONTHLY_PAYMENT,
+            description="Monthly payment via Stripe",
+        )
+        
+        reference = str(uuid.uuid4())
+        
+        # Create withdrawal request for tracking
+        withdrawal_request = WithdrawalRequest.objects.create(
+            account_number="stripe_connect",  # Placeholder for Stripe
+            bank_code="stripe",  # Placeholder for Stripe
+            bank_name="Stripe Connect",
+            reference=reference,
+            transaction=transaction,
+            initiated_by=WithdrawalRequestInitiatedByChoices.SYSTEM,
+            monthly_earning=monthly_earning,
+        )
+        
+        # Set up Stripe API
+        stripe.api_key = settings.STRIPE_SECRET_KEY
+        
+        # Create transfer to the connected account
+        try:
+            transfer = stripe.Transfer.create(
+                amount=int(usd_amount * 100),  # Convert to cents
+                currency='usd',
+                destination=stripe_connect_account.account_id,
+                description=f"Monthly payment for {labeler.username}",
+                metadata={
+                    'monthly_earning_id': str(monthly_earning.id),
+                    'reference': reference,
+                    'user_id': str(labeler.id)
+                }
+            )
+            
+            logger.info(f'Successfully initiated Stripe transfer for {labeler.username} with amount {usd_amount}, transfer ID: {transfer.id}')
+            
+            # Update withdrawal request with Stripe transfer ID
+            withdrawal_request.reference = transfer.id
+            withdrawal_request.save(update_fields=['reference'])
+            
+            return True
+            
+        except stripe.error.StripeError as e:
+            logger.error(f'Stripe error for {labeler.username}: {str(e)}')
+            transaction.mark_failed(reason=f"Stripe error: {str(e)}")
+            return False
+            
+    except Exception as e:
+        logger.error(f'Error initiating Stripe transfer for {labeler.username}: {str(e)}', exc_info=True)
+        if 'transaction' in locals():
+            transaction.mark_failed(reason=str(e))
+        return False
+
+
+def get_user_payment_preference(user):
+    """
+    Determine user's payment preference based on available accounts
+    Returns: 'stripe', 'paystack', or None
+    """
+    has_stripe = UserStripeConnectAccount.objects.filter(
+        user=user,
+        status=StripeConnectAccountStatusChoices.COMPLETED,
+        payouts_enabled=True
+    ).exists()
+    
+    has_paystack = UserBankAccount.objects.filter(
+        user=user,
+        is_primary=True,
+        platform=BankPlatformChoices.PAYSTACK
+    ).exists()
+    
+    # Priority: Stripe first (if available), then Paystack
+    if has_stripe:
+        return 'stripe'
+    elif has_paystack:
+        return 'paystack'
+    else:
+        return None
+
+
+def initiate_monthly_payment(monthly_earning):
+    """
+    Unified payment processor that routes to appropriate payment method
+    """
+    user = monthly_earning.reviewer
+    payment_method = get_user_payment_preference(user)
+    
+    if payment_method == 'stripe':
+        logger.info(f'Processing {user.username} payment via Stripe')
+        return initiate_monthly_usd_stripe_transfer(monthly_earning)
+    elif payment_method == 'paystack':
+        logger.info(f'Processing {user.username} payment via Paystack')
+        return initiate_monthly_usd_paystack_transfer(monthly_earning)
+    else:
+        logger.error(f'No valid payment method found for {user.username}')
+        return False
+
+
 @shared_task
 def process_single_payment(monthly_earning_id):
     try:
@@ -119,7 +249,7 @@ def process_single_payment(monthly_earning_id):
 
         if monthly_earning.release_status in [MonthlyEarningsReleaseStatusChoices.PENDING, MonthlyEarningsReleaseStatusChoices.FAILED]: #only process payments that are either pending or failed
             
-            success = initiate_monthly_usd_paystack_transfer(monthly_earning)
+            success = initiate_monthly_payment(monthly_earning)
             
             monthly_earning.release_status = MonthlyEarningsReleaseStatusChoices.INITIATED if success else MonthlyEarningsReleaseStatusChoices.FAILED
             monthly_earning.save(update_fields=['release_status'])
