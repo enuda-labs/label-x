@@ -41,4 +41,5 @@ urlpatterns = [
     path('banks/paystack/<uuid:id>/edit/', apis.EditUserBankAccountView.as_view(), name='edit-user-bank-account'),
     path('banks/stripe/initialize/', apis.InitializeUserStripeAccountView.as_view(), name='initialize-user-stripe-account'),
     path('banks/stripe/', apis.GetUserStripeConnectAccountView.as_view(), name='get-user-stripe-connect-account'),
+    path('payment-preference/', apis.GetUserPaymentPreferenceView.as_view(), name='get-user-payment-preference'),
 ]
