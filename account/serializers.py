@@ -13,11 +13,17 @@ from task.models import Task, TaskCluster, TaskLabel
 from django.db.models import Sum, Count
 
 
-from .models import CustomUser, OTPVerification, Project, ProjectLog, UserBankAccount
+from .models import CustomUser, OTPVerification, Project, ProjectLog, UserBankAccount, UserStripeConnectAccount
 from reviewer.models import LabelerDomain
 from reviewer.serializers import LabelerDomainSerializer
 from payment.utils import find_bank_by_code, request_paystack, resolve_bank_details
 
+
+
+class UserStripeConnectAccountSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = UserStripeConnectAccount
+        fields = "__all__"
 
 
 class UserBankAccountSerializer(serializers.ModelSerializer):

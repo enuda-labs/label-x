@@ -1,6 +1,6 @@
 import uuid
 from django.db import transaction
-from account.choices import MonthlyEarningsReleaseStatusChoices
+from account.choices import MonthlyEarningsReleaseStatusChoices, StripeConnectAccountStatusChoices
 from rest_framework import generics, status
 from drf_spectacular.utils import extend_schema
 from rest_framework import permissions
@@ -18,19 +18,161 @@ import decimal
 from payment.choices import TransactionStatusChoices, TransactionTypeChoices, WithdrawalRequestInitiatedByChoices
 from payment.models import Transaction, WithdrawalRequest
 from payment.serializers import PaystackWithdrawSerializer, TransactionSerializer
-from account.models import MonthlyReviewerEarnings
+from account.models import CustomUser, MonthlyReviewerEarnings, UserStripeConnectAccount
 from payment.utils import convert_usd_to_ngn, find_bank_by_code, request_paystack, verify_paystack_origin
 import json
 from django.db.models import F, Sum, Q
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt
+from subscription.models import SubscriptionPlan, UserDataPoints, UserPaymentHistory, UserPaymentStatus, UserSubscription
 from task.utils import calculate_static_labeller_monthly_earning, get_labeller_monthly_history, get_unreleased_reviewer_earnings
-from datetime import datetime
+from datetime import datetime, timedelta
 from django.utils import timezone
+import stripe
+
 
 logger = logging.getLogger(__name__)
 
 paystack = Paystack(secret_key=settings.PAYSTACK_SECRET_KEY)
+
+
+class StripeWebhookListener(generics.GenericAPIView):
+    permission_classes = [permissions.AllowAny]
+
+    def get_user_and_plan_from_event(self, event):
+        event_object = event.get("data", {}).get("object", {})
+        customer_email = event_object.get("customer_email")
+        price_id = event_object.get("lines").get("data")[0].get("plan").get("id")
+        
+        try:
+            customer = CustomUser.objects.get(email=customer_email)
+        except CustomUser.DoesNotExist:
+            customer = None
+            logger.warning(f"Customer not found for email: {customer_email} at {datetime.now()}")
+
+        subscription_plan = SubscriptionPlan.objects.filter(
+            stripe_monthly_plan_id=price_id
+        ).first()
+
+        return customer, subscription_plan
+    
+    def handle_invoice_payment_succeeded(self, event):
+        customer, subscription_plan = self.get_user_and_plan_from_event(event)
+
+        if customer and subscription_plan:
+            # grant user permissions
+            expires_at = timezone.now() + timedelta(days=30)
+            try:
+                user_subscription = UserSubscription.objects.get(user=customer)
+                user_subscription.expires_at = expires_at
+                user_subscription.renews_at = expires_at
+                user_subscription.plan = subscription_plan
+                user_subscription.save(update_fields=['expires_at', 'renews_at', "plan"])
+            except UserSubscription.DoesNotExist:
+                # create a new subscription for the user
+                user_subscription= UserSubscription.objects.create(
+                    user=customer,
+                    plan = subscription_plan,
+                    expires_at=expires_at,
+                    renews_at = expires_at,
+                )
+
+            user_data_points, created = UserDataPoints.objects.get_or_create(user=customer)
+            user_data_points.topup_data_points(subscription_plan.included_data_points)        
+
+            UserPaymentHistory.objects.create(
+                user=customer,
+                amount=subscription_plan.monthly_fee,
+                description=f"Subscription for {subscription_plan.name}",
+                status=UserPaymentStatus.SUCCESS,
+            )
+            logger.info(f"User '{customer.username}' subscribed to plan '{subscription_plan.name}' at {datetime.now()}")
+
+    def handle_customer_subscription_deleted(self, event):
+        logger.info(f"Subscription deleted event received at {datetime.now()}")
+        # TODO: revoke user permissions
+        pass
+    
+    def handle_connect_account_updated(self, event):
+        logger.info(f"Connect account updated event received at {datetime.now()}")
+        
+        account_data = event.get('data', {}).get('object', {})
+        account_id = account_data.get('id')
+            
+        if not account_id:
+            return 
+        
+        logger.info(f"Account id: {account_id}")
+        
+        connect_account = UserStripeConnectAccount.objects.filter(account_id=account_id).first()
+        if not connect_account:
+            return
+        
+        print('the connect account is', connect_account)
+        
+        if account_data.get('details_submitted'):
+            #user has filled out the onboarding form.
+            logger.info(f"User '{connect_account.user.username}' has filled out the onboarding form at {datetime.now()}")
+            connect_account.status = StripeConnectAccountStatusChoices.COMPLETED
+            connect_account.save(update_fields=['status'])
+        else:
+            #this means the form has not been filled out yet but the user has already started interacting with the onboarding link
+            if connect_account.status == StripeConnectAccountStatusChoices.PENDING:
+                logger.info(f"User '{connect_account.user.username}' has started interacting with the onboarding link at {datetime.now()}")
+                connect_account.status = StripeConnectAccountStatusChoices.INITIATED
+                connect_account.save(update_fields=['status'])
+        
+        
+        if account_data.get('payouts_enabled'):
+            logger.info(f"User '{connect_account.user.username}' has enabled payouts at {datetime.now()}")
+            connect_account.payouts_enabled = True
+            connect_account.save(update_fields=['payouts_enabled'])
+   
+    def handle_connect_account_deauthorized(self, event):
+        logger.info(f"Connect account deauthorized event received at {datetime.now()}")
+        
+        account_id = event.get('account')
+        if not account_id:
+            return 
+        
+        connect_account = UserStripeConnectAccount.objects.filter(account_id=account_id).first()
+        if not connect_account:
+            return
+        
+        connect_account.status = StripeConnectAccountStatusChoices.DISABLED
+        connect_account.save(update_fields=['status'])
+        
+    def post(self, request):
+        payload = request.body
+        sig_header = request.META.get("HTTP_STRIPE_SIGNATURE")
+        endpoint_secret = settings.STRIPE_WEBHOOK_SECRET
+
+        try:
+            event = stripe.Webhook.construct_event(payload, sig_header, endpoint_secret)
+        except ValueError as e:
+            logger.error(f"Invalid webhook payload: {str(e)} at {datetime.now()}")
+            return ErrorResponse(message="Invalid webhook payload", status=400)
+        except stripe.error.SignatureVerificationError as e:
+            logger.error(f"Invalid webhook signature: {str(e)} at {datetime.now()}")
+            return ErrorResponse(status=400, message="Invalid webhook signature")
+
+        event_type = event.get("type")
+        logger.info(f"Received Stripe webhook event: {event_type} at {datetime.now()}")
+        # print("Received Stripe webhook event: ", event_type, event)
+
+        if event_type == "invoice.payment_succeeded":
+            self.handle_invoice_payment_succeeded(event)
+            
+        if event_type == "customer.subscription.deleted":
+            self.handle_customer_subscription_deleted(event)
+            
+        if event_type == "account.updated":
+            self.handle_connect_account_updated(event)
+            
+        if event_type == "account.application.deauthorized":
+            self.handle_connect_account_deauthorized(event)
+
+        return SuccessResponse(message="OK")
 
 class FetchUserTransactionHistoryView(generics.ListAPIView):
     serializer_class = TransactionSerializer
