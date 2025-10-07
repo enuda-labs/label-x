@@ -141,6 +141,61 @@ class StripeWebhookListener(generics.GenericAPIView):
         
         connect_account.status = StripeConnectAccountStatusChoices.DISABLED
         connect_account.save(update_fields=['status'])
+    
+    def handle_transfer_created(self, event):
+        """Handle Stripe transfer.created webhook"""
+        logger.info(f"Stripe transfer created event received at {datetime.now()}")
+        
+        transfer_data = event.get('data', {}).get('object', {})
+        transfer_id = transfer_data.get('id')
+        
+        if not transfer_id:
+            return
+        
+        # Find the withdrawal request by transfer ID
+        withdrawal_request = WithdrawalRequest.objects.filter(reference=transfer_id).first()
+        if not withdrawal_request:
+            logger.warning(f"No withdrawal request found for transfer ID: {transfer_id}")
+            return
+        
+        logger.info(f"Transfer created for {withdrawal_request.transaction.user.username}, transfer ID: {transfer_id}")
+    
+    def handle_transfer_updated(self, event):
+        """Handle Stripe transfer.updated webhook"""
+        logger.info(f"Stripe transfer updated event received at {datetime.now()}")
+        
+        transfer_data = event.get('data', {}).get('object', {})
+        transfer_id = transfer_data.get('id')
+        status = transfer_data.get('status')
+        
+        if not transfer_id:
+            return
+        
+        # Find the withdrawal request by transfer ID
+        withdrawal_request = WithdrawalRequest.objects.filter(reference=transfer_id).first()
+        if not withdrawal_request:
+            logger.warning(f"No withdrawal request found for transfer ID: {transfer_id}")
+            return
+        
+        if status == 'paid':
+            logger.info(f"Transfer completed for {withdrawal_request.transaction.user.username}")
+            withdrawal_request.transaction.mark_success()
+            
+            # Deduct balance from monthly earnings
+            if withdrawal_request.monthly_earning:
+                monthly_earning = withdrawal_request.monthly_earning
+                monthly_earning.deduct_balance(withdrawal_request.transaction.usd_amount)
+                monthly_earning.release_status = MonthlyEarningsReleaseStatusChoices.RELEASED
+                monthly_earning.save(update_fields=['release_status'])
+                
+        elif status == 'failed':
+            logger.error(f"Transfer failed for {withdrawal_request.transaction.user.username}")
+            withdrawal_request.transaction.mark_failed(reason="Stripe transfer failed")
+            
+            if withdrawal_request.monthly_earning:
+                monthly_earning = withdrawal_request.monthly_earning
+                monthly_earning.release_status = MonthlyEarningsReleaseStatusChoices.FAILED
+                monthly_earning.save(update_fields=['release_status'])
         
     def post(self, request):
         payload = request.body
@@ -171,6 +226,12 @@ class StripeWebhookListener(generics.GenericAPIView):
             
         if event_type == "account.application.deauthorized":
             self.handle_connect_account_deauthorized(event)
+            
+        if event_type == "transfer.created":
+            self.handle_transfer_created(event)
+            
+        if event_type == "transfer.updated":
+            self.handle_transfer_updated(event)
 
         return SuccessResponse(message="OK")
 
