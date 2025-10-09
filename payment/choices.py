@@ -8,6 +8,7 @@ class TransactionTypeChoices(models.TextChoices):
 
 class TransactionStatusChoices(models.TextChoices):
     PENDING = 'pending', 'Pending'
+    PROCESSING = 'processing', 'Processing'
     FAILED = 'failed', 'Failed'
     SUCCESS = 'success', 'Success'
 

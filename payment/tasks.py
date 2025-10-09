@@ -123,15 +123,18 @@ def initiate_monthly_usd_stripe_transfer(monthly_earning):
         try:
             stripe_connect_account = UserStripeConnectAccount.objects.get(user=labeler)
         except UserStripeConnectAccount.DoesNotExist:
+            #TODO: send an email to the labeller telling them that the transfer failed because they have not connected their stripe account
             logger.error(f'No Stripe Connect account found for {labeler.username}, skipping payment processing')
             return False
         
         # Check if Stripe account is properly set up
         if stripe_connect_account.status != StripeConnectAccountStatusChoices.COMPLETED:
+            #TODO: send an email to the labeller telling them that the transfer failed because they have not completed the onboarding form
             logger.error(f'Stripe Connect account for {labeler.username} is not completed (status: {stripe_connect_account.status}), skipping payment processing')
             return False
         
         if not stripe_connect_account.payouts_enabled:
+            #TODO: send an email to the labeller telling them that the transfer failed because they have not enabled payouts
             logger.error(f'Payouts not enabled for {labeler.username} Stripe Connect account, skipping payment processing')
             return False
         
@@ -185,6 +188,10 @@ def initiate_monthly_usd_stripe_transfer(monthly_earning):
         except stripe.error.StripeError as e:
             logger.error(f'Stripe error for {labeler.username}: {str(e)}')
             transaction.mark_failed(reason=f"Stripe error: {str(e)}")
+            return False
+        except Exception as e:
+            logger.error(f'Error initiating Stripe transfer for {labeler.username}: {str(e)}', exc_info=True)
+            transaction.mark_failed(reason=str(e))
             return False
             
     except Exception as e:

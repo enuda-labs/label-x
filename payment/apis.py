@@ -158,7 +158,48 @@ class StripeWebhookListener(generics.GenericAPIView):
             logger.warning(f"No withdrawal request found for transfer ID: {transfer_id}")
             return
         
+        withdrawal_request.transaction.status = TransactionStatusChoices.PROCESSING
+        withdrawal_request.transaction.save(update_fields=['status'])
+        
+        if withdrawal_request.monthly_earning:
+            monthly_earning = withdrawal_request.monthly_earning
+            monthly_earning.deduct_balance(withdrawal_request.transaction.usd_amount)
+            monthly_earning.release_status = MonthlyEarningsReleaseStatusChoices.INITIATED
+            monthly_earning.save(update_fields=['release_status'])
+        
         logger.info(f"Transfer created for {withdrawal_request.transaction.user.username}, transfer ID: {transfer_id}")
+    
+    
+    def handle_balance_available(self, event):
+        account_id = event.get("account")
+        if not account_id:
+            return 
+        
+        event_object = event.get("data", {}).get("object", {})
+        available = event_object.get("available")
+        
+        usd_balance_obj = None
+        if isinstance(available, list):
+            for x in available:
+                if x.get("currency") == "usd":
+                    usd_balance_obj = x
+                    break
+        
+        if not usd_balance_obj:
+            return
+        
+        usd_amount = usd_balance_obj.get("amount")
+        if not usd_amount:
+            return
+        
+        # Create a Stripe payout to the connected account's default external account
+        # payout = stripe.Payout.create(
+        #     amount=int(usd_amount),  # Stripe expects amount in cents
+        #     currency='usd',
+        #     description="Payout to local bank account",
+        #     stripe_account=account_id
+        # )
+        # logger.info(f"Stripe payout created for account {account_id} with amount {usd_amount}, payout ID: {payout.id}")
     
     def handle_transfer_updated(self, event):
         """Handle Stripe transfer.updated webhook"""
@@ -196,24 +237,43 @@ class StripeWebhookListener(generics.GenericAPIView):
                 monthly_earning = withdrawal_request.monthly_earning
                 monthly_earning.release_status = MonthlyEarningsReleaseStatusChoices.FAILED
                 monthly_earning.save(update_fields=['release_status'])
-        
-    def post(self, request):
+    
+    def validate_origin(self, request, endpoint_secret):
         payload = request.body
         sig_header = request.META.get("HTTP_STRIPE_SIGNATURE")
-        endpoint_secret = settings.STRIPE_WEBHOOK_SECRET
-
         try:
             event = stripe.Webhook.construct_event(payload, sig_header, endpoint_secret)
         except ValueError as e:
             logger.error(f"Invalid webhook payload: {str(e)} at {datetime.now()}")
-            return ErrorResponse(message="Invalid webhook payload", status=400)
+            return False, "Invalid webhook payload"
         except stripe.error.SignatureVerificationError as e:
             logger.error(f"Invalid webhook signature: {str(e)} at {datetime.now()}")
-            return ErrorResponse(status=400, message="Invalid webhook signature")
+            return False, "Invalid webhook signature"
+        return True, event
+    
+    def post(self, request):
+        # payload = request.body
+        # sig_header = request.META.get("HTTP_STRIPE_SIGNATURE")
+        endpoint_secret = settings.STRIPE_WEBHOOK_SECRET
+
+        # try:
+        #     event = stripe.Webhook.construct_event(payload, sig_header, endpoint_secret)
+        # except ValueError as e:
+        #     logger.error(f"Invalid webhook payload: {str(e)} at {datetime.now()}")
+        #     return ErrorResponse(message="Invalid webhook payload", status=400)
+        # except stripe.error.SignatureVerificationError as e:
+        #     logger.error(f"Invalid webhook signature: {str(e)} at {datetime.now()}")
+        #     return ErrorResponse(status=400, message="Invalid webhook signature")
+        
+        success, event = self.validate_origin(request, endpoint_secret)
+        if not success:
+            success, event = self.validate_origin(request, settings.STRIPE_CONNECT_WEBHOOK_SECRET)
+            if not success:
+                return ErrorResponse(message="Invalid webhook signature", status=status.HTTP_400_BAD_REQUEST)
 
         event_type = event.get("type")
         logger.info(f"Received Stripe webhook event: {event_type} at {datetime.now()}")
-        # print("Received Stripe webhook event: ", event_type, event)
+        print("Received Stripe webhook event: ", event_type, event)
 
         if event_type == "invoice.payment_succeeded":
             self.handle_invoice_payment_succeeded(event)
@@ -232,7 +292,10 @@ class StripeWebhookListener(generics.GenericAPIView):
             
         if event_type == "transfer.updated":
             self.handle_transfer_updated(event)
-
+        
+        # if event_type == "balance.available":
+        #     self.handle_balance_available(event)
+        
         return SuccessResponse(message="OK")
 
 class FetchUserTransactionHistoryView(generics.ListAPIView):
