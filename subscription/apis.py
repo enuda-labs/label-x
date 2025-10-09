@@ -11,7 +11,7 @@ import stripe.error
 
 from account.models import CustomUser
 from common.responses import ErrorResponse, SuccessResponse, format_first_error
-from subscription.utils import get_request_origin
+from common.utils import get_request_origin
 
 from .models import (
     SubscriptionPlan,
@@ -37,6 +37,7 @@ from django.conf import settings
 logger = logging.getLogger('subscription.apis')
 from django.db.models import F
 
+
 class GetUserPaymentHistoryView(generics.ListAPIView):
     permission_classes = [permissions.IsAuthenticated]
     serializer_class = UserPaymentHistorySerializer
@@ -47,84 +48,6 @@ class GetUserPaymentHistoryView(generics.ListAPIView):
     def get_queryset(self):
         logger.info(f"User '{self.request.user.username}' fetching payment history at {datetime.now()}")
         return UserPaymentHistory.objects.filter(user=self.request.user)
-
-
-class StripeWebhookListener(generics.GenericAPIView):
-    permission_classes = [permissions.AllowAny]
-
-    def get_user_and_plan_from_event(self, event):
-        event_object = event.get("data", {}).get("object", {})
-        customer_email = event_object.get("customer_email")
-        price_id = event_object.get("lines").get("data")[0].get("plan").get("id")
-        
-        try:
-            customer = CustomUser.objects.get(email=customer_email)
-        except CustomUser.DoesNotExist:
-            customer = None
-            logger.warning(f"Customer not found for email: {customer_email} at {datetime.now()}")
-
-        subscription_plan = SubscriptionPlan.objects.filter(
-            stripe_monthly_plan_id=price_id
-        ).first()
-
-        return customer, subscription_plan
-
-    def post(self, request):
-        payload = request.body
-        sig_header = request.META.get("HTTP_STRIPE_SIGNATURE")
-        endpoint_secret = settings.STRIPE_WEBHOOK_SECRET
-
-        try:
-            event = stripe.Webhook.construct_event(payload, sig_header, endpoint_secret)
-        except ValueError as e:
-            logger.error(f"Invalid webhook payload: {str(e)} at {datetime.now()}")
-            return ErrorResponse(message="Error")
-        except stripe.error.SignatureVerificationError as e:
-            logger.error(f"Invalid webhook signature: {str(e)} at {datetime.now()}")
-            return ErrorResponse(status=400)
-
-        event_type = event.get("type")
-        logger.info(f"Received Stripe webhook event: {event_type} at {datetime.now()}")
-
-        if event_type == "invoice.payment_succeeded":
-            customer, subscription_plan = self.get_user_and_plan_from_event(event)
-
-            if customer and subscription_plan:
-                # grant user permissions
-                expires_at = timezone.now() + timedelta(days=30)
-                try:
-                    user_subscription = UserSubscription.objects.get(user=customer)
-                    user_subscription.expires_at = expires_at
-                    user_subscription.renews_at = expires_at
-                    user_subscription.plan = subscription_plan
-                    user_subscription.save(update_fields=['expires_at', 'renews_at', "plan"])
-                except UserSubscription.DoesNotExist:
-                    # create a new subscription for the user
-                    user_subscription= UserSubscription.objects.create(
-                        user=customer,
-                        plan = subscription_plan,
-                        expires_at=expires_at,
-                        renews_at = expires_at,
-                    )
-
-                user_data_points, created = UserDataPoints.objects.get_or_create(user=customer)
-                user_data_points.topup_data_points(subscription_plan.included_data_points)        
-
-                UserPaymentHistory.objects.create(
-                    user=customer,
-                    amount=subscription_plan.monthly_fee,
-                    description=f"Subscription for {subscription_plan.name}",
-                    status=UserPaymentStatus.SUCCESS,
-                )
-                logger.info(f"User '{customer.username}' subscribed to plan '{subscription_plan.name}' at {datetime.now()}")
-
-        if event_type == "customer.subscription.deleted":
-            logger.info(f"Subscription deleted event received at {datetime.now()}")
-            # TODO: revoke user permissions
-            pass
-
-        # print("stripe webhook was called", request.data.get("type"))
-        return SuccessResponse(message="")
 
 
 class ListSubscriptionPlansView(generics.ListAPIView):
