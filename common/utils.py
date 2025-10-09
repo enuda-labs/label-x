@@ -1,5 +1,17 @@
 from dateutil.relativedelta import relativedelta
 from django.utils import timezone
+from urllib.parse import urlparse
+
+
+def get_request_origin(request):
+    origin = request.META.get("HTTP_ORIGIN", None)
+    referrer = request.META.get('HTTP_REFERER', origin)
+    
+    if referrer:
+        parsed_url = urlparse(referrer)
+        origin = f"{parsed_url.scheme}://{parsed_url.netloc}"
+        return origin
+    return "http://label-x-website.onrender.com"
 
 
 def get_duration(time_unit:str, time_period:int):

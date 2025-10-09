@@ -15,12 +15,12 @@ from rest_framework_simplejwt.views import TokenRefreshView
 from common.caching import cache_response_decorator
 from common.responses import ErrorResponse, SuccessResponse, format_first_error
 from common.utils import get_duration
+from label_x import settings
 from subscription.models import UserDataPoints
 from subscription.serializers import UserDataPointsSerializer
 from task.choices import TaskClusterStatusChoices
 from task.models import Task, TaskCluster
 from task.serializers import ListReviewersWithClustersSerializer, ProjectUpdateSerializer
-
 from task.utils import get_unreleased_reviewer_earnings
 
 from .utils import IsAdminUser, IsSuperAdmin, NotReviewer, assign_default_plan
@@ -57,7 +57,8 @@ from .utils import (
     IsAdminUser,
     IsSuperAdmin,
 )
-from .models import CustomUser,  OTPVerification, Project, UserBankAccount
+from .models import CustomUser,  OTPVerification, Project, UserBankAccount, UserStripeConnectAccount
+from .choices import StripeConnectAccountStatusChoices, BankPlatformChoices
 from django.contrib.auth import logout
 # Set up logger
 logger = logging.getLogger('account.apis')
@@ -66,6 +67,37 @@ from datetime import datetime
 from django.db.models.functions import TruncDate
 from django.db.models import Sum, Count, Q, Avg 
 from drf_spectacular.openapi import OpenApiTypes
+import stripe
+from common.utils import get_request_origin
+
+from .serializers import UserStripeConnectAccountSerializer
+from payment.tasks import get_user_payment_preference
+
+stripe.api_key = settings.STRIPE_SECRET_KEY
+
+
+class GetUserStripeConnectAccountView(generics.GenericAPIView):
+    
+    @extend_schema(
+        summary="Get the stripe connect account for the currently logged in user if it exists",
+        responses={
+            200: OpenApiResponse(
+                response=UserStripeConnectAccountSerializer,
+                description="Stripe connect account retrieved successfully"
+            ),
+            404: OpenApiResponse(
+                description="Stripe connect account not found"
+            )
+        }
+    )
+    def get(self, request, *args, **kwargs):
+        try:
+            user_stripe_connect_account = UserStripeConnectAccount.objects.get(user=request.user)
+        except UserStripeConnectAccount.DoesNotExist:
+            return ErrorResponse(message="Stripe connect account not found", status=status.HTTP_404_NOT_FOUND)
+        
+        return SuccessResponse(message="Stripe connect account retrieved successfully", data=UserStripeConnectAccountSerializer(user_stripe_connect_account).data)
+ 
 
 
 class EditUserBankAccountView(generics.UpdateAPIView):
@@ -131,6 +163,47 @@ class GetUserBankAccountsView(generics.ListAPIView):
     @cache_response_decorator('user_bank_accounts', cache_timeout=60 * 60 * 24, per_user=True)
     def get(self, request, *args, **kwargs):
         return super().get(request, *args, **kwargs)
+    
+
+class InitializeUserStripeAccountView(generics.GenericAPIView):
+    permission_classes = [IsAuthenticated]
+    
+    @extend_schema(summary="Initialize a stripe account for the currently logged in user")
+    def post(self, request, *args, **kwargs):
+        
+        try:
+            user_stripe_connect_account = UserStripeConnectAccount.objects.get(user=request.user)
+        except UserStripeConnectAccount.DoesNotExist:
+            user_stripe_connect_account = None
+            
+        if not user_stripe_connect_account:    
+            try: 
+                account =stripe.Account.create(
+                    type="express",
+                    country="US",
+                    email=request.user.email,
+                    capabilities={
+                        "transfers": {
+                            "requested": True
+                        }
+                    }
+                )
+                user_stripe_connect_account = UserStripeConnectAccount.objects.create(user=request.user, account_id=account.id)
+            except Exception as e:
+                return ErrorResponse(message="Error initializing stripe account", status=status.HTTP_400_BAD_REQUEST)
+        
+        print('the account is', user_stripe_connect_account)
+        print('the account id is', user_stripe_connect_account.account_id)
+        
+        origin = get_request_origin(request)
+        
+        link = stripe.AccountLink.create(
+            account=user_stripe_connect_account.account_id,
+            refresh_url=f"{origin}/label/overview",
+            return_url=f"{origin}/label/overview",
+            type="account_onboarding"
+        )
+        return SuccessResponse(message="Stripe account initialized successfully", data={"link": link.url})
     
 
 
@@ -702,6 +775,78 @@ class CreateLabelerView(generics.GenericAPIView):
         user = serializer.save()
         #TODO: send an email to the labeler
         return SuccessResponse(message="Labeler created successfully", data=SimpleUserSerializer(user).data)
+
+
+class GetUserPaymentPreferenceView(generics.GenericAPIView):
+    permission_classes = [IsAuthenticated]
+    
+    @extend_schema(
+        summary="Get user's payment preference and available payment methods",
+        responses={
+            200: OpenApiResponse(
+                description="Payment preference retrieved successfully",
+                examples=[
+                    OpenApiExample(
+                        "Payment Preference",
+                        value={
+                            "status": "success",
+                            "data": {
+                                "preferred_method": "stripe",
+                                "available_methods": ["stripe", "paystack"],
+                                "stripe_status": "completed",
+                                "paystack_status": "available"
+                            }
+                        },
+                        response_only=True
+                    )
+                ]
+            )
+        }
+    )
+    def get(self, request, *args, **kwargs):
+        user = request.user
+        
+        # Get payment preference
+        preferred_method = get_user_payment_preference(user)
+        
+        # Check available methods
+        has_stripe = UserStripeConnectAccount.objects.filter(
+            user=user,
+            status=StripeConnectAccountStatusChoices.COMPLETED,
+            payouts_enabled=True
+        ).exists()
+        
+        has_paystack = UserBankAccount.objects.filter(
+            user=user,
+            is_primary=True,
+            platform=BankPlatformChoices.PAYSTACK
+        ).exists()
+        
+        available_methods = []
+        if has_stripe:
+            available_methods.append("stripe")
+        if has_paystack:
+            available_methods.append("paystack")
+        
+        # Get detailed status
+        stripe_status = "not_setup"
+        if has_stripe:
+            stripe_account = UserStripeConnectAccount.objects.get(user=user)
+            stripe_status = stripe_account.status
+        
+        paystack_status = "not_setup"
+        if has_paystack:
+            paystack_status = "available"
+        
+        return SuccessResponse(
+            message="Payment preference retrieved successfully",
+            data={
+                "preferred_method": preferred_method,
+                "available_methods": available_methods,
+                "stripe_status": stripe_status,
+                "paystack_status": paystack_status
+            }
+        )
     
 
     

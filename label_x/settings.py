@@ -384,6 +384,7 @@ CELERY_TIMEZONE = 'UTC'
 
 #runs at 7 am, 12pm and 4pm starting from the 28th of the month to the 10th of the next month
 #the reason i start at 28th is because of February which has only 28 days
+#the reason i end at 10th is for payment processing to continue till the next month, giving the system enough time to retry failed payments
 CELERY_BEAT_SCHEDULE = {
    "process_pending_payments": { 
        "task": "payment.tasks.process_pending_payments",
@@ -393,4 +394,8 @@ CELERY_BEAT_SCHEDULE = {
             day_of_month="28-31,1-10"
         ),
    },
+    # "test_task_every_2_minutes": {
+    #     "task": "payment.tasks.test_task",
+    #     "schedule": crontab(minute="*/2"),
+    # },
 }

@@ -19,4 +19,4 @@ COPY . .
 
 EXPOSE 8080
 
-CMD ["sh", "-c", "honcho start web worker"]
+CMD ["sh", "-c", "honcho start web worker beat"]

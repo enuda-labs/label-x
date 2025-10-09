@@ -9,14 +9,12 @@ from django.db.models import F
 import pyotp
 import qrcode
 from rest_framework_api_key.models import AbstractAPIKey
-from django.core.files.base import ContentFile
 from cloudinary.models import CloudinaryField
 import cloudinary.uploader
 
 from account.choices import BankPlatformChoices, MonthlyEarningsReleaseStatusChoices, ProjectStatusChoices
-from payment.choices import TransactionStatusChoices, TransactionTypeChoices
 from reviewer.models import LabelerDomain
-from task.choices import TaskInputTypeChoices
+from account.choices import StripeConnectAccountStatusChoices
 
 
 class Project(models.Model):
@@ -118,58 +116,21 @@ class UserBankAccount(models.Model):
     def __str__(self):
         return f"{self.user.username}'s bank account - {self.bank_name} account number {self.account_number}"
 
-
-
-class LabelerEarnings(models.Model):
-    id = models.UUIDField(default=uuid.uuid4, unique=True, editable=False, primary_key=True)
-    labeler = models.OneToOneField(CustomUser, on_delete=models.CASCADE, related_name='labeler_earnings')
-    balance = models.DecimalField(max_digits=10, decimal_places=2, default=0, help_text="The balance of the labeler in USD")
+class UserStripeConnectAccount(models.Model):
+    user = models.OneToOneField(CustomUser, on_delete=models.CASCADE, related_name='stripe_connect_account')
+    account_id = models.CharField(max_length=255)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    status = models.CharField(max_length=255, choices=StripeConnectAccountStatusChoices.choices, default=StripeConnectAccountStatusChoices.PENDING, help_text="The status of the stripe connect account")
+    payouts_enabled = models.BooleanField(default=False, help_text="Indicates if the stripe connect account has payouts enabled")
     
     def __str__(self):
-        return f"Balance for {self.labeler.username}"
-    
-    def deduct_balance(self, usd_amount, reason=None, create_transaction=True):
-        from payment.models import Transaction
-
-        self.balance = F('balance') - decimal.Decimal(usd_amount)
-        self.save(update_fields=['balance'])
-        self.refresh_from_db()
-        
-        if create_transaction:
-            Transaction.objects.create(
-                user=self.labeler,
-                usd_amount=usd_amount,
-                transaction_type=TransactionTypeChoices.WITHDRAWAL,
-                description=reason,
-                status=TransactionStatusChoices.SUCCESS,
-            )
-        return self.balance
-    
-    def topup_balance(self, usd_amount, reason=None, create_transaction=True):
-        from payment.models import Transaction
-
-        self.balance = F('balance') + decimal.Decimal(usd_amount)
-        self.save(update_fields=['balance'])
-        self.refresh_from_db()
-        
-        if create_transaction:
-            Transaction.objects.create(
-                user=self.labeler,
-                usd_amount=usd_amount,
-                transaction_type=TransactionTypeChoices.DEPOSIT,
-                description=reason,
-                status=TransactionStatusChoices.SUCCESS,
-            )
-        return self.balance
-
-
+        return f"{self.user.username}'s stripe connect account - {self.account_id}"
 
 class MonthlyReviewerEarnings(models.Model):
     reviewer = models.ForeignKey(CustomUser, on_delete=models.CASCADE)
     year = models.IntegerField() #a year e.g 2025
-    month = models.IntegerField() #a month e.g 1 for January
+    month = models.IntegerField() #a month e.g 1 for January and 12 for December
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     total_earnings_usd = models.DecimalField(max_digits=10, decimal_places=4, default=0, help_text="The total earnings of the reviewer in USD for this month")
