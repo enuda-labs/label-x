@@ -334,6 +334,7 @@ CHANNEL_LAYERS = {
 API_KEY_CUSTOM_HEADER = "HTTP_X_API_KEY"
 STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY")
 STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET")
+STRIPE_CONNECT_WEBHOOK_SECRET = os.getenv("STRIPE_CONNECT_WEBHOOK_SECRET")
 
 SPECTACULAR_SETTINGS = {
     "TITLE": "Label x api",
@@ -394,6 +395,10 @@ CELERY_BEAT_SCHEDULE = {
             day_of_month="28-31,1-10"
         ),
    },
+#    "process_pending_payments": { 
+#        "task": "payment.tasks.process_pending_payments",
+#        "schedule": crontab(minute="*"),
+#    },
     # "test_task_every_2_minutes": {
     #     "task": "payment.tasks.test_task",
     #     "schedule": crontab(minute="*/2"),
