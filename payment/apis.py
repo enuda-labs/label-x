@@ -148,65 +148,6 @@ class StripeWebhookListener(generics.GenericAPIView):
         
         transfer_data = event.get('data', {}).get('object', {})
         transfer_id = transfer_data.get('id')
-        
-        if not transfer_id:
-            return
-        
-        # Find the withdrawal request by transfer ID
-        withdrawal_request = WithdrawalRequest.objects.filter(reference=transfer_id).first()
-        if not withdrawal_request:
-            logger.warning(f"No withdrawal request found for transfer ID: {transfer_id}")
-            return
-        
-        withdrawal_request.transaction.status = TransactionStatusChoices.PROCESSING
-        withdrawal_request.transaction.save(update_fields=['status'])
-        
-        if withdrawal_request.monthly_earning:
-            monthly_earning = withdrawal_request.monthly_earning
-            monthly_earning.deduct_balance(withdrawal_request.transaction.usd_amount)
-            monthly_earning.release_status = MonthlyEarningsReleaseStatusChoices.INITIATED
-            monthly_earning.save(update_fields=['release_status'])
-        
-        logger.info(f"Transfer created for {withdrawal_request.transaction.user.username}, transfer ID: {transfer_id}")
-    
-    
-    def handle_balance_available(self, event):
-        account_id = event.get("account")
-        if not account_id:
-            return 
-        
-        event_object = event.get("data", {}).get("object", {})
-        available = event_object.get("available")
-        
-        usd_balance_obj = None
-        if isinstance(available, list):
-            for x in available:
-                if x.get("currency") == "usd":
-                    usd_balance_obj = x
-                    break
-        
-        if not usd_balance_obj:
-            return
-        
-        usd_amount = usd_balance_obj.get("amount")
-        if not usd_amount:
-            return
-        
-        # Create a Stripe payout to the connected account's default external account
-        # payout = stripe.Payout.create(
-        #     amount=int(usd_amount),  # Stripe expects amount in cents
-        #     currency='usd',
-        #     description="Payout to local bank account",
-        #     stripe_account=account_id
-        # )
-        # logger.info(f"Stripe payout created for account {account_id} with amount {usd_amount}, payout ID: {payout.id}")
-    
-    def handle_transfer_updated(self, event):
-        """Handle Stripe transfer.updated webhook"""
-        logger.info(f"Stripe transfer updated event received at {datetime.now()}")
-        
-        transfer_data = event.get('data', {}).get('object', {})
-        transfer_id = transfer_data.get('id')
         status = transfer_data.get('status')
         
         if not transfer_id:
@@ -218,26 +159,53 @@ class StripeWebhookListener(generics.GenericAPIView):
             logger.warning(f"No withdrawal request found for transfer ID: {transfer_id}")
             return
         
-        if status == 'paid':
-            logger.info(f"Transfer completed for {withdrawal_request.transaction.user.username}")
-            withdrawal_request.transaction.mark_success()
+        logger.info(f"Transfer created for {withdrawal_request.transaction.user.username}, transfer ID: {transfer_id}, status: {status}")
+        
+        withdrawal_request.transaction.mark_success()
+
+        # Deduct balance from monthly earnings
+        if withdrawal_request.monthly_earning:
+            monthly_earning = withdrawal_request.monthly_earning
+            monthly_earning.deduct_balance(withdrawal_request.transaction.usd_amount)
+            monthly_earning.release_status = MonthlyEarningsReleaseStatusChoices.RELEASED
+            monthly_earning.save(update_fields=['release_status'])
             
-            # Deduct balance from monthly earnings
-            if withdrawal_request.monthly_earning:
-                monthly_earning = withdrawal_request.monthly_earning
-                monthly_earning.deduct_balance(withdrawal_request.transaction.usd_amount)
-                monthly_earning.release_status = MonthlyEarningsReleaseStatusChoices.RELEASED
-                monthly_earning.save(update_fields=['release_status'])
-                
-        elif status == 'failed':
-            logger.error(f"Transfer failed for {withdrawal_request.transaction.user.username}")
-            withdrawal_request.transaction.mark_failed(reason="Stripe transfer failed")
+            withdrawal_request.is_user_balance_deducted = True
+            withdrawal_request.save(update_fields=['is_user_balance_deducted'])
             
-            if withdrawal_request.monthly_earning:
-                monthly_earning = withdrawal_request.monthly_earning
-                monthly_earning.release_status = MonthlyEarningsReleaseStatusChoices.FAILED
-                monthly_earning.save(update_fields=['release_status'])
+            #TODO: send the user an email telling them that their balance has been deducted and their monthly earnings is now in their stripe connect account
+            #remember to explain that stripe will automatically release the funds to their bank account in 2-3 business days
+        
+            #manually create a payout to the connected account (⚠️for test purposes only, payouts should be done by stripe on a daily schedule)
+            # payout = stripe.Payout.create(
+            #     amount=int(withdrawal_request.transaction.usd_amount * 100),  
+            #     currency='usd',
+            #     description="Payout to local bank account",
+            #     stripe_account=withdrawal_request.transaction.user.stripe_connect_account.account_id
+            # )
+
+
+    def handle_payout_paid(self, event):
+        data = event.get('data', {}).get('object', {})
+        account_id = data.get('account')
+        
+        connect_account = UserStripeConnectAccount.objects.filter(account_id=account_id).first()
+        if not connect_account:
+            return 
+        
+        #TODO: send the user an email telling them that their payout has been successful and their monthly earnings is now in their bank account
+        
     
+    def handle_payout_failed(self, event):
+        data = event.get('data', {}).get('object', {})
+        failure_message = data.get('failure_message')
+        
+        connect_account = UserStripeConnectAccount.objects.filter(account_id=event.get('account')).first()
+        
+        #TODO: send user an email telling them about the failed payout
+        logger.error(f"Payout failed for {connect_account.user.username} {event.get('account')}: {failure_message}")
+        
+     
     def validate_origin(self, request, endpoint_secret):
         payload = request.body
         sig_header = request.META.get("HTTP_STRIPE_SIGNATURE")
@@ -255,16 +223,7 @@ class StripeWebhookListener(generics.GenericAPIView):
         # payload = request.body
         # sig_header = request.META.get("HTTP_STRIPE_SIGNATURE")
         endpoint_secret = settings.STRIPE_WEBHOOK_SECRET
-
-        # try:
-        #     event = stripe.Webhook.construct_event(payload, sig_header, endpoint_secret)
-        # except ValueError as e:
-        #     logger.error(f"Invalid webhook payload: {str(e)} at {datetime.now()}")
-        #     return ErrorResponse(message="Invalid webhook payload", status=400)
-        # except stripe.error.SignatureVerificationError as e:
-        #     logger.error(f"Invalid webhook signature: {str(e)} at {datetime.now()}")
-        #     return ErrorResponse(status=400, message="Invalid webhook signature")
-        
+    
         success, event = self.validate_origin(request, endpoint_secret)
         if not success:
             success, event = self.validate_origin(request, settings.STRIPE_CONNECT_WEBHOOK_SECRET)
@@ -295,6 +254,15 @@ class StripeWebhookListener(generics.GenericAPIView):
         
         # if event_type == "balance.available":
         #     self.handle_balance_available(event)
+        
+        
+        if event_type == "payout.paid":
+            logger.info(f"Payout completed successfully for connected account {event.get('account')}")
+            # TODO SEND EMAIL TO NOTIFY
+        elif event_type == "payout.failed":
+            logger.error(f"Payout failed for connected account {event.get('account')}: {event}")
+            # TODO SEND EMAIL TO NOTIFY OF PAYMENT FAILURE
+
         
         return SuccessResponse(message="OK")
 

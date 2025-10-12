@@ -14,6 +14,7 @@ from account.choices import ProjectStatusChoices
 from account.models import Project, CustomUser
 from common.caching import cache_response_decorator
 from common.responses import ErrorResponse, SuccessResponse, format_first_error
+from common.utils import is_valid_url
 from subscription.models import UserDataPoints
 from task.choices import AnnotationMethodChoices, ManualReviewSessionStatusChoices, TaskClusterStatusChoices, TaskInputTypeChoices, TaskTypeChoices
 from task.utils import assign_reviewers_to_cluster, calculate_labelling_required_data_points, calculate_required_data_points, credit_labeller_monthly_payment, dispatch_task_message, push_realtime_update
@@ -1236,6 +1237,10 @@ class TaskAnnotationView(generics.GenericAPIView):
                         'type': 'string',
                         'description': 'Any notes or comments the reviewer has'
                     },
+                    'subtitles_url': {
+                        'type': 'string',
+                        'description': 'The url of the subtitles provided by the labeller for the task if any'
+                    }
                 },
                 'required': ['task_id', 'labels']
             }
@@ -1286,7 +1291,7 @@ class TaskAnnotationView(generics.GenericAPIView):
         task_id = serializer.validated_data.get('task_id')
         labels = serializer.validated_data.get('labels', [])
         notes = serializer.validated_data.get('notes', None)  
-        
+        subtitles_url = serializer.validated_data.get('subtitles_url', None)
         try:
             # Validate required fields
             if not task_id:
@@ -1342,16 +1347,10 @@ class TaskAnnotationView(generics.GenericAPIView):
 
             if not is_text_input_type:
                 # Validate that all labels are valid URLs
-                from django.core.validators import URLValidator
-                from django.core.exceptions import ValidationError
-
-                url_validator = URLValidator()
                 invalid_urls = []
                 
                 for label in labels:
-                    try:
-                        url_validator(label)
-                    except ValidationError:
+                    if not is_valid_url(label):
                         invalid_urls.append(label)
                 
                 if invalid_urls:
@@ -1372,7 +1371,8 @@ class TaskAnnotationView(generics.GenericAPIView):
                         label=label_text.strip() if is_text_input_type else None,
                         label_file_url=label_text.strip() if not is_text_input_type else None,
                         labeller=request.user,
-                        notes = notes
+                        notes = notes,
+                        subtitles_url = subtitles_url
                     )
                     created_labels.append(task_label)
             

@@ -186,6 +186,13 @@ class InitializeUserStripeAccountView(generics.GenericAPIView):
                         "transfers": {
                             "requested": True
                         }
+                    },
+                    settings={
+                        "payouts": {
+                            "schedule": {
+                                "interval": "daily",
+                            }
+                        }
                     }
                 )
                 user_stripe_connect_account = UserStripeConnectAccount.objects.create(user=request.user, account_id=account.id)

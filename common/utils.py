@@ -1,7 +1,16 @@
 from dateutil.relativedelta import relativedelta
 from django.utils import timezone
 from urllib.parse import urlparse
+from django.core.validators import URLValidator
+from django.core.exceptions import ValidationError
 
+def is_valid_url(url):
+    url_validator = URLValidator()
+    try:
+        url_validator(url)
+        return True
+    except ValidationError:
+        return False
 
 def get_request_origin(request):
     origin = request.META.get("HTTP_ORIGIN", None)
