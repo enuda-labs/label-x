@@ -7,10 +7,10 @@ class TransactionTypeChoices(models.TextChoices):
     MONTHLY_PAYMENT = 'monthly_payment', 'Monthly Payment' #money was credited to the labeller's account for the month
 
 class TransactionStatusChoices(models.TextChoices):
-    PENDING = 'pending', 'Pending'
-    PROCESSING = 'processing', 'Processing'
-    FAILED = 'failed', 'Failed'
-    SUCCESS = 'success', 'Success'
+    PENDING = 'pending', 'Pending' #transaction has been initiated on labelx
+    PROCESSING = 'processing', 'Processing' #some other third party service is processing the transaction
+    FAILED = 'failed', 'Failed' #transaction failed
+    SUCCESS = 'success', 'Success' #transaction was successful
 
 class MonthlyPaymentStatusChoices(models.TextChoices):
     PENDING = 'pending', 'Pending'

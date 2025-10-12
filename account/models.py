@@ -126,6 +126,11 @@ class UserStripeConnectAccount(models.Model):
     
     def __str__(self):
         return f"{self.user.username}'s stripe connect account - {self.account_id}"
+    
+    class Meta:
+        indexes = [
+            models.Index(fields=['account_id']),
+        ]
 
 class MonthlyReviewerEarnings(models.Model):
     reviewer = models.ForeignKey(CustomUser, on_delete=models.CASCADE)
