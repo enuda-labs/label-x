@@ -202,8 +202,8 @@ class Task(models.Model):
     used_data_points = models.IntegerField(default=0, help_text="The amount of data points that was used during the submission of this task") 
     
     # this fields will have values if the task type is a file
-    file_name = models.CharField(max_length=100, null=True, blank=True)
-    file_type= models.CharField(max_length=10, null=True, blank=True)
+    file_name = models.CharField(max_length=255, null=True, blank=True)
+    file_type= models.CharField(max_length=50, null=True, blank=True)
     file_url = models.URLField(help_text="The cdn link to the file", null=True, blank=True)
     file_size_bytes = models.FloatField(null=True, blank=True)
     file_size_bytes = models.FloatField(null=True, blank=True)
@@ -255,6 +255,7 @@ class TaskLabel(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     notes = models.TextField(null=True)
+    subtitles_url = models.URLField(null=True, blank=True, help_text="The url of the subtitles of the labeller for the task if any")
     
     def __str__(self):
         return f"{self.task.serial_no} - {self.labeller.username}"
