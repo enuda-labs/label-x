@@ -370,6 +370,7 @@ class TaskAnnotationSerializer(serializers.Serializer):
     task_id = serializers.IntegerField()
     labels = serializers.ListField(child=serializers.CharField())
     notes = serializers.CharField(required=False)
+    subtitles_url = serializers.URLField(required=False)
 
 class TaskClusterDetailSerializer(serializers.ModelSerializer):
     """
