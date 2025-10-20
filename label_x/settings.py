@@ -406,3 +406,8 @@ CELERY_BEAT_SCHEDULE = {
 }
 
 BREVO_API_KEY = os.getenv("BREVO_API_KEY")
+
+AUTHENTICATION_BACKENDS = [
+    'account.backends.EmailOrUsernameBackend',
+    'django.contrib.auth.backends.ModelBackend',
+]
