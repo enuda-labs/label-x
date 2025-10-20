@@ -91,7 +91,8 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     is_superuser = models.BooleanField(default=False) 
     project = models.ForeignKey(Project, on_delete=models.SET_NULL, related_name='members', null=True, blank=True)
     domains = models.ManyToManyField(LabelerDomain, related_name='labelers', blank=True, help_text="The domains of expertise that the labeler is allowed to label")
-
+    is_email_verified = models.BooleanField(default=False, help_text="Indicates if the email of the user has been verified")
+    
     objects = CustomUserManager()
 
     USERNAME_FIELD = 'username'

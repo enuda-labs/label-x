@@ -15,7 +15,7 @@ class RegisterTestCase(APITransactionTestCase):
     def setUp(self):
         self.register_path = reverse("account:register")
         self.login_path = reverse('account:login')
-        CustomUser.objects.create_user(username='dama', email="test@gmail.com")
+        CustomUser.objects.create_user(username='dama', email="test@gmail.com", is_email_verified=True)
         self.test_domain = LabelerDomain.objects.create(domain="test")
 
     
@@ -75,7 +75,8 @@ class LoginTestCase(APITransactionTestCase):
         self.test_user = CustomUser.objects.create_user(
             username='testlogin', 
             email="testlogin@gmail.com",
-            password='123456789ASas@'
+            password='123456789ASas@',
+            is_email_verified=True
         )
 
     def test_login_success(self):
@@ -136,7 +137,8 @@ class RefreshTokenTestCase(APITransactionTestCase):
         self.user = CustomUser.objects.create_user(
             username="testuser",
             email="testuser@gmail.com",
-            password="TestPassword123!"
+            password="TestPassword123!",
+            is_email_verified=True
         )
         # Generate tokens
         refresh = RefreshToken.for_user(self.user)
@@ -196,7 +198,8 @@ class ChangePasswordTestCase(APITransactionTestCase):
         self.user = CustomUser.objects.create_user(
             username='testuser', 
             email='test@example.com', 
-            password='Testp@ssword123'
+            password='Testp@ssword123',
+            is_email_verified=True
         )
         
         # Get token for authentication
@@ -355,14 +358,16 @@ class UpdateUsernameTestCase(APITransactionTestCase):
         self.user = CustomUser.objects.create_user(
             username='testuser', 
             email='test@example.com', 
-            password='Testp@ssword123'
+            password='Testp@ssword123',
+            is_email_verified=True
         )
         
         # Create another user to test username uniqueness
         self.other_user = CustomUser.objects.create_user(
             username='existinguser',
             email='other@example.com',
-            password='Testp@ssword123'
+            password='Testp@ssword123',
+            is_email_verified=True
         )
         
         # Get token for authentication
@@ -475,20 +480,24 @@ class ListProjectsTestCase(APITransactionTestCase):
             email='admin@example.com',
             password='Testp@ssword123',
             is_staff=True,
-            is_superuser=True
+            is_superuser=True,
+            is_email_verified=True
         )
         
         self.reviewer_user = CustomUser.objects.create_user(
             username='reviewer',
             email='reviewer@example.com',
             password='Testp@ssword123',
-            is_reviewer=True
+            is_reviewer=True,
+            is_email_verified=True
         )
         
         self.organization_user = CustomUser.objects.create_user(
             username='org',
             email='org@example.com',
-            password='Testp@ssword123'
+            password='Testp@ssword123',
+            is_email_verified=True
+
         )
         
         # Create projects

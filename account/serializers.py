@@ -19,6 +19,18 @@ from reviewer.serializers import LabelerDomainSerializer
 from payment.utils import find_bank_by_code, request_paystack, resolve_bank_details
 
 
+class PasswordResetSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+    new_password = serializers.CharField()
+    otp = serializers.CharField()
+
+class AcceptOnlyEmailSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+
+class EmailVerificationSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+    otp = serializers.CharField()
+
 
 class UserStripeConnectAccountSerializer(serializers.ModelSerializer):
     class Meta:
@@ -492,7 +504,7 @@ class SimpleUserSerializer(serializers.ModelSerializer):
     domains = LabelerDomainSerializer(many=True)
     class Meta:
         model = CustomUser
-        fields = ["id", "username", "email", "is_active", "domains", 'is_reviewer']
+        fields = ["id", "username", "email", "is_active", "domains", 'is_reviewer', 'is_email_verified']
 
 
 # Set of Serializers to use for api doc example and documentation
