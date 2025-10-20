@@ -1,3 +1,4 @@
+from django.core.cache import cache
 import logging
 from datetime import datetime
 from tokenize import TokenError
@@ -12,6 +13,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenRefreshView
 
+from account.services import get_user_by_email, send_account_verification_email, send_password_reset_email, verify_password_reset_otp
 from common.caching import cache_response_decorator
 from common.responses import ErrorResponse, SuccessResponse, format_first_error
 from common.utils import get_duration
@@ -25,18 +27,22 @@ from task.utils import get_unreleased_reviewer_earnings
 
 from .utils import IsAdminUser, IsSuperAdmin, NotReviewer, assign_default_plan
 from .serializers import (
+    AcceptOnlyEmailSerializer,
     AdminProjectDetailSerializer,
     CreateLabelerSerializer,
     Disable2faSerializer,
+    EmailVerificationSerializer,
     LoginSerializer,
     LogoutSerializer,
     MakeAdminSerializer,
     MakeReviewerSerializer,
     OtpVerificationSerializer,
+    PasswordResetSerializer,
     ProjectCreateSerializer,
     ProjectDetailSerializer,
     ProjectSerializer,
     RegisterSerializer,
+    AcceptOnlyEmailSerializer,
     RevokeReviewerSerializer,
     SetUserActiveStatusSerializer,
     SimpleUserSerializer,
@@ -718,6 +724,16 @@ class LoginView(APIView):
         if serializer.is_valid():
             user = serializer.validated_data
             
+            if not user.is_email_verified:
+                send_account_verification_email(user)
+                return ErrorResponse(
+                    message=f"Email not verified, a verification email has been sent to {user.email} your email address",
+                    data={
+                        "requires_email_verification": True
+                    },
+                    status=status.HTTP_401_UNAUTHORIZED
+                )
+            
             #check if 2fa is enabled 
             try:
                 otp_verification = OTPVerification.objects.get(user=user, is_verified=True)
@@ -854,9 +870,112 @@ class GetUserPaymentPreferenceView(generics.GenericAPIView):
                 "paystack_status": paystack_status
             }
         )
-    
 
+class PasswordResetByEmailView(generics.GenericAPIView):
+    permission_classes = [AllowAny]
+    serializer_class = PasswordResetSerializer
     
+    @extend_schema(
+        summary="Reset password",
+        description="Reset the password of the user",
+        request=PasswordResetSerializer,
+    )
+    def post(self, request):
+        serializer = self.get_serializer(data=request.data)
+        if not serializer.is_valid():
+            return ErrorResponse(message=format_first_error(serializer.errors))
+        
+        email = serializer.validated_data.get("email")
+        otp = serializer.validated_data.get("otp")
+        new_password = serializer.validated_data.get("new_password")
+        
+        is_valid, reason = verify_password_reset_otp(email, otp)
+        if not is_valid:
+            return ErrorResponse(message=reason)
+        
+        user = get_user_by_email(email)
+        user.set_password(new_password)
+        user.save()
+        cache.delete(f"pr-{email}")
+        return SuccessResponse(message="Password reset successfully")
+
+class RequestPasswordResetOtpView(generics.GenericAPIView):
+    permission_classes = [AllowAny]
+    serializer_class = AcceptOnlyEmailSerializer
+    
+    @extend_schema(
+        summary="Request password reset OTP",
+        description="Request password reset OTP to the user",
+        request=AcceptOnlyEmailSerializer,
+    )
+    def post(self, request):
+        serializer = self.get_serializer(data=request.data)
+        if not serializer.is_valid():
+            return ErrorResponse(message=format_first_error(serializer.errors))
+        
+        email = serializer.validated_data.get("email")
+        user = get_user_by_email(email)
+        
+        if not user:
+            return ErrorResponse(message="User not found", status=status.HTTP_404_NOT_FOUND)
+        
+        send_password_reset_email(user)
+        return SuccessResponse(message=f"Password reset OTP sent successfully to {user.email}")
+
+class ResendEmailVerificationView(generics.GenericAPIView):
+    permission_classes = [AllowAny]
+    serializer_class = AcceptOnlyEmailSerializer
+    
+    @extend_schema(
+        summary="Resend email verification email",
+        description="Resend email verification email to the user",
+        request=AcceptOnlyEmailSerializer,
+        responses={200: SuccessDetailResponseSerializer},
+    )
+    def post(self, request):
+        serializer = self.get_serializer(data=request.data)
+        if not serializer.is_valid():
+            return ErrorResponse(message=format_first_error(serializer.errors))
+        
+        email = serializer.validated_data.get("email")
+        user = get_user_by_email(email)
+        if not user:
+            return ErrorResponse(message="User not found", status=status.HTTP_404_NOT_FOUND)
+        
+        if user.is_email_verified:
+            return ErrorResponse(message="Email already verified")
+        
+        send_account_verification_email(user)
+        return SuccessResponse(message=f"Email verification sent successfully to {user.email}")
+
+
+
+class VerifyEmailView(generics.GenericAPIView):
+    serializer_class = EmailVerificationSerializer
+    permission_classes = [AllowAny]
+    def post(self, request):
+        serializer = self.get_serializer(data=request.data)
+        if not serializer.is_valid():
+            return ErrorResponse(message=format_first_error(serializer.errors))
+        
+        email = serializer.validated_data.get("email")
+        otp = serializer.validated_data.get("otp")
+        user = CustomUser.objects.get(email=email)
+        
+        
+        cached_otp = cache.get(f"vrf-{email}") 
+        
+        if cached_otp and cached_otp == otp:
+            user = get_user_by_email(email)
+            if not user:
+                return ErrorResponse(message="User not found")
+            
+            user.is_email_verified = True
+            user.save()
+            cache.delete(f"vrf-{email}")
+            return SuccessResponse(message="Email verified successfully", data=SimpleUserSerializer(user).data)
+        else:
+            return ErrorResponse(message="Invalid or expired OTP")
     
 
 class RegisterView(APIView):
@@ -879,6 +998,8 @@ class RegisterView(APIView):
                 assign_default_plan(user)
                 logger.info(f"Organization '{user.username}' has been assign the default free plan {datetime.now()}")
             logger.info(f"New user '{user.username}' registered successfully at {datetime.now()}")
+            
+            send_account_verification_email(user)
             return Response(
                 {"status": "success", "user_data": RegisterSerializer(user).data},
                 status=status.HTTP_201_CREATED,

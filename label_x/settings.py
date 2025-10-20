@@ -137,7 +137,7 @@ ASGI_APPLICATION = "label_x.asgi.application"
 # Database
 # https://docs.djangoproject.com/en/5.1/ref/settings/#databases
 
-if DEBUG:
+if not DEBUG:
     DATABASES = {
         "default": {
             "ENGINE": "django.db.backends.sqlite3",
@@ -404,3 +404,5 @@ CELERY_BEAT_SCHEDULE = {
     #     "schedule": crontab(minute="*/2"),
     # },
 }
+
+BREVO_API_KEY = os.getenv("BREVO_API_KEY")
