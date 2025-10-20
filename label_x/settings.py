@@ -406,6 +406,7 @@ CELERY_BEAT_SCHEDULE = {
 }
 
 BREVO_API_KEY = os.getenv("BREVO_API_KEY")
+BREVO_FROM_EMAIL = os.getenv("BREVO_FROM_EMAIL")
 
 AUTHENTICATION_BACKENDS = [
     'account.backends.EmailOrUsernameBackend',

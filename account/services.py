@@ -26,7 +26,7 @@ class EmailService():
                 "sender": {
                     "name": "Labelx",
                     # "email": "support@erdvsion.dev"
-                    "email": "support@kyrinfo.xyz"
+                    "email": settings.BREVO_FROM_EMAIL
                 }
             }
         )
