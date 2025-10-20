@@ -4,6 +4,10 @@ app_name = 'account'
 
 urlpatterns = [
     path('login/', apis.LoginView.as_view(), name='login'),
+    path('email/verify/', apis.VerifyEmailView.as_view(), name='verify-email'),
+    path('email/resend/', apis.ResendEmailVerificationView.as_view(), name='resend-email-verification'),
+    path('email/password/request-reset/', apis.RequestPasswordResetOtpView.as_view(), name='request-password-reset-otp'),
+    path('email/password/reset/', apis.PasswordResetByEmailView.as_view(), name='password-reset-by-email'),
     path('register/', apis.RegisterView.as_view(), name='register'),
     path('make-reviewer/', apis.MakeUserReviewerView().as_view(), name='create-reviewer'),
     path('remove-reviewer/', apis.RemoveUserReviewerView().as_view(), name='create-reviewer'),
