@@ -17,6 +17,6 @@ RUN pip install honcho
 
 COPY . .
 
-EXPOSE 8080
+EXPOSE 8003
 
 CMD ["sh", "-c", "honcho start web worker beat"]
