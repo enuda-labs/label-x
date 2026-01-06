@@ -1,7 +1,7 @@
 from email import message
 from pickle import FALSE
 import cohere
-from dotenv import load_dotenv
+from decouple import config
 import os
 import json
 import time
@@ -16,11 +16,9 @@ import re
 # Set up logger
 logger = logging.getLogger(__name__)
 
-load_dotenv()
-
 # Initialize Cohere client with timeout settings
 co = cohere.Client(
-    api_key=os.getenv("CO_API_KEY"), timeout=30  # Set timeout to 30 seconds
+    api_key=config("CO_API_KEY", default=""), timeout=30  # Set timeout to 30 seconds
 )
 
 

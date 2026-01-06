@@ -2,6 +2,7 @@ from __future__ import absolute_import, unicode_literals
 import os
 from celery import Celery
 from celery.schedules import crontab
+from decouple import config
 
 # Set the default Django settings module for the 'celery' program.
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'label_x.settings')
@@ -11,9 +12,9 @@ celery_app = Celery('label_x')
 
 # Set broker URL and result backend BEFORE config_from_object
 # This ensures environment variables from docker-compose take precedence
-# Check if we're in Docker (redis service name available) or local development
-broker_url = os.environ.get('CELERY_BROKER_URL')
-result_backend = os.environ.get('CELERY_RESULT_BACKEND')
+# python-decouple automatically prioritizes environment variables over .env file
+broker_url = config('CELERY_BROKER_URL', default=None)
+result_backend = config('CELERY_RESULT_BACKEND', default=None)
 
 # If environment variables are set (e.g., from docker-compose), use them
 # Otherwise, use localhost for local development
