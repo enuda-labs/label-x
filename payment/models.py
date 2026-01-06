@@ -1,5 +1,5 @@
 from django.db import models
-from account.models import CustomUser, MonthlyReviewerEarnings
+from account.models import User, MonthlyReviewerEarnings
 from payment.choices import TransactionStatusChoices, TransactionTypeChoices, WithdrawalRequestInitiatedByChoices
 from payment.choices import MonthlyPaymentStatusChoices, TransactionStatusChoices, TransactionTypeChoices
 import uuid
@@ -9,7 +9,7 @@ import uuid
 class Transaction(models.Model):
     #any transaction that involves money should be stored here
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    user = models.ForeignKey(CustomUser, on_delete=models.CASCADE)
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
     usd_amount = models.DecimalField(max_digits=10, decimal_places=2)
     ngn_amount = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, help_text="The amount in NGN at the time of the transaction")#this is optional, i added it solely for paystack
     status = models.CharField(max_length=50, default=TransactionStatusChoices.PENDING, choices=TransactionStatusChoices.choices)

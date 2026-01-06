@@ -7,7 +7,7 @@ from drf_spectacular.utils import extend_schema
 from rest_framework import generics
 from rest_framework.response import Response
 from rest_framework import status
-from rest_framework.exceptions import AuthenticationFailed
+from rest_framework.exceptions import AuthenticationFailed, ValidationError
 from rest_framework.views import APIView
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -63,7 +63,7 @@ from .utils import (
     IsAdminUser,
     IsSuperAdmin,
 )
-from .models import CustomUser,  OTPVerification, Project, UserBankAccount, UserStripeConnectAccount
+from .models import User,  OTPVerification, Project, UserBankAccount, UserStripeConnectAccount
 from .choices import StripeConnectAccountStatusChoices, BankPlatformChoices
 from django.contrib.auth import logout
 # Set up logger
@@ -284,8 +284,8 @@ class SetUserActiveStatusView(generics.GenericAPIView):
         user_id = serializer.validated_data['user_id']
         
         try:
-            user= CustomUser.objects.get(id=user_id)
-        except CustomUser.DoesNotExist:
+            user= User.objects.get(id=user_id)
+        except User.DoesNotExist:
             return ErrorResponse(message="User not found", status=status.HTTP_404_NOT_FOUND)
         
         user.is_active = serializer.validated_data['is_active']
@@ -306,11 +306,11 @@ class DeactivateUserView(generics.GenericAPIView):
     )
     def post(self, request, *args, **kwargs):
         try:
-            user = CustomUser.objects.get(id=kwargs.get('user_id'))
+            user = User.objects.get(id=kwargs.get('user_id'))
             user.is_active = False
             user.save()
             return SuccessResponse(message="User deactivated")       
-        except CustomUser.DoesNotExist:
+        except User.DoesNotExist:
             return ErrorResponse(message="User not found", status=status.HTTP_404_NOT_FOUND)
 
 
@@ -318,7 +318,7 @@ class GetReviewersListView(generics.ListAPIView):
     permission_classes = [IsAuthenticated, IsAdminUser]
     serializer_class = ListReviewersWithClustersSerializer
     def get_queryset(self):
-        return CustomUser.objects.prefetch_related("assigned_clusters").filter(is_reviewer=True)
+        return User.objects.prefetch_related("assigned_clusters").filter(is_reviewer=True)
     
     @extend_schema(
         summary="Get a list of reviewers on the platform and task clusters they are assigned to"
@@ -494,7 +494,7 @@ class ProjectDetailView(generics.RetrieveAPIView):
     permission_classes = [IsAuthenticated | HasUserAPIKey]
     
     def get_queryset(self):
-        if self.request.user.is_admin or self.request.user.is_staff:
+        if self.request.user.is_staff:
             return Project.objects.all()
         else:
             return Project.objects.filter(created_by=self.request.user)
@@ -540,7 +540,7 @@ class EditProjectView(generics.UpdateAPIView):
     permission_classes = [IsAuthenticated | HasUserAPIKey]
     lookup_field = 'id'
     def get_queryset(self):
-        if self.request.user.is_admin or self.request.user.is_staff:
+        if self.request.user.is_staff:
             return Project.objects.all()
         else:
             return Project.objects.filter(created_by=self.request.user)
@@ -994,7 +994,7 @@ class VerifyEmailView(generics.GenericAPIView):
         
         email = serializer.validated_data.get("email")
         otp = serializer.validated_data.get("otp")
-        user = CustomUser.objects.get(email=email)
+        user = User.objects.get(email=email)
         
         
         cached_otp = cache.get(f"vrf-{email}") 
@@ -1118,7 +1118,6 @@ class MakeUserAdminView(APIView):
         user = serializer.validated_data["user_id"]
         admin_user = request.user
 
-        user.is_admin = True
         user.is_staff = True
         user.save()
 
@@ -1432,6 +1431,10 @@ class CustomTokenRefreshView(TokenRefreshView):
     )
     def post(self, request, *args, **kwargs):
         try:
+            # Log the refresh token request (without the actual token for security)
+            refresh_token_present = bool(request.data.get('refresh'))
+            logger.info(f"Token refresh request received. Refresh token present: {refresh_token_present} at {datetime.now()}")
+            
             response = super().post(request, *args, **kwargs)
             logger.info(f"Token refresh successful at {datetime.now()}")
             return Response(
@@ -1444,13 +1447,33 @@ class CustomTokenRefreshView(TokenRefreshView):
             )
 
         except AuthenticationFailed as e:  # Catch invalid token error
-            logger.warning(f"Failed token refresh attempt at {datetime.now()}")
+            logger.warning(f"Failed token refresh attempt: Invalid or expired refresh token at {datetime.now()}")
             return Response(
                 {
                     "status": "error",
                     "detail": "Your session has expired. Please log in again.",
                 },
                 status=status.HTTP_401_UNAUTHORIZED,
+            )
+        except ValidationError as e:
+            # Catch serializer validation errors (e.g., missing refresh token)
+            logger.warning(f"Token refresh validation error: {str(e)}. Request data: {dict(request.data) if hasattr(request, 'data') else 'N/A'} at {datetime.now()}")
+            return Response(
+                {
+                    "status": "error",
+                    "detail": "Invalid refresh token. Please log in again.",
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        except Exception as e:
+            # Catch other exceptions
+            logger.error(f"Token refresh error: {str(e)}. Request data keys: {list(request.data.keys()) if hasattr(request, 'data') else 'N/A'} at {datetime.now()}", exc_info=True)
+            return Response(
+                {
+                    "status": "error",
+                    "detail": "An error occurred while refreshing your token. Please log in again.",
+                },
+                status=status.HTTP_400_BAD_REQUEST,
             )
 
 
@@ -1583,10 +1606,10 @@ class UsersNotInProjectView(APIView):
             if project_id is not None:
                 # Get users not in the specific project
                 project = Project.objects.get(id=project_id)
-                users = CustomUser.objects.exclude(project=project)
+                users = User.objects.exclude(project=project)
             else:
                 # Get users not in any project
-                users = CustomUser.objects.filter(project__isnull=True)
+                users = User.objects.filter(project__isnull=True)
             
             serializer = SimpleUserSerializer(users, many=True)
             return Response({
@@ -1646,7 +1669,7 @@ class UsersInProjectView(APIView):
                 "message": "Project ID is required"
             }, status=status.HTTP_400_BAD_REQUEST)
 
-        users = CustomUser.objects.filter(project__id=project_id)
+        users = User.objects.filter(project__id=project_id)
         serializer = SimpleUserSerializer(users, many=True)
         return Response({
             "status": "success",

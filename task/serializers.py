@@ -1,7 +1,7 @@
 import attr
 from rest_framework import serializers
 
-from account.models import CustomUser, Project
+from account.models import User, Project
 from account.serializers import SimpleUserSerializer, UserSerializer
 from reviewer.models import LabelerDomain
 from subscription.models import UserDataPoints
@@ -24,10 +24,10 @@ class GetAndValidateReviewersSerializer(serializers.Serializer):
         """
         for reviewer_id in value:
             try:
-                reviewer = CustomUser.objects.get(id=reviewer_id)
+                reviewer = User.objects.get(id=reviewer_id)
                 if not reviewer.is_active:
                     raise serializers.ValidationError(f"Reviewer {reviewer.username} is not active")
-            except CustomUser.DoesNotExist:
+            except User.DoesNotExist:
                 raise serializers.ValidationError(f"Reviewer {reviewer_id} not found")
         return value
 
@@ -289,7 +289,7 @@ class ListReviewersWithClustersSerializer(serializers.ModelSerializer):
     assigned_clusters = TaskClusterListSerializer(many=True, read_only=True)
     completed_clusters = serializers.SerializerMethodField() #the number of clusters this reviewer has completed
     class Meta:
-        model = CustomUser
+        model = User
         fields = [
             "id",
             "username",

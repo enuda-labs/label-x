@@ -11,7 +11,7 @@ from datetime import datetime
 from rest_framework.views import APIView
 from rest_framework_api_key.permissions import HasAPIKey
 from account.choices import ProjectStatusChoices
-from account.models import Project, CustomUser
+from account.models import Project, User
 from common.caching import cache_response_decorator
 from common.responses import ErrorResponse, SuccessResponse, format_first_error
 from common.utils import is_valid_url
@@ -131,7 +131,7 @@ class RemoveReviewersFromCluster(generics.GenericAPIView):
         
         reviewer_ids = request.data.get('reviewer_ids')
         for reviewer_id in reviewer_ids:
-            reviewer = CustomUser.objects.get(id=reviewer_id)
+            reviewer = User.objects.get(id=reviewer_id)
             cluster.assigned_reviewers.remove(reviewer)
             
         return SuccessResponse(message="Reviewers removed from cluster", data=cluster.assigned_reviewers.values('id', 'username', 'email', 'is_active'))
@@ -187,7 +187,7 @@ class AssignReviewersToCluster(generics.GenericAPIView):
         
         for reviewer_id in reviewer_ids:
             #user is already validated in the serializer
-            reviewer = CustomUser.objects.get(id=reviewer_id)
+            reviewer = User.objects.get(id=reviewer_id)
             cluster.assigned_reviewers.add(reviewer)
             
         if cluster.status == TaskClusterStatusChoices.COMPLETED:
@@ -634,7 +634,7 @@ class TasksNeedingReviewView(APIView):
     )
     
     def get(self, request):
-        if not (request.user.is_admin or request.user.is_reviewer):
+        if not (request.user.is_staff or request.user.is_reviewer):
             logger.warning(f"Unauthorized access attempt to review tasks by user '{request.user.username}' at {datetime.now()}")
             return Response({"detail": "Not authorized."}, status=status.HTTP_403_FORBIDDEN)
         
@@ -897,7 +897,7 @@ class TaskReviewView(generics.GenericAPIView):
                     'error': "Task does not require review at this moment"
                 }, status=status.HTTP_403_FORBIDDEN)
 
-            if task.assigned_to != request.user and not request.user.is_admin:
+            if task.assigned_to != request.user and not request.user.is_staff:
                 logger.warning(f"Unauthorized review attempt by '{request.user.username}' for task {task_id} at {datetime.now()}")
                 return Response({
                     'status': "error",

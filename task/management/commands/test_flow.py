@@ -12,7 +12,7 @@ import websockets
 import websocket
 
 
-from account.models import CustomUser
+from account.models import User
 
 
 class FlowTest:
@@ -339,7 +339,7 @@ class FlowTest:
 
     def teardown(self):
         print(f"Deleting {self.user_data.get('email')}...")
-        CustomUser.objects.filter(email=self.user_data.get("email")).delete()
+        User.objects.filter(email=self.user_data.get("email")).delete()
 
     def start(self):
         """Main test flow"""

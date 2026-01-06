@@ -20,7 +20,7 @@ class IsAdminOrReadOnly(BasePermission):
         if request.method in SAFE_METHODS:
             return True
 
-        return request.user != AnonymousUser() and request.user and request.user.is_admin
+        return request.user != AnonymousUser() and request.user and request.user.is_staff
     
 
 class IsSuperAdmin(BasePermission):
@@ -36,7 +36,7 @@ class IsAdminUser(BasePermission):
     """Allow access to only users mark as admin"""
 
     def has_permission(self, request, view):
-        return request.user and request.user.is_authenticated and request.user.is_admin
+        return request.user and request.user.is_authenticated and request.user.is_staff
 
 
 class IsReviewer(BasePermission):
@@ -81,7 +81,7 @@ def generate_stateless_api_key(user, expiry_days=30):
     expiry_date = timezone.now() + datetime.timedelta(days=expiry_days)
 
     payload = {
-        "pid": str(user.pid),
+        "customer_id": str(user.customer_id),
         "username": user.username,
         "key_id": key_id,
         "exp": expiry_date.timestamp(),

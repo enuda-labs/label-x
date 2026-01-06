@@ -9,7 +9,7 @@ from rest_framework.response import Response
 from drf_spectacular.utils import extend_schema, OpenApiExample, OpenApiResponse
 import stripe.error
 
-from account.models import CustomUser
+from account.models import User
 from common.responses import ErrorResponse, SuccessResponse, format_first_error
 from common.utils import get_request_origin
 

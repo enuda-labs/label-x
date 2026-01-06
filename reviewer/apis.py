@@ -4,7 +4,7 @@ from drf_spectacular.utils import extend_schema
 from rest_framework import generics
 from account.utils import IsAdminOrReadOnly
 from common.caching import cache_response_decorator
-from account.models import LabelerDomain
+from reviewer.models import LabelerDomain
 from .serializers import LabelerDomainSerializer
 
 logger = logging.getLogger(__name__)
