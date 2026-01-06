@@ -84,12 +84,12 @@ def submit_human_review(original_text, original_classification, correct_classifi
                
         except (Timeout, RequestException) as e:
             if attempt == max_retries - 1:  # Last attempt
-                logger.error(f"Final retry failed: {str(e)}")
+                logger.error(f"Cohere API final retry failed for human review submission: {str(e)}", exc_info=True)
                 return False, str(e)
-            logger.warning(f"Attempt {attempt + 1} failed, retrying... Error: {str(e)}")
+            logger.warning(f"Cohere API attempt {attempt + 1} failed for human review, retrying... Error: {str(e)}")
             time.sleep(2**attempt)  # Exponential backoff            
         except Exception as e:
-            logger.error(f"Error in classification: {str(e)}")
+            logger.error(f"Unexpected error in human review submission: {str(e)}", exc_info=True)
             return False, str(e)
 
 
@@ -170,7 +170,7 @@ def text_classification(text, max_retries=3):
 
         except (Timeout, RequestException) as e:
             if attempt == max_retries - 1:  # Last attempt
-                logger.error(f"Final retry failed: {str(e)}")
+                logger.error(f"Cohere API final retry failed for text classification: {str(e)}", exc_info=True)
                 return {
                     "label": "Normal",
                     "confidence_score": 0.0,
@@ -180,11 +180,11 @@ def text_classification(text, max_retries=3):
                     "requires_human_review": True
 
                 }
-            logger.warning(f"Attempt {attempt + 1} failed, retrying... Error: {str(e)}")
+            logger.warning(f"Cohere API attempt {attempt + 1} failed for text classification, retrying... Error: {str(e)}")
             time.sleep(2**attempt)  # Exponential backoff
 
         except Exception as e:
-            logger.error(f"Error in classification: {str(e)}")
+            logger.error(f"Unexpected error in text classification: {str(e)}", exc_info=True)
             return {
                 "label": "Normal",
                 "confidence_score": 0.0,

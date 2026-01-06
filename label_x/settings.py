@@ -225,6 +225,12 @@ LOGGING = {
             "filename": "logs/api_activity.log",
             "formatter": "verbose",
         },
+        "error_file": {
+            "level": "ERROR",
+            "class": "logging.FileHandler",
+            "filename": "logs/errors.log",
+            "formatter": "verbose",
+        },
         "console": {
             "level": "INFO",
             "class": "logging.StreamHandler",
@@ -232,32 +238,92 @@ LOGGING = {
         },
     },
     "root": {
-        "handlers": ["console", "file"],
+        "handlers": ["console", "file", "error_file"],
         "level": "INFO",
         "propagate": True,
     },
     "loggers": {
         "django": {
-            "handlers": ["console", "file"],
+            "handlers": ["console", "file", "error_file"],
             "level": "INFO",
             "propagate": False,
         },
         "account": {
-            "handlers": ["console", "file"],
+            "handlers": ["console", "file", "error_file"],
             "level": "INFO",
             "propagate": False,
         },
         "account.apis": {
-            "handlers": ["console", "file"],
+            "handlers": ["console", "file", "error_file"],
+            "level": "INFO",
+            "propagate": False,
+        },
+        "task": {
+            "handlers": ["console", "file", "error_file"],
+            "level": "INFO",
+            "propagate": False,
+        },
+        "task.apis": {
+            "handlers": ["console", "file", "error_file"],
+            "level": "INFO",
+            "propagate": False,
+        },
+        "task.tasks": {
+            "handlers": ["console", "file", "error_file"],
+            "level": "INFO",
+            "propagate": False,
+        },
+        "payment": {
+            "handlers": ["console", "file", "error_file"],
+            "level": "INFO",
+            "propagate": False,
+        },
+        "payment.apis": {
+            "handlers": ["console", "file", "error_file"],
+            "level": "INFO",
+            "propagate": False,
+        },
+        "payment.tasks": {
+            "handlers": ["console", "file", "error_file"],
+            "level": "INFO",
+            "propagate": False,
+        },
+        "subscription": {
+            "handlers": ["console", "file", "error_file"],
+            "level": "INFO",
+            "propagate": False,
+        },
+        "subscription.apis": {
+            "handlers": ["console", "file", "error_file"],
+            "level": "INFO",
+            "propagate": False,
+        },
+        "reviewer": {
+            "handlers": ["console", "file", "error_file"],
+            "level": "INFO",
+            "propagate": False,
+        },
+        "reviewer.apis": {
+            "handlers": ["console", "file", "error_file"],
+            "level": "INFO",
+            "propagate": False,
+        },
+        "api_auth": {
+            "handlers": ["console", "file", "error_file"],
+            "level": "INFO",
+            "propagate": False,
+        },
+        "api_auth.apis": {
+            "handlers": ["console", "file", "error_file"],
             "level": "INFO",
             "propagate": False,
         },
         "django.server": { 
-            "handlers": ["console", "file"],
+            "handlers": ["console", "file", "error_file"],
             "propagate": False,
         },
         "default": {
-            "handlers": ["console", "file"],
+            "handlers": ["console", "file", "error_file"],
             "propagate": True,
         }
     },

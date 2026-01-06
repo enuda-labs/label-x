@@ -1,9 +1,12 @@
 import random
+import logging
 from django.core.cache import cache
 import requests
 from django.conf import settings
 from django.template.loader import render_to_string
 from account.models import CustomUser
+
+logger = logging.getLogger(__name__)
 
 class EmailService():
     def __init__(self, email:str, name:str=None) -> None:
@@ -31,9 +34,13 @@ class EmailService():
             }
         )
         try:
+            response.raise_for_status()
             return response.json()
+        except requests.exceptions.HTTPError as e:
+            logger.error(f"Brevo API HTTP error sending email to '{self.email}': {e.response.status_code} - {e.response.text if hasattr(e, 'response') else str(e)}", exc_info=True)
+            return None
         except Exception as e:
-            print(e)
+            logger.error(f"Brevo API error sending email to '{self.email}': {str(e)}", exc_info=True)
             return None
     
     def send_raw_email(self, subject, message):

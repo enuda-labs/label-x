@@ -578,10 +578,13 @@ class LogoutView(generics.GenericAPIView):
             token.blacklist()
             
             logout(request)
+            logger.info(f"User '{request.user.username}' logged out successfully at {datetime.now()}")
             return SuccessResponse(message="Logout successful")
         except TokenError as e:
+            logger.warning(f"Failed logout attempt: Invalid token at {datetime.now()}")
             return ErrorResponse(message="Invalid token")
         except Exception as e:
+            logger.error(f"Error during logout for user '{request.user.username}': {str(e)}", exc_info=True)
             return ErrorResponse(message="An error occurred during logout", status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         
         
@@ -610,9 +613,14 @@ class Disable2FAView(generics.GenericAPIView):
             otp_verification.is_verified = False
             otp_verification.save()
             
+            logger.info(f"2FA disabled successfully for user '{user.username}' at {datetime.now()}")
             return SuccessResponse(message="2FA disabled successfully")
         except OTPVerification.DoesNotExist:
+            logger.warning(f"2FA disable attempted for user '{user.username}' but 2FA not setup at {datetime.now()}")
             return ErrorResponse(message="2FA not setup yet.", status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            logger.error(f"Error disabling 2FA for user '{user.username}': {str(e)}", exc_info=True)
+            return ErrorResponse(message="An error occurred while disabling 2FA", status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 class Setup2faView(generics.GenericAPIView):
@@ -628,6 +636,11 @@ class Setup2faView(generics.GenericAPIView):
         if not created:
             otp_verification.generate_qr_code()
             otp_verification.save()
+        
+        if created:
+            logger.info(f"2FA setup initiated for user '{request.user.username}' at {datetime.now()}")
+        else:
+            logger.info(f"2FA QR code regenerated for user '{request.user.username}' at {datetime.now()}")
         
         return SuccessResponse(data={
             "qr_code_url": otp_verification.qr_code,
@@ -656,11 +669,13 @@ class Setup2faView(generics.GenericAPIView):
         
         serializer = OtpVerificationSerializer(otp_verification, data=request.data)
         if not serializer.is_valid():
+            logger.warning(f"2FA verification failed for user '{request.user.username}': Invalid OTP at {datetime.now()}")
             return ErrorResponse(message=format_first_error(serializer.errors, with_key=False))
         
         otp_verification.is_verified = True
         otp_verification.save()
         
+        logger.info(f"2FA verified and enabled successfully for user '{request.user.username}' at {datetime.now()}")
         return SuccessResponse(
             message="2fa Verified successfully",
         )
@@ -725,7 +740,11 @@ class LoginView(APIView):
             user = serializer.validated_data
             
             if not user.is_email_verified:
-                send_account_verification_email(user)
+                try:
+                    send_account_verification_email(user)
+                    logger.info(f"Login blocked for unverified email, verification email sent to '{user.username}' at {datetime.now()}")
+                except Exception as e:
+                    logger.error(f"Failed to send verification email to '{user.email}': {str(e)}", exc_info=True)
                 return ErrorResponse(
                     message=f"Email not verified, a verification email has been sent to {user.email} your email address",
                     data={
@@ -891,12 +910,14 @@ class PasswordResetByEmailView(generics.GenericAPIView):
         
         is_valid, reason = verify_password_reset_otp(email, otp)
         if not is_valid:
+            logger.warning(f"Password reset failed for email '{email}': {reason} at {datetime.now()}")
             return ErrorResponse(message=reason)
         
         user = get_user_by_email(email)
         user.set_password(new_password)
         user.save()
         cache.delete(f"pr-{email}")
+        logger.info(f"Password reset completed successfully for user '{user.username}' at {datetime.now()}")
         return SuccessResponse(message="Password reset successfully")
 
 class RequestPasswordResetOtpView(generics.GenericAPIView):
@@ -917,10 +938,16 @@ class RequestPasswordResetOtpView(generics.GenericAPIView):
         user = get_user_by_email(email)
         
         if not user:
+            logger.warning(f"Password reset request for non-existent email '{email}' at {datetime.now()}")
             return ErrorResponse(message="User not found", status=status.HTTP_404_NOT_FOUND)
         
-        send_password_reset_email(user)
-        return SuccessResponse(message=f"Password reset OTP sent successfully to {user.email}")
+        try:
+            send_password_reset_email(user)
+            logger.info(f"Password reset OTP sent to user '{user.username}' at {datetime.now()}")
+            return SuccessResponse(message=f"Password reset OTP sent successfully to {user.email}")
+        except Exception as e:
+            logger.error(f"Failed to send password reset email to '{user.email}': {str(e)}", exc_info=True)
+            return ErrorResponse(message="Failed to send password reset email", status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 class ResendEmailVerificationView(generics.GenericAPIView):
     permission_classes = [AllowAny]
@@ -940,13 +967,20 @@ class ResendEmailVerificationView(generics.GenericAPIView):
         email = serializer.validated_data.get("email")
         user = get_user_by_email(email)
         if not user:
+            logger.warning(f"Resend email verification request for non-existent email '{email}' at {datetime.now()}")
             return ErrorResponse(message="User not found", status=status.HTTP_404_NOT_FOUND)
         
         if user.is_email_verified:
+            logger.info(f"Resend email verification requested for already verified user '{user.username}' at {datetime.now()}")
             return ErrorResponse(message="Email already verified")
         
-        send_account_verification_email(user)
-        return SuccessResponse(message=f"Email verification sent successfully to {user.email}")
+        try:
+            send_account_verification_email(user)
+            logger.info(f"Email verification resent to user '{user.username}' at {datetime.now()}")
+            return SuccessResponse(message=f"Email verification sent successfully to {user.email}")
+        except Exception as e:
+            logger.error(f"Failed to resend verification email to '{user.email}': {str(e)}", exc_info=True)
+            return ErrorResponse(message="Failed to send verification email", status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 
@@ -968,13 +1002,16 @@ class VerifyEmailView(generics.GenericAPIView):
         if cached_otp and cached_otp == otp:
             user = get_user_by_email(email)
             if not user:
+                logger.warning(f"Email verification attempted for non-existent user '{email}' at {datetime.now()}")
                 return ErrorResponse(message="User not found")
             
             user.is_email_verified = True
             user.save()
             cache.delete(f"vrf-{email}")
+            logger.info(f"Email verified successfully for user '{user.username}' at {datetime.now()}")
             return SuccessResponse(message="Email verified successfully", data=SimpleUserSerializer(user).data)
         else:
+            logger.warning(f"Email verification failed for email '{email}': Invalid or expired OTP at {datetime.now()}")
             return ErrorResponse(message="Invalid or expired OTP")
     
 
@@ -1660,6 +1697,7 @@ class ChangePasswordView(APIView):
             
             # Check if current password is correct
             if not user.check_password(serializer.validated_data['current_password']):
+                logger.warning(f"Password change failed for user '{user.username}': Incorrect current password at {datetime.now()}")
                 return Response(
                     {"status": "error", "error": "Current password is incorrect"},
                     status=status.HTTP_400_BAD_REQUEST
@@ -1669,11 +1707,13 @@ class ChangePasswordView(APIView):
             user.set_password(serializer.validated_data['new_password'])
             user.save()
             
+            logger.info(f"Password changed successfully for user '{user.username}' at {datetime.now()}")
             return Response(
                 {"status": "success", "message": "Password changed successfully"},
                 status=status.HTTP_200_OK
             )
         
+        logger.warning(f"Password change validation failed for user '{request.user.username}': {serializer.errors} at {datetime.now()}")
         return Response(
             {"status": "error", "error": serializer.errors},
             status=status.HTTP_400_BAD_REQUEST
