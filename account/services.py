@@ -4,7 +4,7 @@ from django.core.cache import cache
 import requests
 from django.conf import settings
 from django.template.loader import render_to_string
-from account.models import CustomUser
+from account.models import User
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +59,7 @@ def generate_and_save_otp(email, length=6, timeout=300):
     cache.set(email, otp, timeout)
     return otp
 
-def send_account_verification_email(user:CustomUser):
+def send_account_verification_email(user:User):
     email_service = EmailService(user.email)
     otp = generate_and_save_otp(f"vrf-{user.email}")
     email_service.send_template_email(
@@ -72,7 +72,7 @@ def send_account_verification_email(user:CustomUser):
     )
 
 
-def send_password_reset_email(user: CustomUser):
+def send_password_reset_email(user: User):
     otp = generate_and_save_otp(f"pr-{user.email}")
     email_service = EmailService(user.email)
     email_service.send_template_email(
@@ -104,11 +104,11 @@ def verify_password_reset_otp(email, user_otp):
     return False, "Invalid or expired otp"
 
 
-def get_user_by_email(email) -> CustomUser:
+def get_user_by_email(email) -> User:
     try:
-        user = CustomUser.objects.get(email=email)
+        user = User.objects.get(email=email)
         return user
-    except CustomUser.DoesNotExist:
+    except User.DoesNotExist:
         return None
     
     # otp = generate_and_save_otp(email)

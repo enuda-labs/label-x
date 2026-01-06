@@ -6,7 +6,7 @@ from django.db import models
 from django.utils import timezone
 from datetime import timedelta
 from task.choices import TaskClusterStatusChoices, TaskTypeChoices
-from account.models import CustomUser, MonthlyReviewerEarnings
+from account.models import User, MonthlyReviewerEarnings
 import math
 from task.models import TaskCluster
 from common.utils import get_dp_cost_settings
@@ -62,7 +62,7 @@ def assign_reviewer(task):
     # Get all online reviewers who have been active in the last 5 minutes
     # Annotate with pending review count for efficient sorting
     active_reviewers = (
-        CustomUser.objects.filter(
+        User.objects.filter(
             is_reviewer=True,
             is_online=True,
             last_activity__gte=timezone.now() - timedelta(minutes=20),
@@ -107,7 +107,7 @@ def assign_reviewers_to_cluster(cluster_id):
     domain = cluster.labeler_domain
     
     #get reviewers in this domain and order them by the ones that have the least assigned clusters (i.e the less busy ones)
-    matching_reviewers = list(CustomUser.objects.filter(domains=domain, is_reviewer=True).annotate(assigned_count=Count('assigned_clusters', filter=~Q(assigned_clusters__status=TaskClusterStatusChoices.COMPLETED))).order_by('assigned_count'))    
+    matching_reviewers = list(User.objects.filter(domains=domain, is_reviewer=True).annotate(assigned_count=Count('assigned_clusters', filter=~Q(assigned_clusters__status=TaskClusterStatusChoices.COMPLETED))).order_by('assigned_count'))    
     cluster.assigned_reviewers.add(*matching_reviewers[:cluster.labeller_per_item_count]) #since matching_reviewers is already ordered by the least busy ones, we can just add the first cluster.labeller_per_item_count ones
     cluster.save()
     return True
@@ -185,7 +185,7 @@ def calculate_required_data_points(task_type, text_data=None, file_size_bytes=No
 
 
 
-def calculate_labeller_monthly_earning(labeler: CustomUser, year: int, month: int):
+def calculate_labeller_monthly_earning(labeler: User, year: int, month: int):
     """
     Calculate a labeller's earning for a given month using the formula:
     labeller_earnings = dpt × n × CR × P
@@ -249,7 +249,7 @@ def calculate_labeller_monthly_earning(labeler: CustomUser, year: int, month: in
     labeller_earning = total_company_revenue * payout_percent
     return labeller_earning
 
-def calculate_static_labeller_monthly_earning(labeler: CustomUser, year: int, month: int):
+def calculate_static_labeller_monthly_earning(labeler: User, year: int, month: int):
     """
     Calculate a labeller's static earning using the curated earnings saved in the database
     """
@@ -257,7 +257,7 @@ def calculate_static_labeller_monthly_earning(labeler: CustomUser, year: int, mo
     return monthly_earning.total_earnings_usd
 
 
-def get_unreleased_reviewer_earnings(labeler: CustomUser) -> Decimal:
+def get_unreleased_reviewer_earnings(labeler: User) -> Decimal:
     user_earnings = MonthlyReviewerEarnings.objects.filter(Q(reviewer=labeler) & ~Q(release_status=MonthlyEarningsReleaseStatusChoices.RELEASED)).order_by('-usd_balance')
     return user_earnings.aggregate(total_earnings=Sum('usd_balance'))['total_earnings']
 
@@ -301,10 +301,10 @@ def credit_labeller_monthly_payment(task_id, labeler_id):
     logger.info(f"Crediting labeller monthly payment for task {task_id} and labeler {labeler_id}")
     try:
         task = Task.objects.get(id=task_id)
-        labeler = CustomUser.objects.get(id=labeler_id)
+        labeler = User.objects.get(id=labeler_id)
     except Task.DoesNotExist:
         return False
-    except CustomUser.DoesNotExist:
+    except User.DoesNotExist:
         return False
 
     response = track_task_labeling_earning(task)
@@ -322,7 +322,7 @@ def credit_labeller_monthly_payment(task_id, labeler_id):
     return True
 
  
-def get_labeller_monthly_history(labeler: CustomUser, months_back: int = 6):
+def get_labeller_monthly_history(labeler: User, months_back: int = 6):
     """
     Get earning history for the last N months for a labeller
     """

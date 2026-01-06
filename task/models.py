@@ -1,7 +1,7 @@
 from django.db import models
 import string
 import random
-from account.models import CustomUser, Project, ProjectLog
+from account.models import User, Project, ProjectLog
 from task.choices import AnnotationMethodChoices, ManualReviewSessionStatusChoices, TaskClusterStatusChoices, TaskInputTypeChoices, TaskTypeChoices
 from reviewer.models import LabelerDomain
 
@@ -45,14 +45,14 @@ class TaskCluster(models.Model):
     labeller_per_item_count = models.IntegerField(default=15)
     project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name="clusters")
     assigned_reviewers = models.ManyToManyField(
-        CustomUser,
+        User,
         related_name="assigned_clusters",
         help_text="Users assigned to review the tasks in this cluster",
         blank=True
     )
     task_type = models.CharField(choices=TaskTypeChoices.choices, max_length=25, default=TaskTypeChoices.TEXT)
     annotation_method = models.CharField(choices=AnnotationMethodChoices.choices, default=AnnotationMethodChoices.AI_AUTOMATED, max_length=20)
-    created_by = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='created_clusters', help_text="User who created this cluster", null=True)
+    created_by = models.ForeignKey(User, on_delete=models.CASCADE, related_name='created_clusters', help_text="User who created this cluster", null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     status = models.CharField(max_length=50, choices=TaskClusterStatusChoices.choices, default=TaskClusterStatusChoices.PENDING)
@@ -179,7 +179,7 @@ class Task(models.Model):
     cluster = models.ForeignKey(TaskCluster, on_delete=models.CASCADE, related_name='tasks', null=True, blank=False)
 
     assigned_to = models.ForeignKey(
-        CustomUser,
+        User,
         null=True,
         blank=True,
         on_delete=models.SET_NULL,
@@ -188,7 +188,7 @@ class Task(models.Model):
     )
 
     user = models.ForeignKey(
-        CustomUser,
+        User,
         on_delete=models.CASCADE,
         related_name="created_tasks",
         help_text="User who created the task",
@@ -251,7 +251,7 @@ class TaskLabel(models.Model):
     task = models.ForeignKey(Task, on_delete=models.CASCADE)
     label = models.CharField(max_length=255, null=True, blank=True, help_text="The text label if the submission type for the task is text") 
     label_file_url = models.URLField(null=True, blank=True, help_text="The url of the file label if the submission type for the task is a e.g a voice recording, video, image, etc")
-    labeller = models.ForeignKey(CustomUser, on_delete=models.CASCADE)
+    labeller = models.ForeignKey(User, on_delete=models.CASCADE)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     notes = models.TextField(null=True)
@@ -264,7 +264,7 @@ class ManualReviewSession(models.Model):
     """
     This model is used to track the progress of a human reviewer on the tasks in a task cluster
     """
-    labeller = models.ForeignKey(CustomUser, on_delete=models.CASCADE)
+    labeller = models.ForeignKey(User, on_delete=models.CASCADE)
     cluster = models.ForeignKey(TaskCluster, on_delete=models.CASCADE)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -276,7 +276,7 @@ class UserReviewChatHistory(models.Model):
     Stores reviewer feedback, corrections, and confidence scores for AI model improvement.
     Each record represents one interaction in the review process.
     """
-    reviewer = models.ForeignKey(CustomUser, on_delete=models.CASCADE, null=True)
+    reviewer = models.ForeignKey(User, on_delete=models.CASCADE, null=True)
     ai_output = models.JSONField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

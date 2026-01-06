@@ -1,6 +1,6 @@
 from datetime import timezone
 from django.db import models
-from account.models import CustomUser
+from account.models import User
 from django.db.models import F
 
 class SubscriptionPlan(models.Model):
@@ -30,7 +30,7 @@ class Wallet(models.Model):
     the deduction will take place with a task is created.
     """
 
-    user = models.OneToOneField(CustomUser, on_delete=models.CASCADE)
+    user = models.OneToOneField(User, on_delete=models.CASCADE)
     balance = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
 
     def __str__(self):
@@ -40,7 +40,7 @@ class Wallet(models.Model):
 class UserSubscription(models.Model):
     """model to keep tranction of the subscription plan a user has subscribe to."""
 
-    user = models.OneToOneField(CustomUser, on_delete=models.CASCADE)
+    user = models.OneToOneField(User, on_delete=models.CASCADE)
     plan = models.ForeignKey(SubscriptionPlan, on_delete=models.SET_NULL, null=True)
     requests_used = models.IntegerField(default=0)
     subscribed_at = models.DateTimeField(auto_now_add=True)
@@ -56,7 +56,7 @@ class UserSubscription(models.Model):
 
 
 class UserDataPoints(models.Model):
-    user = models.OneToOneField(CustomUser, on_delete=models.CASCADE)
+    user = models.OneToOneField(User, on_delete=models.CASCADE)
     used_data_points = models.IntegerField(default=0)
     data_points_balance = models.IntegerField(default=0)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -95,7 +95,7 @@ class UserPaymentStatus(models.TextChoices):
 
 
 class UserPaymentHistory(models.Model):
-    user = models.ForeignKey(CustomUser, on_delete=models.CASCADE)
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
     created_at = models.DateTimeField(auto_now_add=True)
     amount = models.DecimalField(max_digits=30, decimal_places=4)
     description = models.CharField(max_length=255)

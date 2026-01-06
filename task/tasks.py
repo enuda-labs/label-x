@@ -2,7 +2,7 @@ import json
 from celery import shared_task
 from celery.utils.log import get_task_logger
 
-from account.models import CustomUser
+from account.models import User
 from datasets.models import CohereDataset
 from task.utils import push_realtime_update
 
@@ -172,7 +172,7 @@ def submit_human_review_history(
 ):
     try:
         task = Task.objects.select_related("user").get(id=int(task_id))
-        reviewer = CustomUser.objects.get(id=reviewer_id)
+        reviewer = User.objects.get(id=reviewer_id)
 
         last_human_review = (
             UserReviewChatHistory.objects.filter(task=task)

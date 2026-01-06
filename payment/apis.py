@@ -18,7 +18,7 @@ import decimal
 from payment.choices import TransactionStatusChoices, TransactionTypeChoices, WithdrawalRequestInitiatedByChoices
 from payment.models import Transaction, WithdrawalRequest
 from payment.serializers import PaystackWithdrawSerializer, TransactionSerializer
-from account.models import CustomUser, MonthlyReviewerEarnings, UserStripeConnectAccount
+from account.models import User, MonthlyReviewerEarnings, UserStripeConnectAccount
 from payment.utils import convert_usd_to_ngn, find_bank_by_code, request_paystack, verify_paystack_origin
 import json
 from django.db.models import F, Sum, Q
@@ -45,8 +45,8 @@ class StripeWebhookListener(generics.GenericAPIView):
         price_id = event_object.get("lines").get("data")[0].get("plan").get("id")
         
         try:
-            customer = CustomUser.objects.get(email=customer_email)
-        except CustomUser.DoesNotExist:
+            customer = User.objects.get(email=customer_email)
+        except User.DoesNotExist:
             customer = None
             logger.warning(f"Customer not found for email: {customer_email} in Stripe webhook at {datetime.now()}")
         except Exception as e:
