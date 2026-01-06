@@ -49,9 +49,11 @@ class ExportClusterToCsvView(generics.GenericAPIView):
         try:
             cluster = TaskCluster.objects.get(id=cluster_id)
         except TaskCluster.DoesNotExist:
+            logger.warning(f"Cluster export attempted for non-existent cluster {cluster_id} by user '{request.user.username}' at {datetime.now()}")
             return ErrorResponse(message="Cluster not found", status=status.HTTP_404_NOT_FOUND)
         
         if cluster.created_by != request.user:
+            logger.warning(f"Unauthorized cluster export attempt for cluster {cluster_id} by user '{request.user.username}' at {datetime.now()}")
             return ErrorResponse(message="You are not authorized to export this data", status=status.HTTP_403_FORBIDDEN)
         
         labels = TaskLabel.objects.filter(task__cluster=cluster)
@@ -526,6 +528,7 @@ class TaskCreateView(generics.CreateAPIView):
             task_type = serializer.validated_data.get("task_type")
             required_dp = calculate_required_data_points(task_type, text_data=serializer.validated_data.get("data"))
             if not required_dp:
+                logger.error(f"Error calculating required data points for task creation by user '{request.user.username}' at {datetime.now()}")
                 return Response({
                     "status": "error",
                     "data": {
@@ -535,6 +538,7 @@ class TaskCreateView(generics.CreateAPIView):
             
             user_data_points, created = UserDataPoints.objects.get_or_create(user=request.user)
             if user_data_points.data_points_balance < required_dp:
+                logger.warning(f"Insufficient data points for task creation by user '{request.user.username}'. Required: {required_dp}, Available: {user_data_points.data_points_balance} at {datetime.now()}")
                 return Response({
                     "status": "error",
                     "data": {
@@ -1316,6 +1320,7 @@ class TaskAnnotationView(generics.GenericAPIView):
             try:
                 task = Task.objects.select_related('cluster').get(id=task_id)
             except Task.DoesNotExist:
+                logger.warning(f"Task annotation attempted for non-existent task {task_id} by user '{request.user.username}' at {datetime.now()}")
                 return Response({
                     'status': 'error',
                     'detail': 'Task not found'

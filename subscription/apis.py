@@ -108,7 +108,11 @@ class SubscribeToPlanView(generics.CreateAPIView):
         serializer.is_valid(raise_exception=True)
         plan = serializer.validated_data["plan"]
         user = request.user
-        wallet = Wallet.objects.get(user=user)
+        try:
+            wallet = Wallet.objects.get(user=user)
+        except Wallet.DoesNotExist:
+            logger.error(f"Wallet not found for user '{user.username}' during subscription attempt at {datetime.now()}")
+            return Response({"error": "Wallet not found"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
         if wallet.balance < plan.monthly_fee:
             logger.warning(f"User '{user.username}' attempted subscription with insufficient balance. Required: {plan.monthly_fee}, Available: {wallet.balance} at {datetime.now()}")
@@ -175,10 +179,15 @@ class InitializeStripeSubscription(generics.GenericAPIView):
             )
             logger.info(f"User '{request.user.username}' initialized Stripe subscription for plan '{subscription_plan.name}' at {datetime.now()}")
             return SuccessResponse(data={"payment_url": session.url})
-        except Exception as e:
-            logger.error(f"Stripe subscription initialization failed for user '{request.user.username}': {str(e)} at {datetime.now()}")
+        except stripe.error.StripeError as e:
+            logger.error(f"Stripe API error during subscription initialization for user '{request.user.username}': {str(e)} at {datetime.now()}", exc_info=True)
             return ErrorResponse(
-                message=str(e), status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                message=f"Payment processing error: {str(e)}", status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+        except Exception as e:
+            logger.error(f"Unexpected error during Stripe subscription initialization for user '{request.user.username}': {str(e)} at {datetime.now()}", exc_info=True)
+            return ErrorResponse(
+                message="An error occurred while initializing subscription", status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
 
