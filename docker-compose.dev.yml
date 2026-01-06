@@ -3,7 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    command: sh -c "python manage.py migrate --noinput && python manage.py seed_plans && python manage.py seed_system_settings && python manage.py runserver 0.0.0.0:8003"
+    command: sh -c "python manage.py migrate --noinput && python manage.py seed_plans && python manage.py seed_system_settings && python manage.py seed_domains && python manage.py runserver 0.0.0.0:8003"
     volumes:
       - .:/app
       - /app/__pycache__  # Exclude Python cache
@@ -16,6 +16,7 @@ services:
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
       - REDIS_CACHE_BACKEND=redis://redis:6379/1
+      - REDIS_URL=redis://redis:6379/0
     depends_on:
       - redis
     stdin_open: true
