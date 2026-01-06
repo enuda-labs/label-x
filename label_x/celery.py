@@ -9,9 +9,36 @@ os.environ['FORKED_BY_MULTIPROCESSING'] = '1'
 
 celery_app = Celery('label_x')
 
+# Set broker URL and result backend BEFORE config_from_object
+# This ensures environment variables from docker-compose take precedence
+# Check if we're in Docker (redis service name available) or local development
+broker_url = os.environ.get('CELERY_BROKER_URL')
+result_backend = os.environ.get('CELERY_RESULT_BACKEND')
+
+# If environment variables are set (e.g., from docker-compose), use them
+# Otherwise, use localhost for local development
+if broker_url:
+    celery_app.conf.broker_url = broker_url
+else:
+    # Default to localhost for local development
+    celery_app.conf.broker_url = 'redis://localhost:6379/0'
+
+if result_backend:
+    celery_app.conf.result_backend = result_backend
+else:
+    # Default to localhost for local development
+    celery_app.conf.result_backend = 'redis://localhost:6379/0'
+
 # Using a string here means the worker doesn't have to serialize
 # the configuration object to child processes.
+# Load configuration from Django settings (which reads from environment variables)
 celery_app.config_from_object('django.conf:settings', namespace='CELERY')
+
+# Override again after loading from settings to ensure environment variables win
+if broker_url:
+    celery_app.conf.broker_url = broker_url
+if result_backend:
+    celery_app.conf.result_backend = result_backend
 
 # Load task modules from all registered Django app configs.
 celery_app.autodiscover_tasks()
@@ -27,10 +54,6 @@ celery_app.conf.beat_schedule = {
 @celery_app.task(bind=True)
 def debug_task(self):
     print(f'Request: {self.request!r}')
-
-# Optional Redis configuration - will attempt to connect but fail gracefully
-celery_app.conf.broker_url = os.environ.get('CELERY_BROKER_URL', 'redis://localhost:6379/0')
-celery_app.conf.result_backend = os.environ.get('CELERY_RESULT_BACKEND', 'redis://localhost:6379/0')
 
 # Configure better error handling
 celery_app.conf.broker_connection_retry = True

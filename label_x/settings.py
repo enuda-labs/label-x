@@ -43,10 +43,25 @@ import cloudinary_storage
 
 
 env_file = BASE_DIR / ".env"
+# Preserve docker-compose environment variables before loading .env file
+# This ensures CELERY_BROKER_URL and CELERY_RESULT_BACKEND from docker-compose are not overridden
+preserved_celery_broker = os.environ.get("CELERY_BROKER_URL")
+preserved_celery_result = os.environ.get("CELERY_RESULT_BACKEND")
+preserved_redis_cache = os.environ.get("REDIS_CACHE_BACKEND")
+
 if env_file.exists():
     from dotenv import load_dotenv
-
+    # Load .env file, but environment variables (from docker-compose) will override
+    # override=True means existing env vars take precedence over .env file
     load_dotenv(env_file, override=True)
+    
+    # Restore preserved environment variables if they were set (from docker-compose)
+    if preserved_celery_broker:
+        os.environ["CELERY_BROKER_URL"] = preserved_celery_broker
+    if preserved_celery_result:
+        os.environ["CELERY_RESULT_BACKEND"] = preserved_celery_result
+    if preserved_redis_cache:
+        os.environ["REDIS_CACHE_BACKEND"] = preserved_redis_cache
 else:
     # Log a warning instead of exiting
     print("No .env file detected. Using environment variables.")
@@ -300,8 +315,11 @@ SIMPLE_JWT = {
 # celery settings
 CELERY_TASK_TRACK_STARTED = True
 CELERY_TASK_TIME_LIMIT = 30 * 60
-CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND")
-CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL")
+# IMPORTANT: Read directly from os.environ (not os.getenv) to get actual environment variables
+# This ensures docker-compose environment variables override .env file values
+# os.environ.get() reads from the actual process environment, which docker-compose sets
+CELERY_RESULT_BACKEND = os.environ.get("CELERY_RESULT_BACKEND") or "redis://localhost:6379/0"
+CELERY_BROKER_URL = os.environ.get("CELERY_BROKER_URL") or "redis://localhost:6379/0"
 CELERY_ACCEPT_CONTENT = ["json"]
 CELERY_TASK_SERIALIZER = "json"
 CELERY_RESULT_SERIALIZER = "json"
@@ -405,7 +423,7 @@ CELERY_BEAT_SCHEDULE = {
     # },
 }
 
-BREVO_API_KEY = os.getenv("BREVO_API_KEY")
+BREVO_API_KEY = os.getenv("BREVO_API_KEY", default='')
 BREVO_FROM_EMAIL = os.getenv("BREVO_FROM_EMAIL")
 
 AUTHENTICATION_BACKENDS = [
