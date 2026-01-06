@@ -999,7 +999,13 @@ class RegisterView(APIView):
                 logger.info(f"Organization '{user.username}' has been assign the default free plan {datetime.now()}")
             logger.info(f"New user '{user.username}' registered successfully at {datetime.now()}")
             
-            send_account_verification_email(user)
+            # Try to send verification email, but don't fail registration if it fails
+            try:
+                send_account_verification_email(user)
+            except Exception as e:
+                logger.error(f"Failed to send verification email to {user.email}: {str(e)}")
+                # Continue with registration even if email fails
+            
             return Response(
                 {"status": "success", "user_data": RegisterSerializer(user).data},
                 status=status.HTTP_201_CREATED,
