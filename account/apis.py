@@ -1515,6 +1515,22 @@ class UserDetailView(APIView):
     @cache_response_decorator('user_detail', cache_timeout=60 * 15, per_user=True)
     def get(self, request):      
         user = request.user
+        
+        # Check if user exists and is active
+        if not user or not user.is_authenticated:
+            logger.warning(f"Unauthenticated user attempted to access user details at {datetime.now()}")
+            return ErrorResponse(
+                message="Authentication required",
+                status=status.HTTP_401_UNAUTHORIZED
+            )
+        
+        if not user.is_active:
+            logger.warning(f"Inactive user '{user.username}' attempted to access user details at {datetime.now()}")
+            return ErrorResponse(
+                message="User account is inactive",
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
         serializer = UserDetailSerializer(user)
         return Response(
             {"status": "success", "user": serializer.data}, status=status.HTTP_200_OK

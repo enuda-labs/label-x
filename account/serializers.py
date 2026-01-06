@@ -485,6 +485,9 @@ class UserProjectSerializer(serializers.ModelSerializer):
 
 
 class UserDetailSerializer(serializers.ModelSerializer):
+    # Include is_admin for backward compatibility (maps to is_staff)
+    is_admin = serializers.SerializerMethodField()
+    
     class Meta:
         model = User
         fields = [
@@ -498,6 +501,10 @@ class UserDetailSerializer(serializers.ModelSerializer):
             "date_joined",
             "last_activity",
         ]
+    
+    def get_is_admin(self, obj):
+        """Return is_staff as is_admin for backward compatibility"""
+        return obj.is_staff
 
 
 class SimpleUserSerializer(serializers.ModelSerializer):
