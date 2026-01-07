@@ -1,7 +1,7 @@
 import random
 import logging
 from django.core.cache import cache
-import requests
+from django.core.mail import send_mail
 from django.conf import settings
 from django.template.loader import render_to_string
 from account.models import User
@@ -12,43 +12,24 @@ class EmailService():
     def __init__(self, email:str, name:str=None) -> None:
         self.email=email
         self.name=name
-        
-    def _send_brevo_email(self, subject, html_content):
-        response = requests.post(
-            "https://api.brevo.com/v3/smtp/email",
-            headers={
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {settings.BREVO_API_KEY}", # this is the api key for the brevo api
-                "accept": "application/json",
-                "api-key": settings.BREVO_API_KEY
-            },
-            json={
-                "to": [{"email": self.email}],
-                "subject": subject,
-                "htmlContent": html_content,
-                "sender": {
-                    "name": "Labelx",
-                    # "email": "support@erdvsion.dev"
-                    "email": settings.BREVO_FROM_EMAIL
-                }
-            }
-        )
-        try:
-            response.raise_for_status()
-            return response.json()
-        except requests.exceptions.HTTPError as e:
-            logger.error(f"Brevo API HTTP error sending email to '{self.email}': {e.response.status_code} - {e.response.text if hasattr(e, 'response') else str(e)}", exc_info=True)
-            return None
-        except Exception as e:
-            logger.error(f"Brevo API error sending email to '{self.email}': {str(e)}", exc_info=True)
-            return None
-    
-    def send_raw_email(self, subject, message):
-        pass
     
     def send_template_email(self, subject, template_path:str, context:dict):
+        """Send email using Django's send_mail with django-anymail (Resend backend)"""
         html_message = render_to_string(template_path, context)
-        return self._send_brevo_email(subject, html_message)
+        try:
+            send_mail(
+                subject=subject,
+                message="",  # Plain text version (empty, using HTML only)
+                from_email=settings.DEFAULT_FROM_EMAIL,
+                recipient_list=[self.email],
+                html_message=html_message,
+                fail_silently=False,
+            )
+            logger.info(f"Email sent successfully to '{self.email}' with subject '{subject}'")
+            return True
+        except Exception as e:
+            logger.error(f"Error sending email to '{self.email}': {str(e)}", exc_info=True)
+            return False
 
 def generate_code(length=6):
     return "".join([str(random.randint(0, 9)) for _ in range(length)])

@@ -77,6 +77,7 @@ INSTALLED_APPS = [
     "datasets",
     "payment",
     "reviewer",
+    "anymail",
 ]
 
 MIDDLEWARE = [
@@ -446,7 +447,6 @@ EXCHANGE_RATE_API_KEY = config("EXCHANGE_RATE_API_KEY", default="")
 
 CELERY_TIMEZONE = 'UTC'
 
-
 #runs at 7 am, 12pm and 4pm starting from the 28th of the month to the 10th of the next month
 #the reason i start at 28th is because of February which has only 28 days
 #the reason i end at 10th is for payment processing to continue till the next month, giving the system enough time to retry failed payments
@@ -469,8 +469,15 @@ CELERY_BEAT_SCHEDULE = {
     # },
 }
 
-BREVO_API_KEY = config("BREVO_API_KEY", default="")
-BREVO_FROM_EMAIL = config("BREVO_FROM_EMAIL", default="")
+# Email configuration using django-anymail with Resend
+ANYMAIL = {
+    "RESEND_API_KEY": config("RESEND_API_KEY", default=""),
+}
+
+EMAIL_BACKEND = "anymail.backends.resend.EmailBackend"
+DEFAULT_FROM_EMAIL = config("DEFAULT_FROM_EMAIL", default="noreply@labelx.com")
+SERVER_EMAIL = DEFAULT_FROM_EMAIL
+
 
 AUTHENTICATION_BACKENDS = [
     'account.backends.EmailOrUsernameBackend',
