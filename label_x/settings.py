@@ -48,7 +48,7 @@ DEBUG = config("DEBUG_VALUE", default="true", cast=bool)
 
 ALLOWED_HOSTS = config("ALLOWED_HOSTS_VALUE", default="127.0.0.1", cast=Csv())
 CSRF_TRUSTED_ORIGINS = config("CSRF_TRUSTED_ORIGINS_VALUE", default="http://127.0.0.1", cast=Csv())
-
+IS_PRODUCTION = config("IS_PRODUCTION", default=False, cast=bool)
 
 # Application definition
 
@@ -73,6 +73,7 @@ INSTALLED_APPS = [
     "subscription",
     'cloudinary',
     'django_celery_beat',
+    'django_celery_results',
     'cloudinary_storage',
     "datasets",
     "payment",
@@ -364,11 +365,18 @@ CELERY_TASK_TRACK_STARTED = True
 CELERY_TASK_TIME_LIMIT = 30 * 60
 # python-decouple automatically prioritizes environment variables over .env file
 # This ensures docker-compose environment variables override .env file values
-CELERY_RESULT_BACKEND = config("CELERY_RESULT_BACKEND", default="redis://localhost:6379/0")
+# Celery configuration
+# Use django-db for result backend in both development and production
+# This allows querying task results via Django ORM and provides persistent storage
 CELERY_BROKER_URL = config("CELERY_BROKER_URL", default="redis://localhost:6379/0")
+CELERY_RESULT_BACKEND = 'django-db'
+CELERY_CACHE_BACKEND = 'django-cache'
+
 CELERY_ACCEPT_CONTENT = ["json"]
 CELERY_TASK_SERIALIZER = "json"
 CELERY_RESULT_SERIALIZER = "json"
+# Enable extended result information (task name, args, kwargs, worker, etc.)
+CELERY_RESULT_EXTENDED = True
 
 CORS_ALLOW_ALL_ORIGINS = True
 
@@ -443,9 +451,9 @@ PAYSTACK_SECRET_KEY = config("PAYSTACK_SECRET_KEY", default="")
 PAYSTACK_PUBLIC_KEY = config("PAYSTACK_PUBLIC_KEY", default="")
 EXCHANGE_RATE_API_KEY = config("EXCHANGE_RATE_API_KEY", default="")
 
-
-
 CELERY_TIMEZONE = 'UTC'
+# Django Celery Beat
+CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'
 
 #runs at 7 am, 12pm and 4pm starting from the 28th of the month to the 10th of the next month
 #the reason i start at 28th is because of February which has only 28 days
