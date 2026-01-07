@@ -13,23 +13,55 @@ class EmailService():
         self.email=email
         self.name=name
     
-    def send_template_email(self, subject, template_path:str, context:dict):
-        """Send email using Django's send_mail with django-anymail (Resend backend)"""
+    def send_template_email(self, subject, template_path:str, context:dict, max_retries=3):
+        """Send email using Django's send_mail with django-anymail (Resend backend)
+        
+        Args:
+            subject: Email subject
+            template_path: Path to email template
+            context: Template context variables
+            max_retries: Maximum number of retry attempts for transient errors
+        """
         html_message = render_to_string(template_path, context)
-        try:
-            send_mail(
-                subject=subject,
-                message="",  # Plain text version (empty, using HTML only)
-                from_email=settings.DEFAULT_FROM_EMAIL,
-                recipient_list=[self.email],
-                html_message=html_message,
-                fail_silently=False,
-            )
-            logger.info(f"Email sent successfully to '{self.email}' with subject '{subject}'")
-            return True
-        except Exception as e:
-            logger.error(f"Error sending email to '{self.email}': {str(e)}", exc_info=True)
-            return False
+        import time
+        
+        for attempt in range(max_retries):
+            try:
+                send_mail(
+                    subject=subject,
+                    message="",  # Plain text version (empty, using HTML only)
+                    from_email=settings.DEFAULT_FROM_EMAIL,
+                    recipient_list=[self.email],
+                    html_message=html_message,
+                    fail_silently=False,
+                )
+                logger.info(f"Email sent successfully to '{self.email}' with subject '{subject}'")
+                return True
+            except Exception as e:
+                # Check if it's a retryable error (network/DNS issues)
+                error_str = str(e).lower()
+                is_retryable = any(keyword in error_str for keyword in [
+                    'connection', 'dns', 'name resolution', 'network', 
+                    'timeout', 'temporary failure', 'no address associated'
+                ])
+                
+                # Retry on transient network/DNS errors
+                if is_retryable and attempt < max_retries - 1:
+                    wait_time = 2 ** attempt  # Exponential backoff: 1s, 2s, 4s
+                    logger.warning(
+                        f"Transient error sending email to '{self.email}' (attempt {attempt + 1}/{max_retries}): {str(e)}. Retrying in {wait_time}s..."
+                    )
+                    time.sleep(wait_time)
+                    continue
+                else:
+                    # Non-retryable errors or final retry failed
+                    logger.error(
+                        f"Error sending email to '{self.email}': {str(e)}",
+                        exc_info=True
+                    )
+                    return False
+        
+        return False
 
 def generate_code(length=6):
     return "".join([str(random.randint(0, 9)) for _ in range(length)])
