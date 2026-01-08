@@ -50,8 +50,8 @@ REDIS_CACHE_BACKEND=redis://localhost:6379/1
 PAYSTACK_SECRET_KEY=paystack_example_secret
 PAYSTACK_PUBLIC_KEY=paystack_example_public
 EXCHANGE_RATE_API_KEY=exchange_rate_example_key
-BREVO_API_KEY=brevo_example_api_key
-BREVO_FROM_EMAIL=example@email.com
+RESEND_API_KEY=re_example_api_key
+RESEND_FROM_EMAIL=example@email.com
 ```
 
 **Note:** 

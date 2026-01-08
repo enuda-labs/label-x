@@ -11,9 +11,10 @@ services:
       - PYTHONUNBUFFERED=1
       - DJANGO_SETTINGS_MODULE=label_x.settings
       - DEBUG_VALUE=false
+      - IS_PRODUCTION=true
       # DATABASE_URL should be set in .env file pointing to Digital Ocean managed database
       - CELERY_BROKER_URL=redis://label-x-redis:6379/0
-      - CELERY_RESULT_BACKEND=redis://label-x-redis:6379/0
+      # CELERY_RESULT_BACKEND is set to 'django-db' in settings.py for django-celery-results
       - REDIS_CACHE_BACKEND=redis://label-x-redis:6379/1
     restart: unless-stopped
     depends_on:
@@ -56,8 +57,9 @@ services:
       - PYTHONUNBUFFERED=1
       - DJANGO_SETTINGS_MODULE=label_x.settings
       - DEBUG_VALUE=false
+      - IS_PRODUCTION=true
       - CELERY_BROKER_URL=redis://label-x-redis:6379/0
-      - CELERY_RESULT_BACKEND=redis://label-x-redis:6379/0
+      # CELERY_RESULT_BACKEND is set to 'django-db' in settings.py for django-celery-results
       - REDIS_CACHE_BACKEND=redis://label-x-redis:6379/1
     restart: unless-stopped
     depends_on:
@@ -83,8 +85,9 @@ services:
       - PYTHONUNBUFFERED=1
       - DJANGO_SETTINGS_MODULE=label_x.settings
       - DEBUG_VALUE=false
+      - IS_PRODUCTION=true
       - CELERY_BROKER_URL=redis://label-x-redis:6379/0
-      - CELERY_RESULT_BACKEND=redis://label-x-redis:6379/0
+      # CELERY_RESULT_BACKEND is set to 'django-db' in settings.py for django-celery-results
       - REDIS_CACHE_BACKEND=redis://label-x-redis:6379/1
     restart: unless-stopped
     depends_on:

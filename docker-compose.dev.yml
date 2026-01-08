@@ -14,7 +14,7 @@ services:
     environment:
       - PYTHONUNBUFFERED=1
       - CELERY_BROKER_URL=redis://redis:6379/0
-      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      # CELERY_RESULT_BACKEND is set to 'django-db' in settings.py for django-celery-results
       - REDIS_CACHE_BACKEND=redis://redis:6379/1
       - REDIS_URL=redis://redis:6379/0
     depends_on:
@@ -44,7 +44,7 @@ services:
     environment:
       - PYTHONUNBUFFERED=1
       - CELERY_BROKER_URL=redis://redis:6379/0
-      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      # CELERY_RESULT_BACKEND is set to 'django-db' in settings.py for django-celery-results
       - REDIS_CACHE_BACKEND=redis://redis:6379/1
     # Load .env but environment variables above will override .env values
     env_file:
@@ -65,7 +65,7 @@ services:
     environment:
       - PYTHONUNBUFFERED=1
       - CELERY_BROKER_URL=redis://redis:6379/0
-      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      # CELERY_RESULT_BACKEND is set to 'django-db' in settings.py for django-celery-results
       - REDIS_CACHE_BACKEND=redis://redis:6379/1
     # Note: env_file is loaded first, then environment overrides it
     # So CELERY_BROKER_URL from environment will override .env file
