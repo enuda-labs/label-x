@@ -73,6 +73,9 @@ class TaskCluster(models.Model):
             self.status = TaskClusterStatusChoices.PENDING
             
         self.save()
+    
+    def __str__(self):
+        return f"{self.name} ({self.task_type}) - {self.project.name}"
         
     class Meta:
         ordering = ["-created_at"]
@@ -92,6 +95,9 @@ class MultiChoiceOption(models.Model):
     """
     cluster = models.ForeignKey(TaskCluster, on_delete=models.CASCADE, related_name="choices")
     option_text = models.CharField(max_length=100)
+    
+    def __str__(self):
+        return f"{self.option_text} ({self.cluster.name})"
     
 
 class Task(models.Model):
@@ -269,6 +275,12 @@ class ManualReviewSession(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     status = models.CharField(max_length=50, choices=ManualReviewSessionStatusChoices.choices, default=ManualReviewSessionStatusChoices.STARTED)
+    
+    def __str__(self):
+        return f"{self.labeller.username} - {self.cluster.name} ({self.status})"
+    
+    class Meta:
+        ordering = ['-created_at']
 class UserReviewChatHistory(models.Model):
     """
     Tracks the conversation history between human reviewers and AI models during task review.
@@ -286,3 +298,9 @@ class UserReviewChatHistory(models.Model):
     human_classification = models.CharField(
         max_length=25, choices=TaskClassificationChoices.choices
     )
+    
+    def __str__(self):
+        return f"{self.reviewer.username} - {self.task.serial_no} ({self.human_classification})"
+    
+    class Meta:
+        ordering = ['-created_at']
