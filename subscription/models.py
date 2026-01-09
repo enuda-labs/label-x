@@ -1,5 +1,5 @@
-from datetime import timezone
 from django.db import models
+from django.utils import timezone
 from account.models import User
 from django.db.models import F
 
@@ -17,9 +17,6 @@ class SubscriptionPlan(models.Model):
     included_requests = models.IntegerField()  # number of included API calls
     cost_per_extra_request = models.DecimalField(max_digits=6, decimal_places=4)
     stripe_monthly_plan_id = models.CharField(max_length=100, null=True, blank=True)
-
-    def __str__(self):
-        return self.name
 
     def __str__(self):
         return f"{self.name} (${self.monthly_fee})"
@@ -86,6 +83,12 @@ class WalletTransaction(models.Model):
     reference = models.CharField(max_length=255)
     status = models.CharField(max_length=50, default="pending")  # success, failed
     created_at = models.DateTimeField(auto_now_add=True)
+    
+    def __str__(self):
+        return f"{self.wallet.user.username} - ${self.amount} ({self.status})"
+    
+    class Meta:
+        ordering = ['-created_at']
 
 
 class UserPaymentStatus(models.TextChoices):

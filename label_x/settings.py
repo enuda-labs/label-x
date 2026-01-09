@@ -393,7 +393,8 @@ sentry_sdk.init(
 
 
 # CHANNEL_LAYERS = {"default": {"BACKEND": "channels.layers.InMemoryChannelLayer"}}
-REDIS_URL = config("CELERY_RESULT_BACKEND", default="redis://localhost:6379/0")
+# REDIS_URL for WebSocket channel layers (separate from Celery result backend)
+REDIS_URL = config("REDIS_URL", default="redis://redis:6379/0")
 CHANNEL_LAYERS = {
     "default": {
         "BACKEND": "channels_redis.core.RedisChannelLayer",
