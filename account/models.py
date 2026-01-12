@@ -2,7 +2,7 @@ import decimal
 from email import message
 from io import BytesIO
 import uuid
-from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
+from django.contrib.auth.models import AbstractUser
 from django.db import models
 from django.db.models import Avg
 from django.db.models import F
@@ -21,7 +21,7 @@ class Project(models.Model):
     """Group that reviewers belong to"""
     name = models.CharField(max_length=100, unique=True)
     description = models.TextField(null=True, blank=True)
-    created_by = models.ForeignKey('CustomUser', related_name='tasks', blank=True, on_delete=models.CASCADE, null=True)
+    created_by = models.ForeignKey('User', related_name='tasks', blank=True, on_delete=models.CASCADE, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     status = models.CharField(max_length=20, choices=ProjectStatusChoices.choices, default=ProjectStatusChoices.PENDING)
@@ -52,51 +52,14 @@ class ProjectLog(models.Model):
         return self.message
 
 
-class CustomUserManager(BaseUserManager):
-    """Manager for custom user model"""
-    def create_user(self, username, email, password=None, **extra_fields):
-        if not username:
-            raise ValueError('Username is required')
-        if not email:
-            raise ValueError('Email is required')
-        
-        email = self.normalize_email(email)
-        user = self.model(username=username, email=email, **extra_fields)
-        user.set_password(password)
-        user.save(using=self._db)
-        return user
-
-    def create_superuser(self, username, email, password=None):
-        user = self.create_user(username, email, password)
-        user.is_staff = True
-        user.is_admin = True
-        user.is_superuser = True
-        user.save(using=self._db)
-        return user
-    
-
-
-class CustomUser(AbstractBaseUser, PermissionsMixin):
-    """Custom User model that uses username and email for authentication"""
-    username = models.CharField(max_length=255, unique=True)
-    pid = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
-    email = models.EmailField(unique=True)
-    password = models.CharField(max_length=255)
-    is_active = models.BooleanField(default=True)
+class User(AbstractUser):
+    """User model extending Django's AbstractUser"""
+    customer_id = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
     is_reviewer = models.BooleanField(default=False, help_text="Designates whether this user can review tasks")
-    is_admin = models.BooleanField(default=False)
-    date_joined = models.DateTimeField(auto_now_add=True)
     last_activity = models.DateTimeField(auto_now=True, help_text="Last time the user was active")
-    is_staff = models.BooleanField(default=False)
-    is_superuser = models.BooleanField(default=False) 
     project = models.ForeignKey(Project, on_delete=models.SET_NULL, related_name='members', null=True, blank=True)
     domains = models.ManyToManyField(LabelerDomain, related_name='labelers', blank=True, help_text="The domains of expertise that the labeler is allowed to label")
     is_email_verified = models.BooleanField(default=False, help_text="Indicates if the email of the user has been verified")
-    
-    objects = CustomUserManager()
-
-    USERNAME_FIELD = 'username'
-    REQUIRED_FIELDS = ['email']
 
     def __str__(self):
         return self.username
@@ -104,7 +67,7 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
 
 class UserBankAccount(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    user = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='bank_accounts')
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='bank_accounts')
     account_number = models.CharField(max_length=255)
     bank_code = models.CharField(max_length=255)
     bank_name = models.CharField(max_length=255)
@@ -118,7 +81,7 @@ class UserBankAccount(models.Model):
         return f"{self.user.username}'s bank account - {self.bank_name} account number {self.account_number}"
 
 class UserStripeConnectAccount(models.Model):
-    user = models.OneToOneField(CustomUser, on_delete=models.CASCADE, related_name='stripe_connect_account')
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='stripe_connect_account')
     account_id = models.CharField(max_length=255)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -134,7 +97,7 @@ class UserStripeConnectAccount(models.Model):
         ]
 
 class MonthlyReviewerEarnings(models.Model):
-    reviewer = models.ForeignKey(CustomUser, on_delete=models.CASCADE)
+    reviewer = models.ForeignKey(User, on_delete=models.CASCADE)
     year = models.IntegerField() #a year e.g 2025
     month = models.IntegerField() #a month e.g 1 for January and 12 for December
     created_at = models.DateTimeField(auto_now_add=True)
@@ -166,7 +129,7 @@ class ApiKeyTypeChoices(models.TextChoices):
 
 class UserAPIKey(AbstractAPIKey):
     user = models.ForeignKey(
-        CustomUser,
+        User,
         on_delete=models.CASCADE,
         related_name="api_keys"
     )
@@ -180,7 +143,7 @@ class UserAPIKey(AbstractAPIKey):
     
     
 class OTPVerification(models.Model):
-    user= models.OneToOneField(CustomUser, on_delete=models.CASCADE, related_name='otp')
+    user= models.OneToOneField(User, on_delete=models.CASCADE, related_name='otp')
     secret_key = models.CharField(max_length=100, blank=True)
     is_verified = models.BooleanField(default=False)
     # qr_code = models.ImageField(upload_to="qr_codes/", blank=True, null=True)    
@@ -201,6 +164,9 @@ class OTPVerification(models.Model):
     
     def generate_qr_code(self):
         """Generate qr code for otp verification"""
+        import base64
+        from django.conf import settings
+        
         totp = pyotp.totp.TOTP(self.secret_key).provisioning_uri(
             name=self.user.email,
             issuer_name="Label x"
@@ -221,21 +187,41 @@ class OTPVerification(models.Model):
         img.save(buffer, format="PNG")
         buffer.seek(0)
         
-        result = cloudinary.uploader.upload(
-            buffer,
-            folder="qr_codes",
-            public_id=f"{self.user.id}_qr_code",
-            overwrite=True,
-            resource_type="image"
+        # Try to upload to Cloudinary if properly configured, otherwise use data URL
+        cloudinary_configured = (
+            settings.CLOUDINARY_CLOUD_NAME and 
+            settings.CLOUDINARY_API_KEY and 
+            settings.CLOUDINARY_API_SECRET and
+            'example' not in settings.CLOUDINARY_CLOUD_NAME.lower()  # Skip if using placeholder
         )
         
+        if cloudinary_configured:
+            try:
+                # Use a short timeout to fail fast if Cloudinary is unreachable
+                result = cloudinary.uploader.upload(
+                    buffer,
+                    folder="qr_codes",
+                    public_id=f"{self.user.id}_qr_code",
+                    overwrite=True,
+                    resource_type="image",
+                    timeout=5  # 5 second timeout to fail fast
+                )
+                self.qr_code = result["secure_url"]
+                self.cloudinary_data = result
+                return
+            except Exception as e:
+                # If Cloudinary upload fails, fall back to data URL immediately
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.warning(f"Cloudinary upload failed for 2FA QR code: {e}. Falling back to data URL.")
+                buffer.seek(0)  # Reset buffer position
         
-        # self.qr_code.save(
-        #     f"{self.user.id}_qr_code.png",
-        #     ContentFile(buffer.read()),
-        #     save=False)
-        self.qr_code = result["secure_url"]
-        self.cloudinary_data = result
+        # Fallback: Generate data URL
+        buffer.seek(0)
+        img_data = buffer.read()
+        img_base64 = base64.b64encode(img_data).decode('utf-8')
+        self.qr_code = f"data:image/png;base64,{img_base64}"
+        self.cloudinary_data = None
         
     def verify_otp(self, otp_code):
         totp = pyotp.TOTP(self.secret_key)

@@ -6,7 +6,7 @@ from rest_framework.test import APITransactionTestCase
 from rest_framework import status
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from account.models import CustomUser, Project
+from account.models import User, Project
 from reviewer.models import LabelerDomain
 from task.choices import AnnotationMethodChoices, TaskInputTypeChoices, TaskTypeChoices
 from task.models import Task, TaskCluster
@@ -15,7 +15,7 @@ class RegisterTestCase(APITransactionTestCase):
     def setUp(self):
         self.register_path = reverse("account:register")
         self.login_path = reverse('account:login')
-        CustomUser.objects.create_user(username='dama', email="test@gmail.com", is_email_verified=True)
+        User.objects.create_user(username='dama', email="test@gmail.com", is_email_verified=True)
         self.test_domain = LabelerDomain.objects.create(domain="test")
 
     
@@ -65,14 +65,14 @@ class RegisterTestCase(APITransactionTestCase):
         )
 
     def tearDown(self):
-        CustomUser.objects.all().delete()
+        User.objects.all().delete()
         
 
 class LoginTestCase(APITransactionTestCase):
     def setUp(self):
         self.login_path = reverse('account:login')
         # Create test user for login tests
-        self.test_user = CustomUser.objects.create_user(
+        self.test_user = User.objects.create_user(
             username='testlogin', 
             email="testlogin@gmail.com",
             password='123456789ASas@',
@@ -134,7 +134,7 @@ class LoginTestCase(APITransactionTestCase):
 class RefreshTokenTestCase(APITransactionTestCase):
     def setUp(self):
         self.refresh_path = reverse("account:token_refresh")  # Ensure this matches your URLs
-        self.user = CustomUser.objects.create_user(
+        self.user = User.objects.create_user(
             username="testuser",
             email="testuser@gmail.com",
             password="TestPassword123!",
@@ -190,12 +190,12 @@ class RefreshTokenTestCase(APITransactionTestCase):
         self.assertEqual(response.data["status"], "error")
 
     def tearDown(self):
-        CustomUser.objects.all().delete()
+        User.objects.all().delete()
 
 class ChangePasswordTestCase(APITransactionTestCase):
     def setUp(self):
         # Create test user
-        self.user = CustomUser.objects.create_user(
+        self.user = User.objects.create_user(
             username='testuser', 
             email='test@example.com', 
             password='Testp@ssword123',
@@ -350,12 +350,12 @@ class ChangePasswordTestCase(APITransactionTestCase):
         self.assertTrue(self.user.check_password("Testp@ssword123"))
 
     def tearDown(self):
-        CustomUser.objects.all().delete()
+        User.objects.all().delete()
 
 class UpdateUsernameTestCase(APITransactionTestCase):
     def setUp(self):
         # Create test user
-        self.user = CustomUser.objects.create_user(
+        self.user = User.objects.create_user(
             username='testuser', 
             email='test@example.com', 
             password='Testp@ssword123',
@@ -363,7 +363,7 @@ class UpdateUsernameTestCase(APITransactionTestCase):
         )
         
         # Create another user to test username uniqueness
-        self.other_user = CustomUser.objects.create_user(
+        self.other_user = User.objects.create_user(
             username='existinguser',
             email='other@example.com',
             password='Testp@ssword123',
@@ -470,12 +470,12 @@ class UpdateUsernameTestCase(APITransactionTestCase):
         self.assertEqual(self.user.username, "testuser")
 
     def tearDown(self):
-        CustomUser.objects.all().delete()
+        User.objects.all().delete()
 
 class ListProjectsTestCase(APITransactionTestCase):
     def setUp(self):
         # Create users with different roles
-        self.admin_user = CustomUser.objects.create_user(
+        self.admin_user = User.objects.create_user(
             username='admin',
             email='admin@example.com',
             password='Testp@ssword123',
@@ -484,7 +484,7 @@ class ListProjectsTestCase(APITransactionTestCase):
             is_email_verified=True
         )
         
-        self.reviewer_user = CustomUser.objects.create_user(
+        self.reviewer_user = User.objects.create_user(
             username='reviewer',
             email='reviewer@example.com',
             password='Testp@ssword123',
@@ -492,7 +492,7 @@ class ListProjectsTestCase(APITransactionTestCase):
             is_email_verified=True
         )
         
-        self.organization_user = CustomUser.objects.create_user(
+        self.organization_user = User.objects.create_user(
             username='org',
             email='org@example.com',
             password='Testp@ssword123',
@@ -604,4 +604,4 @@ class ListProjectsTestCase(APITransactionTestCase):
 
     def tearDown(self):
         Project.objects.all().delete()
-        CustomUser.objects.all().delete()
+        User.objects.all().delete()

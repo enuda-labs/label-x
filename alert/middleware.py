@@ -5,14 +5,14 @@ from django.contrib.auth.models import AnonymousUser
 from urllib.parse import parse_qs
 from rest_framework_simplejwt.tokens import UntypedToken
 from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
-from account.models import CustomUser, UserAPIKey
+from account.models import User, UserAPIKey
 
 
 @database_sync_to_async
 def get_user(user_id):
     try:
-        return CustomUser.objects.get(id=user_id)
-    except CustomUser.DoesNotExist:
+        return User.objects.get(id=user_id)
+    except User.DoesNotExist:
         return AnonymousUser()
 
 @database_sync_to_async

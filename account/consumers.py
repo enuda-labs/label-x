@@ -9,7 +9,7 @@ from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
 from django.contrib.auth import get_user_model
 from urllib.parse import parse_qs
 
-from .models import CustomUser
+from .models import User
 
 # Set up logger
 logger = logging.getLogger(__name__)
@@ -105,7 +105,7 @@ class UserActivityConsumer(AsyncWebsocketConsumer):
     def update_user_status(self, is_online):
         """Update user's online status"""
         try:
-            CustomUser.objects.filter(id=self.user_id).update(
+            User.objects.filter(id=self.user_id).update(
                 is_online=is_online,
                 last_activity=timezone.now()
             )
@@ -118,7 +118,7 @@ class UserActivityConsumer(AsyncWebsocketConsumer):
     def update_user_activity(self):
         """Update user's last activity timestamp"""
         try:
-            CustomUser.objects.filter(id=self.user_id).update(
+            User.objects.filter(id=self.user_id).update(
                 last_activity=timezone.now()
             )
             return True

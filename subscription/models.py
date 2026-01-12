@@ -1,6 +1,6 @@
-from datetime import timezone
 from django.db import models
-from account.models import CustomUser
+from django.utils import timezone
+from account.models import User
 from django.db.models import F
 
 class SubscriptionPlan(models.Model):
@@ -17,9 +17,11 @@ class SubscriptionPlan(models.Model):
     included_requests = models.IntegerField()  # number of included API calls
     cost_per_extra_request = models.DecimalField(max_digits=6, decimal_places=4)
     stripe_monthly_plan_id = models.CharField(max_length=100, null=True, blank=True)
-
-    def __str__(self):
-        return self.name
+    features = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="List of features for this plan (e.g., ['Up to 10,000 data points', '48-hour turnaround time'])"
+    )
 
     def __str__(self):
         return f"{self.name} (${self.monthly_fee})"
@@ -30,7 +32,7 @@ class Wallet(models.Model):
     the deduction will take place with a task is created.
     """
 
-    user = models.OneToOneField(CustomUser, on_delete=models.CASCADE)
+    user = models.OneToOneField(User, on_delete=models.CASCADE)
     balance = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
 
     def __str__(self):
@@ -40,7 +42,7 @@ class Wallet(models.Model):
 class UserSubscription(models.Model):
     """model to keep tranction of the subscription plan a user has subscribe to."""
 
-    user = models.OneToOneField(CustomUser, on_delete=models.CASCADE)
+    user = models.OneToOneField(User, on_delete=models.CASCADE)
     plan = models.ForeignKey(SubscriptionPlan, on_delete=models.SET_NULL, null=True)
     requests_used = models.IntegerField(default=0)
     subscribed_at = models.DateTimeField(auto_now_add=True)
@@ -56,7 +58,7 @@ class UserSubscription(models.Model):
 
 
 class UserDataPoints(models.Model):
-    user = models.OneToOneField(CustomUser, on_delete=models.CASCADE)
+    user = models.OneToOneField(User, on_delete=models.CASCADE)
     used_data_points = models.IntegerField(default=0)
     data_points_balance = models.IntegerField(default=0)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -86,6 +88,12 @@ class WalletTransaction(models.Model):
     reference = models.CharField(max_length=255)
     status = models.CharField(max_length=50, default="pending")  # success, failed
     created_at = models.DateTimeField(auto_now_add=True)
+    
+    def __str__(self):
+        return f"{self.wallet.user.username} - ${self.amount} ({self.status})"
+    
+    class Meta:
+        ordering = ['-created_at']
 
 
 class UserPaymentStatus(models.TextChoices):
@@ -95,7 +103,7 @@ class UserPaymentStatus(models.TextChoices):
 
 
 class UserPaymentHistory(models.Model):
-    user = models.ForeignKey(CustomUser, on_delete=models.CASCADE)
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
     created_at = models.DateTimeField(auto_now_add=True)
     amount = models.DecimalField(max_digits=30, decimal_places=4)
     description = models.CharField(max_length=255)

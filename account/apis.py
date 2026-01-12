@@ -7,7 +7,7 @@ from drf_spectacular.utils import extend_schema
 from rest_framework import generics
 from rest_framework.response import Response
 from rest_framework import status
-from rest_framework.exceptions import AuthenticationFailed
+from rest_framework.exceptions import AuthenticationFailed, ValidationError
 from rest_framework.views import APIView
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -63,7 +63,7 @@ from .utils import (
     IsAdminUser,
     IsSuperAdmin,
 )
-from .models import CustomUser,  OTPVerification, Project, UserBankAccount, UserStripeConnectAccount
+from .models import User,  OTPVerification, Project, UserBankAccount, UserStripeConnectAccount
 from .choices import StripeConnectAccountStatusChoices, BankPlatformChoices
 from django.contrib.auth import logout
 # Set up logger
@@ -284,8 +284,8 @@ class SetUserActiveStatusView(generics.GenericAPIView):
         user_id = serializer.validated_data['user_id']
         
         try:
-            user= CustomUser.objects.get(id=user_id)
-        except CustomUser.DoesNotExist:
+            user= User.objects.get(id=user_id)
+        except User.DoesNotExist:
             return ErrorResponse(message="User not found", status=status.HTTP_404_NOT_FOUND)
         
         user.is_active = serializer.validated_data['is_active']
@@ -306,11 +306,11 @@ class DeactivateUserView(generics.GenericAPIView):
     )
     def post(self, request, *args, **kwargs):
         try:
-            user = CustomUser.objects.get(id=kwargs.get('user_id'))
+            user = User.objects.get(id=kwargs.get('user_id'))
             user.is_active = False
             user.save()
             return SuccessResponse(message="User deactivated")       
-        except CustomUser.DoesNotExist:
+        except User.DoesNotExist:
             return ErrorResponse(message="User not found", status=status.HTTP_404_NOT_FOUND)
 
 
@@ -318,7 +318,7 @@ class GetReviewersListView(generics.ListAPIView):
     permission_classes = [IsAuthenticated, IsAdminUser]
     serializer_class = ListReviewersWithClustersSerializer
     def get_queryset(self):
-        return CustomUser.objects.prefetch_related("assigned_clusters").filter(is_reviewer=True)
+        return User.objects.prefetch_related("assigned_clusters").filter(is_reviewer=True)
     
     @extend_schema(
         summary="Get a list of reviewers on the platform and task clusters they are assigned to"
@@ -494,7 +494,7 @@ class ProjectDetailView(generics.RetrieveAPIView):
     permission_classes = [IsAuthenticated | HasUserAPIKey]
     
     def get_queryset(self):
-        if self.request.user.is_admin or self.request.user.is_staff:
+        if self.request.user.is_staff:
             return Project.objects.all()
         else:
             return Project.objects.filter(created_by=self.request.user)
@@ -540,7 +540,7 @@ class EditProjectView(generics.UpdateAPIView):
     permission_classes = [IsAuthenticated | HasUserAPIKey]
     lookup_field = 'id'
     def get_queryset(self):
-        if self.request.user.is_admin or self.request.user.is_staff:
+        if self.request.user.is_staff:
             return Project.objects.all()
         else:
             return Project.objects.filter(created_by=self.request.user)
@@ -578,10 +578,13 @@ class LogoutView(generics.GenericAPIView):
             token.blacklist()
             
             logout(request)
+            logger.info(f"User '{request.user.username}' logged out successfully at {datetime.now()}")
             return SuccessResponse(message="Logout successful")
         except TokenError as e:
+            logger.warning(f"Failed logout attempt: Invalid token at {datetime.now()}")
             return ErrorResponse(message="Invalid token")
         except Exception as e:
+            logger.error(f"Error during logout for user '{request.user.username}': {str(e)}", exc_info=True)
             return ErrorResponse(message="An error occurred during logout", status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         
         
@@ -610,9 +613,14 @@ class Disable2FAView(generics.GenericAPIView):
             otp_verification.is_verified = False
             otp_verification.save()
             
+            logger.info(f"2FA disabled successfully for user '{user.username}' at {datetime.now()}")
             return SuccessResponse(message="2FA disabled successfully")
         except OTPVerification.DoesNotExist:
+            logger.warning(f"2FA disable attempted for user '{user.username}' but 2FA not setup at {datetime.now()}")
             return ErrorResponse(message="2FA not setup yet.", status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            logger.error(f"Error disabling 2FA for user '{user.username}': {str(e)}", exc_info=True)
+            return ErrorResponse(message="An error occurred while disabling 2FA", status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 class Setup2faView(generics.GenericAPIView):
@@ -628,6 +636,11 @@ class Setup2faView(generics.GenericAPIView):
         if not created:
             otp_verification.generate_qr_code()
             otp_verification.save()
+        
+        if created:
+            logger.info(f"2FA setup initiated for user '{request.user.username}' at {datetime.now()}")
+        else:
+            logger.info(f"2FA QR code regenerated for user '{request.user.username}' at {datetime.now()}")
         
         return SuccessResponse(data={
             "qr_code_url": otp_verification.qr_code,
@@ -656,11 +669,13 @@ class Setup2faView(generics.GenericAPIView):
         
         serializer = OtpVerificationSerializer(otp_verification, data=request.data)
         if not serializer.is_valid():
+            logger.warning(f"2FA verification failed for user '{request.user.username}': Invalid OTP at {datetime.now()}")
             return ErrorResponse(message=format_first_error(serializer.errors, with_key=False))
         
         otp_verification.is_verified = True
         otp_verification.save()
         
+        logger.info(f"2FA verified and enabled successfully for user '{request.user.username}' at {datetime.now()}")
         return SuccessResponse(
             message="2fa Verified successfully",
         )
@@ -725,7 +740,11 @@ class LoginView(APIView):
             user = serializer.validated_data
             
             if not user.is_email_verified:
-                send_account_verification_email(user)
+                try:
+                    send_account_verification_email(user)
+                    logger.info(f"Login blocked for unverified email, verification email sent to '{user.username}' at {datetime.now()}")
+                except Exception as e:
+                    logger.error(f"Failed to send verification email to '{user.email}': {str(e)}", exc_info=True)
                 return ErrorResponse(
                     message=f"Email not verified, a verification email has been sent to {user.email} your email address",
                     data={
@@ -891,12 +910,14 @@ class PasswordResetByEmailView(generics.GenericAPIView):
         
         is_valid, reason = verify_password_reset_otp(email, otp)
         if not is_valid:
+            logger.warning(f"Password reset failed for email '{email}': {reason} at {datetime.now()}")
             return ErrorResponse(message=reason)
         
         user = get_user_by_email(email)
         user.set_password(new_password)
         user.save()
         cache.delete(f"pr-{email}")
+        logger.info(f"Password reset completed successfully for user '{user.username}' at {datetime.now()}")
         return SuccessResponse(message="Password reset successfully")
 
 class RequestPasswordResetOtpView(generics.GenericAPIView):
@@ -917,10 +938,16 @@ class RequestPasswordResetOtpView(generics.GenericAPIView):
         user = get_user_by_email(email)
         
         if not user:
+            logger.warning(f"Password reset request for non-existent email '{email}' at {datetime.now()}")
             return ErrorResponse(message="User not found", status=status.HTTP_404_NOT_FOUND)
         
-        send_password_reset_email(user)
-        return SuccessResponse(message=f"Password reset OTP sent successfully to {user.email}")
+        try:
+            send_password_reset_email(user)
+            logger.info(f"Password reset OTP sent to user '{user.username}' at {datetime.now()}")
+            return SuccessResponse(message=f"Password reset OTP sent successfully to {user.email}")
+        except Exception as e:
+            logger.error(f"Failed to send password reset email to '{user.email}': {str(e)}", exc_info=True)
+            return ErrorResponse(message="Failed to send password reset email", status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 class ResendEmailVerificationView(generics.GenericAPIView):
     permission_classes = [AllowAny]
@@ -940,13 +967,20 @@ class ResendEmailVerificationView(generics.GenericAPIView):
         email = serializer.validated_data.get("email")
         user = get_user_by_email(email)
         if not user:
+            logger.warning(f"Resend email verification request for non-existent email '{email}' at {datetime.now()}")
             return ErrorResponse(message="User not found", status=status.HTTP_404_NOT_FOUND)
         
         if user.is_email_verified:
+            logger.info(f"Resend email verification requested for already verified user '{user.username}' at {datetime.now()}")
             return ErrorResponse(message="Email already verified")
         
-        send_account_verification_email(user)
-        return SuccessResponse(message=f"Email verification sent successfully to {user.email}")
+        try:
+            send_account_verification_email(user)
+            logger.info(f"Email verification resent to user '{user.username}' at {datetime.now()}")
+            return SuccessResponse(message=f"Email verification sent successfully to {user.email}")
+        except Exception as e:
+            logger.error(f"Failed to resend verification email to '{user.email}': {str(e)}", exc_info=True)
+            return ErrorResponse(message="Failed to send verification email", status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 
@@ -960,7 +994,7 @@ class VerifyEmailView(generics.GenericAPIView):
         
         email = serializer.validated_data.get("email")
         otp = serializer.validated_data.get("otp")
-        user = CustomUser.objects.get(email=email)
+        user = User.objects.get(email=email)
         
         
         cached_otp = cache.get(f"vrf-{email}") 
@@ -968,13 +1002,16 @@ class VerifyEmailView(generics.GenericAPIView):
         if cached_otp and cached_otp == otp:
             user = get_user_by_email(email)
             if not user:
+                logger.warning(f"Email verification attempted for non-existent user '{email}' at {datetime.now()}")
                 return ErrorResponse(message="User not found")
             
             user.is_email_verified = True
             user.save()
             cache.delete(f"vrf-{email}")
+            logger.info(f"Email verified successfully for user '{user.username}' at {datetime.now()}")
             return SuccessResponse(message="Email verified successfully", data=SimpleUserSerializer(user).data)
         else:
+            logger.warning(f"Email verification failed for email '{email}': Invalid or expired OTP at {datetime.now()}")
             return ErrorResponse(message="Invalid or expired OTP")
     
 
@@ -999,7 +1036,13 @@ class RegisterView(APIView):
                 logger.info(f"Organization '{user.username}' has been assign the default free plan {datetime.now()}")
             logger.info(f"New user '{user.username}' registered successfully at {datetime.now()}")
             
-            send_account_verification_email(user)
+            # Try to send verification email, but don't fail registration if it fails
+            try:
+                send_account_verification_email(user)
+            except Exception as e:
+                logger.error(f"Failed to send verification email to {user.email}: {str(e)}")
+                # Continue with registration even if email fails
+            
             return Response(
                 {"status": "success", "user_data": RegisterSerializer(user).data},
                 status=status.HTTP_201_CREATED,
@@ -1075,7 +1118,6 @@ class MakeUserAdminView(APIView):
         user = serializer.validated_data["user_id"]
         admin_user = request.user
 
-        user.is_admin = True
         user.is_staff = True
         user.save()
 
@@ -1389,6 +1431,10 @@ class CustomTokenRefreshView(TokenRefreshView):
     )
     def post(self, request, *args, **kwargs):
         try:
+            # Log the refresh token request (without the actual token for security)
+            refresh_token_present = bool(request.data.get('refresh'))
+            logger.info(f"Token refresh request received. Refresh token present: {refresh_token_present} at {datetime.now()}")
+            
             response = super().post(request, *args, **kwargs)
             logger.info(f"Token refresh successful at {datetime.now()}")
             return Response(
@@ -1401,13 +1447,33 @@ class CustomTokenRefreshView(TokenRefreshView):
             )
 
         except AuthenticationFailed as e:  # Catch invalid token error
-            logger.warning(f"Failed token refresh attempt at {datetime.now()}")
+            logger.warning(f"Failed token refresh attempt: Invalid or expired refresh token at {datetime.now()}")
             return Response(
                 {
                     "status": "error",
                     "detail": "Your session has expired. Please log in again.",
                 },
                 status=status.HTTP_401_UNAUTHORIZED,
+            )
+        except ValidationError as e:
+            # Catch serializer validation errors (e.g., missing refresh token)
+            logger.warning(f"Token refresh validation error: {str(e)}. Request data: {dict(request.data) if hasattr(request, 'data') else 'N/A'} at {datetime.now()}")
+            return Response(
+                {
+                    "status": "error",
+                    "detail": "Invalid refresh token. Please log in again.",
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        except Exception as e:
+            # Catch other exceptions
+            logger.error(f"Token refresh error: {str(e)}. Request data keys: {list(request.data.keys()) if hasattr(request, 'data') else 'N/A'} at {datetime.now()}", exc_info=True)
+            return Response(
+                {
+                    "status": "error",
+                    "detail": "An error occurred while refreshing your token. Please log in again.",
+                },
+                status=status.HTTP_400_BAD_REQUEST,
             )
 
 
@@ -1449,6 +1515,22 @@ class UserDetailView(APIView):
     @cache_response_decorator('user_detail', cache_timeout=60 * 15, per_user=True)
     def get(self, request):      
         user = request.user
+        
+        # Check if user exists and is active
+        if not user or not user.is_authenticated:
+            logger.warning(f"Unauthenticated user attempted to access user details at {datetime.now()}")
+            return ErrorResponse(
+                message="Authentication required",
+                status=status.HTTP_401_UNAUTHORIZED
+            )
+        
+        if not user.is_active:
+            logger.warning(f"Inactive user '{user.username}' attempted to access user details at {datetime.now()}")
+            return ErrorResponse(
+                message="User account is inactive",
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
         serializer = UserDetailSerializer(user)
         return Response(
             {"status": "success", "user": serializer.data}, status=status.HTTP_200_OK
@@ -1540,10 +1622,10 @@ class UsersNotInProjectView(APIView):
             if project_id is not None:
                 # Get users not in the specific project
                 project = Project.objects.get(id=project_id)
-                users = CustomUser.objects.exclude(project=project)
+                users = User.objects.exclude(project=project)
             else:
                 # Get users not in any project
-                users = CustomUser.objects.filter(project__isnull=True)
+                users = User.objects.filter(project__isnull=True)
             
             serializer = SimpleUserSerializer(users, many=True)
             return Response({
@@ -1603,7 +1685,7 @@ class UsersInProjectView(APIView):
                 "message": "Project ID is required"
             }, status=status.HTTP_400_BAD_REQUEST)
 
-        users = CustomUser.objects.filter(project__id=project_id)
+        users = User.objects.filter(project__id=project_id)
         serializer = SimpleUserSerializer(users, many=True)
         return Response({
             "status": "success",
@@ -1654,6 +1736,7 @@ class ChangePasswordView(APIView):
             
             # Check if current password is correct
             if not user.check_password(serializer.validated_data['current_password']):
+                logger.warning(f"Password change failed for user '{user.username}': Incorrect current password at {datetime.now()}")
                 return Response(
                     {"status": "error", "error": "Current password is incorrect"},
                     status=status.HTTP_400_BAD_REQUEST
@@ -1663,11 +1746,13 @@ class ChangePasswordView(APIView):
             user.set_password(serializer.validated_data['new_password'])
             user.save()
             
+            logger.info(f"Password changed successfully for user '{user.username}' at {datetime.now()}")
             return Response(
                 {"status": "success", "message": "Password changed successfully"},
                 status=status.HTTP_200_OK
             )
         
+        logger.warning(f"Password change validation failed for user '{request.user.username}': {serializer.errors} at {datetime.now()}")
         return Response(
             {"status": "error", "error": serializer.errors},
             status=status.HTTP_400_BAD_REQUEST

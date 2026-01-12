@@ -27,8 +27,6 @@ cd label-x
 
 Create a `.env` file in the project root directory. Example content:
 
-
-
 ```
 SECRET_KEY_VALUE=example_secret_key
 DEBUG_VALUE=true
@@ -52,96 +50,141 @@ REDIS_CACHE_BACKEND=redis://localhost:6379/1
 PAYSTACK_SECRET_KEY=paystack_example_secret
 PAYSTACK_PUBLIC_KEY=paystack_example_public
 EXCHANGE_RATE_API_KEY=exchange_rate_example_key
-BREVO_API_KEY=brevo_example_api_key
-BREVO_FROM_EMAIL=example@email.com
+RESEND_API_KEY=re_example_api_key
+RESEND_FROM_EMAIL=example@email.com
 ```
 
 **Note:** 
-- Running the project locally i.e with DEBUG=true will utilize the default sqlite database from django, DATABASE_URL is only used in production
+- Running the project locally (with `DEBUG=true`) will utilize the default SQLite database from Django. `DATABASE_URL` is only used in production.
+- The `.env` file values for `CELERY_BROKER_URL` and `CELERY_RESULT_BACKEND` are for local development. When running in Docker, these are automatically overridden by docker-compose to use the Redis service name.
+
 ---
 
 ### 3. Start the Application
 
-Build and start the containers (backend + database):
+#### Option A: Development Setup (Recommended)
+
+For development with hot-reload and separate services:
+
+```bash
+docker compose -f docker-compose.dev.yml up --build
+```
+
+This will start:
+- **Web server** on port `8003` (Django development server with auto-reload)
+- **Celery worker** for background task processing
+- **Celery beat** for scheduled tasks
+- **Redis** on port `6383` (host) → `6379` (container)
+
+#### Option B: Production-like Setup
+
+For a production-like setup using the main docker-compose file:
 
 ```bash
 docker compose up --build
 ```
+
 *or, if you have an older version of Docker Compose:*
 ```bash
 docker-compose up --build
 ```
 
-- This will automatically install all requirements, Make migrations and configure redis, celery
-
-
+- This will automatically install all requirements, run migrations, seed plans and system settings, and configure Redis and Celery.
 
 ---
 
 ### 4. Create a Superuser (Admin)
 
+For development setup:
 ```bash
-docker exec -it label_x bash
-
+docker exec -it label-x-web-1 bash
 python manage.py createsuperuser
 ```
 
+For production-like setup:
+```bash
+docker exec -it label_x bash
+python manage.py createsuperuser
+```
 
+---
 
 ### 5. Access the UI
 
-Visit [http://localhost:8080/api/docs](http://localhost:8080/api/docs) for the swagger ui documentation
+- **API Documentation (Swagger)**: [http://localhost:8003/api/docs](http://localhost:8003/api/docs)
+- **Admin Panel**: [http://localhost:8003/admin](http://localhost:8003/admin) - Login with the credentials you created.
 
-Visit [http://localhost:8080/admin](http://localhost:8080/admin) and login with the credentials you created.
+---
 
+## 🐳 Docker Services
 
+When using `docker-compose.dev.yml`, the following services are available:
 
-# Optional Configuration for Development
+- **web**: Django development server (port 8003)
+- **celery**: Celery worker for processing background tasks
+- **celery-beat**: Celery beat scheduler for periodic tasks
+- **redis**: Redis server for caching and Celery message broker (port 6383 on host)
 
-If you want the Docker container to automatically reload during development, follow these steps:
+---
 
-### 1. Create a Procfile.dev
-In the same directory as your main Procfile, create a new file called `Procfile.dev`. This file should use Django's `runserver` command instead of `daphne`:
+## 🔧 Useful Docker Commands
 
-```
-web: python manage.py migrate && python manage.py seed_plans && python manage.py seed_system_settings && python manage.py runserver 0.0.0.0:8080
-worker: celery -A label_x worker --loglevel=info
-beat: celery -A label_x beat -l info
-
-```
-
-### 2. Create a docker-compose.override.yml
-In the same directory as your `docker-compose.yml` file, add a `docker-compose.override.yml`. This file will instruct Docker to use the `Procfile.dev` you just created.
-
-```yml
-version: "3.8"
-
-services:
-  app:
-    build: .
-    volumes:
-      - .:/app
-    env_file:
-      - ./.env
-    ports:
-      - "8080:8080"
-    container_name: "label_x"
-    depends_on:
-      - redis
-    command: ['honcho', 'start', '-f', 'Procfile.dev']
-
-  redis:
-    image: redis:7
-    ports:
-      - "6379:6379"
-```
-
-### 3. Build and Start the Container
-With the override file in place, you can now build and run the containers using:
-
+### View Logs
 ```bash
-docker compose up --build
+# All services
+docker compose -f docker-compose.dev.yml logs -f
+
+# Specific service
+docker compose -f docker-compose.dev.yml logs -f web
+docker compose -f docker-compose.dev.yml logs -f celery
+docker compose -f docker-compose.dev.yml logs -f celery-beat
 ```
+
+### Stop Services
+```bash
+docker compose -f docker-compose.dev.yml down
+```
+
+### Restart a Specific Service
+```bash
+docker compose -f docker-compose.dev.yml restart web
+docker compose -f docker-compose.dev.yml restart celery
+docker compose -f docker-compose.dev.yml restart celery-beat
+```
+
+### Execute Commands in Container
+```bash
+# Access web container shell
+docker exec -it label-x-web-1 bash
+
+# Run Django management commands
+docker exec -it label-x-web-1 python manage.py <command>
+```
+
+---
+
+## 🔍 Troubleshooting
+
+### Redis Connection Issues
+
+If you see errors about Redis connection:
+- Ensure Redis container is running: `docker ps | grep redis`
+- Check Redis logs: `docker compose -f docker-compose.dev.yml logs redis`
+- The docker-compose.dev.yml automatically sets `CELERY_BROKER_URL=redis://redis:6379/0` which uses the Redis service name for container-to-container communication.
+
+### Port Already in Use
+
+If port 8003 is already in use, you can change it in `docker-compose.dev.yml`:
+```yaml
+ports:
+  - "8004:8003"  # Change 8004 to any available port
+```
+
+### Database Issues
+
+- The project uses SQLite by default in development (when `DEBUG=true`)
+- Migrations run automatically on container startup
+- To reset the database, delete `db.sqlite3` and restart containers
 
 
 

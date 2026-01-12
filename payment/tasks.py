@@ -105,8 +105,10 @@ def initiate_monthly_usd_paystack_transfer(monthly_earning):
         logger.info(f'Successfully initiated transfer for {labeler.username} with amount {usd_amount}')
         return True
     except Exception as e:
+        logger.error(f'Unexpected error initiating Paystack transfer for {labeler.username}: {str(e)}', exc_info=True)
         if transaction:
             transaction.mark_failed(reason=str(e))
+        return False
 
 
 def initiate_monthly_usd_stripe_transfer(monthly_earning):

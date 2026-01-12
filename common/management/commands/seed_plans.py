@@ -1,18 +1,10 @@
 from typing import Any
 from django.core.management import BaseCommand
 from django.conf import settings
-import os
-from pathlib import Path
+from decouple import config
 
 from subscription.models import SubscriptionPlan
-from dotenv import load_dotenv
-
-# Load environment variables from .env file in project root
-env_file = Path(settings.BASE_DIR) / '.env'
-if env_file.exists():
-    load_dotenv(env_file, override=True)
-else:
-    print("Warning: .env file not found. Using system environment variables.")
+# python-decouple automatically loads .env file, no need for manual loading
 
 
 plans = [
@@ -20,7 +12,7 @@ plans = [
         "name": "Starter",
         "monthly_fee": "10.00",
         "included_data_points": 5000,
-        "stripe_monthly_plan_id": os.getenv("STARTER_PLAN_ID"),
+        "stripe_monthly_plan_id": config("STARTER_PLAN_ID", default=""),
         "cost_per_extra_request": 7,
         "included_requests": 10
     },
@@ -28,7 +20,7 @@ plans = [
         "name": "Teams",
         "monthly_fee": "19.00",
         "included_data_points": 10000,
-        "stripe_monthly_plan_id": os.getenv("TEAMS_PLAN_ID"),
+        "stripe_monthly_plan_id": config("TEAMS_PLAN_ID", default=""),
         "cost_per_extra_request": 7,
         "included_requests": 10
 
@@ -37,7 +29,7 @@ plans = [
         "name": "Enterprise",
         "monthly_fee": "30.00",
         "included_data_points": 20000,
-        "stripe_monthly_plan_id": os.getenv("ENTERPRISE_PLAN_ID"),
+        "stripe_monthly_plan_id": config("ENTERPRISE_PLAN_ID", default=""),
         "cost_per_extra_request": 7,
         "included_requests": 10
     },

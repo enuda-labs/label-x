@@ -12,13 +12,12 @@ https://docs.djangoproject.com/en/5.1/ref/settings/
 
 from datetime import timedelta
 import logging
-from logging import config
+from logging import config as logging_config
 import os
 from pathlib import Path
 from celery.schedules import crontab
-from datetime import timedelta
 
-from dotenv import load_dotenv
+from decouple import config, Csv
 import pytz
 import sentry_sdk
 from sentry_sdk.integrations.django import DjangoIntegration
@@ -34,42 +33,22 @@ import cloudinary.api
 import cloudinary_storage
 
 
-# env_file = BASE_DIR / ".env"
-# if env_file.exists():
-#     load_dotenv(env_file, override=True)
-# else:
-#     print("No env file detected.")
-#     exit(code=5000)
-
-
-env_file = BASE_DIR / ".env"
-if env_file.exists():
-    from dotenv import load_dotenv
-
-    load_dotenv(env_file, override=True)
-else:
-    # Log a warning instead of exiting
-    print("No .env file detected. Using environment variables.")
+# python-decouple automatically handles .env file loading
+# Environment variables take precedence over .env file values
+# This ensures docker-compose environment variables override .env file values
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.1/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.getenv("SECRET_KEY_VALUE", default="default")
+SECRET_KEY = config("SECRET_KEY_VALUE", default="default")
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = os.getenv("DEBUG_VALUE", "true").lower() == "true"
-# DEBUG = True
+DEBUG = config("DEBUG_VALUE", default="true", cast=bool)
 
-ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS_VALUE", "127.0.0.1").split(
-    ","
-)  # Use commas to seperate muliple host values
-CSRF_TRUSTED_ORIGINS = os.getenv(
-    "CSRF_TRUSTED_ORIGINS_VALUE", "http://127.0.0.1"
-).split(
-    ","
-)  # Same comma-value-seperation as above
-
+ALLOWED_HOSTS = config("ALLOWED_HOSTS_VALUE", default="127.0.0.1", cast=Csv())
+CSRF_TRUSTED_ORIGINS = config("CSRF_TRUSTED_ORIGINS_VALUE", default="http://127.0.0.1", cast=Csv())
+IS_PRODUCTION = config("IS_PRODUCTION", default=False, cast=bool)
 
 # Application definition
 
@@ -94,10 +73,12 @@ INSTALLED_APPS = [
     "subscription",
     'cloudinary',
     'django_celery_beat',
+    'django_celery_results',
     'cloudinary_storage',
     "datasets",
     "payment",
     "reviewer",
+    "anymail",
 ]
 
 MIDDLEWARE = [
@@ -136,18 +117,34 @@ ASGI_APPLICATION = "label_x.asgi.application"
 
 # Database
 # https://docs.djangoproject.com/en/5.1/ref/settings/#databases
-
-if DEBUG:
+if config("IS_PRODUCTION", default=False, cast=bool):
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.postgresql_psycopg2",
+            "NAME": config("PROD_DB_NAME", default=""),
+            "USER": config("PROD_DB_USER", default=""),
+            "PASSWORD": config("PROD_DB_PASSWORD", default=""),
+            "HOST": config("PROD_DB_HOST", default=""),
+            "PORT": config("PROD_DB_PORT", default=""),
+            # Connection pooling for API performance (stateless, shorter duration)
+            "CONN_MAX_AGE": 300,  # 5 minutes - shorter for stateless API
+            "CONN_HEALTH_CHECKS": True,  # Verify connection health before reuse
+            "OPTIONS": {
+                "connect_timeout": 10,
+                # Connection pool settings for pgbouncer compatibility
+                "options": "-c statement_timeout=30000",  # 30 second query timeout
+            },
+        }
+    }
+else:
     DATABASES = {
         "default": {
             "ENGINE": "django.db.backends.sqlite3",
             "NAME": BASE_DIR / "db.sqlite3",
+            "OPTIONS": {
+                "timeout": 20,  # 20 second timeout for database operations
+            },
         }
-    }
-else:
-    DATABASE_URL = os.getenv("DATABASE_URL")
-    DATABASES = {
-        "default": dj_database_url.config(default=DATABASE_URL, conn_max_age=1800),
     }
 
 
@@ -202,7 +199,7 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 # custom user model for authentication
-AUTH_USER_MODEL = "account.CustomUser"
+AUTH_USER_MODEL = "account.User"
 
 # setting for logging of errors
 
@@ -230,6 +227,12 @@ LOGGING = {
             "filename": "logs/api_activity.log",
             "formatter": "verbose",
         },
+        "error_file": {
+            "level": "ERROR",
+            "class": "logging.FileHandler",
+            "filename": "logs/errors.log",
+            "formatter": "verbose",
+        },
         "console": {
             "level": "INFO",
             "class": "logging.StreamHandler",
@@ -237,32 +240,92 @@ LOGGING = {
         },
     },
     "root": {
-        "handlers": ["console", "file"],
+        "handlers": ["console", "file", "error_file"],
         "level": "INFO",
         "propagate": True,
     },
     "loggers": {
         "django": {
-            "handlers": ["console", "file"],
+            "handlers": ["console", "file", "error_file"],
             "level": "INFO",
             "propagate": False,
         },
         "account": {
-            "handlers": ["console", "file"],
+            "handlers": ["console", "file", "error_file"],
             "level": "INFO",
             "propagate": False,
         },
         "account.apis": {
-            "handlers": ["console", "file"],
+            "handlers": ["console", "file", "error_file"],
+            "level": "INFO",
+            "propagate": False,
+        },
+        "task": {
+            "handlers": ["console", "file", "error_file"],
+            "level": "INFO",
+            "propagate": False,
+        },
+        "task.apis": {
+            "handlers": ["console", "file", "error_file"],
+            "level": "INFO",
+            "propagate": False,
+        },
+        "task.tasks": {
+            "handlers": ["console", "file", "error_file"],
+            "level": "INFO",
+            "propagate": False,
+        },
+        "payment": {
+            "handlers": ["console", "file", "error_file"],
+            "level": "INFO",
+            "propagate": False,
+        },
+        "payment.apis": {
+            "handlers": ["console", "file", "error_file"],
+            "level": "INFO",
+            "propagate": False,
+        },
+        "payment.tasks": {
+            "handlers": ["console", "file", "error_file"],
+            "level": "INFO",
+            "propagate": False,
+        },
+        "subscription": {
+            "handlers": ["console", "file", "error_file"],
+            "level": "INFO",
+            "propagate": False,
+        },
+        "subscription.apis": {
+            "handlers": ["console", "file", "error_file"],
+            "level": "INFO",
+            "propagate": False,
+        },
+        "reviewer": {
+            "handlers": ["console", "file", "error_file"],
+            "level": "INFO",
+            "propagate": False,
+        },
+        "reviewer.apis": {
+            "handlers": ["console", "file", "error_file"],
+            "level": "INFO",
+            "propagate": False,
+        },
+        "api_auth": {
+            "handlers": ["console", "file", "error_file"],
+            "level": "INFO",
+            "propagate": False,
+        },
+        "api_auth.apis": {
+            "handlers": ["console", "file", "error_file"],
             "level": "INFO",
             "propagate": False,
         },
         "django.server": { 
-            "handlers": ["console", "file"],
+            "handlers": ["console", "file", "error_file"],
             "propagate": False,
         },
         "default": {
-            "handlers": ["console", "file"],
+            "handlers": ["console", "file", "error_file"],
             "propagate": True,
         }
     },
@@ -300,17 +363,26 @@ SIMPLE_JWT = {
 # celery settings
 CELERY_TASK_TRACK_STARTED = True
 CELERY_TASK_TIME_LIMIT = 30 * 60
-CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND")
-CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL")
+# python-decouple automatically prioritizes environment variables over .env file
+# This ensures docker-compose environment variables override .env file values
+# Celery configuration
+# Use django-db for result backend in both development and production
+# This allows querying task results via Django ORM and provides persistent storage
+CELERY_BROKER_URL = config("CELERY_BROKER_URL", default="redis://localhost:6379/0")
+CELERY_RESULT_BACKEND = 'django-db'
+CELERY_CACHE_BACKEND = 'django-cache'
+
 CELERY_ACCEPT_CONTENT = ["json"]
 CELERY_TASK_SERIALIZER = "json"
 CELERY_RESULT_SERIALIZER = "json"
+# Enable extended result information (task name, args, kwargs, worker, etc.)
+CELERY_RESULT_EXTENDED = True
 
 CORS_ALLOW_ALL_ORIGINS = True
 
 # Sentry settings
 sentry_sdk.init(
-    dsn=os.getenv("SENTRY_DSN"),
+    dsn=config("SENTRY_DSN", default=""),
     integrations=[
         DjangoIntegration(),
         LoggingIntegration(level=logging.INFO, event_level=logging.ERROR),
@@ -321,7 +393,8 @@ sentry_sdk.init(
 
 
 # CHANNEL_LAYERS = {"default": {"BACKEND": "channels.layers.InMemoryChannelLayer"}}
-REDIS_URL = os.getenv("CELERY_RESULT_BACKEND", "redis://localhost:6379/0")
+# REDIS_URL for WebSocket channel layers (separate from Celery result backend)
+REDIS_URL = config("REDIS_URL", default="redis://redis:6379/0")
 CHANNEL_LAYERS = {
     "default": {
         "BACKEND": "channels_redis.core.RedisChannelLayer",
@@ -332,9 +405,9 @@ CHANNEL_LAYERS = {
 }
 
 API_KEY_CUSTOM_HEADER = "HTTP_X_API_KEY"
-STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY")
-STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET")
-STRIPE_CONNECT_WEBHOOK_SECRET = os.getenv("STRIPE_CONNECT_WEBHOOK_SECRET")
+STRIPE_SECRET_KEY = config("STRIPE_SECRET_KEY", default="")
+STRIPE_WEBHOOK_SECRET = config("STRIPE_WEBHOOK_SECRET", default="")
+STRIPE_CONNECT_WEBHOOK_SECRET = config("STRIPE_CONNECT_WEBHOOK_SECRET", default="")
 
 SPECTACULAR_SETTINGS = {
     "TITLE": "Label x api",
@@ -344,12 +417,12 @@ SPECTACULAR_SETTINGS = {
 }
 
 
-CLOUDINARY_CLOUD_NAME=os.getenv("CLOUDINARY_CLOUD_NAME")
-CLOUDINARY_API_KEY=os.getenv("CLOUDINARY_API_KEY")
-CLOUDINARY_API_SECRET= os.getenv("CLOUDINARY_API_SECRET")
+CLOUDINARY_CLOUD_NAME = config("CLOUDINARY_CLOUD_NAME", default="")
+CLOUDINARY_API_KEY = config("CLOUDINARY_API_KEY", default="")
+CLOUDINARY_API_SECRET = config("CLOUDINARY_API_SECRET", default="")
 
 
-CO_API_KEY= os.getenv("CO_API_KEY")
+CO_API_KEY = config("CO_API_KEY", default="")
 
 CLOUDINARY_STORAGE = {
     'CLOUD_NAME': CLOUDINARY_CLOUD_NAME,
@@ -363,7 +436,8 @@ if not DEBUG:
     CSRF_TRUSTED_ORIGINS = [
         "https://label-x-dock.onrender.com"]
     
-REDIS_CACHE_BACKEND = os.getenv("REDIS_CACHE_BACKEND")
+# Use REDIS_CACHE_BACKEND if set, otherwise fallback to REDIS_URL or default
+REDIS_CACHE_BACKEND = config("REDIS_CACHE_BACKEND", default=config("REDIS_URL", default="redis://localhost:6379/1"))
 CACHES = {
     "default": {
         "BACKEND": "django_redis.cache.RedisCache",
@@ -374,14 +448,13 @@ CACHES = {
     }
 }
 
-PAYSTACK_SECRET_KEY = os.getenv("PAYSTACK_SECRET_KEY")
-PAYSTACK_PUBLIC_KEY = os.getenv("PAYSTACK_PUBLIC_KEY")
-EXCHANGE_RATE_API_KEY = os.getenv("EXCHANGE_RATE_API_KEY")
-
-
+PAYSTACK_SECRET_KEY = config("PAYSTACK_SECRET_KEY", default="")
+PAYSTACK_PUBLIC_KEY = config("PAYSTACK_PUBLIC_KEY", default="")
+EXCHANGE_RATE_API_KEY = config("EXCHANGE_RATE_API_KEY", default="")
 
 CELERY_TIMEZONE = 'UTC'
-
+# Django Celery Beat
+CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'
 
 #runs at 7 am, 12pm and 4pm starting from the 28th of the month to the 10th of the next month
 #the reason i start at 28th is because of February which has only 28 days
@@ -405,8 +478,15 @@ CELERY_BEAT_SCHEDULE = {
     # },
 }
 
-BREVO_API_KEY = os.getenv("BREVO_API_KEY")
-BREVO_FROM_EMAIL = os.getenv("BREVO_FROM_EMAIL")
+# Email configuration using django-anymail with Resend
+ANYMAIL = {
+    "RESEND_API_KEY": config("RESEND_API_KEY", default=""),
+}
+
+EMAIL_BACKEND = "anymail.backends.resend.EmailBackend"
+DEFAULT_FROM_EMAIL = config("DEFAULT_FROM_EMAIL", default="noreply@labelx.com")
+SERVER_EMAIL = DEFAULT_FROM_EMAIL
+
 
 AUTHENTICATION_BACKENDS = [
     'account.backends.EmailOrUsernameBackend',

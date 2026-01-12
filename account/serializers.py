@@ -13,7 +13,7 @@ from task.models import Task, TaskCluster, TaskLabel
 from django.db.models import Sum, Count
 
 
-from .models import CustomUser, OTPVerification, Project, ProjectLog, UserBankAccount, UserStripeConnectAccount
+from .models import User, OTPVerification, Project, ProjectLog, UserBankAccount, UserStripeConnectAccount
 from reviewer.models import LabelerDomain
 from reviewer.serializers import LabelerDomainSerializer
 from payment.utils import find_bank_by_code, request_paystack, resolve_bank_details
@@ -241,13 +241,13 @@ class UserSerializer(serializers.ModelSerializer):
     permissions = serializers.SerializerMethodField()
 
     class Meta:
-        model = CustomUser
+        model = User
         fields = [
             "id",
             "username",
             "email",
             "is_reviewer",
-            "is_admin",
+            "is_staff",
             "roles",
             "permissions",
         ]
@@ -256,7 +256,7 @@ class UserSerializer(serializers.ModelSerializer):
         roles = []
         if obj.is_superuser:
             roles.append("superuser")
-        if obj.is_admin & obj.is_staff:
+        if obj.is_staff:
             roles.append("admin")
         if obj.is_reviewer:
             roles.append("reviewer")
@@ -277,7 +277,7 @@ class UserSerializer(serializers.ModelSerializer):
                     "can_view_all_tasks",
                 ]
             )
-        elif obj.is_admin:
+        elif obj.is_staff:
             permissions.extend(
                 [
                     "can_manage_reviewers",
@@ -313,7 +313,7 @@ class LoginSerializer(serializers.Serializer):
 class CreateLabelerSerializer(serializers.ModelSerializer):
     
     class Meta:
-        model = CustomUser
+        model = User
         fields = ["username", "email", "password", "domains"]
         extra_kwargs = {
             "username": {"error_messages": {"unique": "Username already exists"}},
@@ -324,7 +324,7 @@ class CreateLabelerSerializer(serializers.ModelSerializer):
         password = validated_data.pop("password")
         
         domains = validated_data.pop("domains")
-        user = CustomUser.objects.create(**validated_data, is_reviewer=True)
+        user = User.objects.create(**validated_data, is_reviewer=True)
         
         user.domains.set(domains)
         user.set_password(password)
@@ -353,7 +353,7 @@ class RegisterSerializer(serializers.ModelSerializer):
  
 
     class Meta:
-        model = CustomUser
+        model = User
         fields = ["id", "username", "email", "password", "role", "domains"]
         extra_kwargs = {
             "username": {"error_messages": {"unique": "Username already exists"}},
@@ -370,7 +370,7 @@ class RegisterSerializer(serializers.ModelSerializer):
         validated_data['is_reviewer'] = role == "reviewer"
      
         # Create user instance
-        user = CustomUser.objects.create(**validated_data)
+        user = User.objects.create(**validated_data)
 
         # Set the password (this will hash it)
         user.set_password(password)
@@ -390,12 +390,12 @@ class RegisterSerializer(serializers.ModelSerializer):
         return attrs
 
     def validate_email(self, value):
-        if CustomUser.objects.filter(email=value).exists():
+        if User.objects.filter(email=value).exists():
             raise serializers.ValidationError("Email already exists")
         return value
 
     def validate_username(self, value):
-        if CustomUser.objects.filter(username=value).exists():
+        if User.objects.filter(username=value).exists():
             raise serializers.ValidationError("Username already exists")
         return value
 
@@ -419,9 +419,9 @@ class RegisterSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(
                 "Password must contain at least one number"
             )
-        if not re.search(r"[@$!%*?&]", value):
+        if not re.search(r"[!@#$%^&*()_+\-=\[\]{};':\"\\|,.<>\/?]", value):
             raise serializers.ValidationError(
-                "Password must contain at least one special character (@$!%*?&)"
+                "Password must contain at least one special character (!@#$%^&*()_+-=[]{}|;':\",./<>?)"
             )
         return value
 
@@ -430,7 +430,7 @@ class MakeReviewerSerializer(serializers.Serializer):
     """serializer to make a user a reviewer"""
 
     user_id = serializers.PrimaryKeyRelatedField(
-        queryset=CustomUser.objects.all(), help_text="ID of the user to promote"
+        queryset=User.objects.all(), help_text="ID of the user to promote"
     )
     group_id = serializers.PrimaryKeyRelatedField(
         queryset=Project.objects.all(),
@@ -442,13 +442,13 @@ class RevokeReviewerSerializer(serializers.Serializer):
     """Serializer to remove a user from being a reviewer"""
 
     user_id = serializers.PrimaryKeyRelatedField(
-        queryset=CustomUser.objects.all(), help_text="ID of the reviewer to revoke"
+        queryset=User.objects.all(), help_text="ID of the reviewer to revoke"
     )
 
 
 class MakeAdminSerializer(serializers.Serializer):
     user_id = serializers.PrimaryKeyRelatedField(
-        queryset=CustomUser.objects.all(),
+        queryset=User.objects.all(),
         help_text="ID of the user to promote to admin",
     )
 
@@ -485,8 +485,11 @@ class UserProjectSerializer(serializers.ModelSerializer):
 
 
 class UserDetailSerializer(serializers.ModelSerializer):
+    # Include is_admin for backward compatibility (maps to is_staff)
+    is_admin = serializers.SerializerMethodField()
+    
     class Meta:
-        model = CustomUser
+        model = User
         fields = [
             "id",
             "username",
@@ -498,12 +501,16 @@ class UserDetailSerializer(serializers.ModelSerializer):
             "date_joined",
             "last_activity",
         ]
+    
+    def get_is_admin(self, obj):
+        """Return is_staff as is_admin for backward compatibility"""
+        return obj.is_staff
 
 
 class SimpleUserSerializer(serializers.ModelSerializer):
     domains = LabelerDomainSerializer(many=True)
     class Meta:
-        model = CustomUser
+        model = User
         fields = ["id", "username", "email", "is_active", "domains", 'is_reviewer', 'is_email_verified']
 
 
@@ -551,7 +558,7 @@ class UpdateNameSerializer(serializers.Serializer):
 
     def validate_username(self, value):
         user = self.context["request"].user
-        if CustomUser.objects.exclude(pk=user.pk).filter(username=value).exists():
+        if User.objects.exclude(pk=user.pk).filter(username=value).exists():
             raise serializers.ValidationError("This username is already taken.")
         return value
 

@@ -18,7 +18,7 @@ import decimal
 from payment.choices import TransactionStatusChoices, TransactionTypeChoices, WithdrawalRequestInitiatedByChoices
 from payment.models import Transaction, WithdrawalRequest
 from payment.serializers import PaystackWithdrawSerializer, TransactionSerializer
-from account.models import CustomUser, MonthlyReviewerEarnings, UserStripeConnectAccount
+from account.models import User, MonthlyReviewerEarnings, UserStripeConnectAccount
 from payment.utils import convert_usd_to_ngn, find_bank_by_code, request_paystack, verify_paystack_origin
 import json
 from django.db.models import F, Sum, Q
@@ -45,48 +45,59 @@ class StripeWebhookListener(generics.GenericAPIView):
         price_id = event_object.get("lines").get("data")[0].get("plan").get("id")
         
         try:
-            customer = CustomUser.objects.get(email=customer_email)
-        except CustomUser.DoesNotExist:
+            customer = User.objects.get(email=customer_email)
+        except User.DoesNotExist:
             customer = None
-            logger.warning(f"Customer not found for email: {customer_email} at {datetime.now()}")
+            logger.warning(f"Customer not found for email: {customer_email} in Stripe webhook at {datetime.now()}")
+        except Exception as e:
+            logger.error(f"Error fetching customer for email '{customer_email}' in Stripe webhook: {str(e)}", exc_info=True)
+            customer = None
 
         subscription_plan = SubscriptionPlan.objects.filter(
             stripe_monthly_plan_id=price_id
         ).first()
+        
+        if not subscription_plan:
+            logger.warning(f"Subscription plan not found for Stripe price ID: {price_id} at {datetime.now()}")
 
         return customer, subscription_plan
     
     def handle_invoice_payment_succeeded(self, event):
-        customer, subscription_plan = self.get_user_and_plan_from_event(event)
+        try:
+            customer, subscription_plan = self.get_user_and_plan_from_event(event)
 
-        if customer and subscription_plan:
-            # grant user permissions
-            expires_at = timezone.now() + timedelta(days=30)
-            try:
-                user_subscription = UserSubscription.objects.get(user=customer)
-                user_subscription.expires_at = expires_at
-                user_subscription.renews_at = expires_at
-                user_subscription.plan = subscription_plan
-                user_subscription.save(update_fields=['expires_at', 'renews_at', "plan"])
-            except UserSubscription.DoesNotExist:
-                # create a new subscription for the user
-                user_subscription= UserSubscription.objects.create(
+            if customer and subscription_plan:
+                # grant user permissions
+                expires_at = timezone.now() + timedelta(days=30)
+                try:
+                    user_subscription = UserSubscription.objects.get(user=customer)
+                    user_subscription.expires_at = expires_at
+                    user_subscription.renews_at = expires_at
+                    user_subscription.plan = subscription_plan
+                    user_subscription.save(update_fields=['expires_at', 'renews_at', "plan"])
+                except UserSubscription.DoesNotExist:
+                    # create a new subscription for the user
+                    user_subscription= UserSubscription.objects.create(
+                        user=customer,
+                        plan = subscription_plan,
+                        expires_at=expires_at,
+                        renews_at = expires_at,
+                    )
+
+                user_data_points, created = UserDataPoints.objects.get_or_create(user=customer)
+                user_data_points.topup_data_points(subscription_plan.included_data_points)        
+
+                UserPaymentHistory.objects.create(
                     user=customer,
-                    plan = subscription_plan,
-                    expires_at=expires_at,
-                    renews_at = expires_at,
+                    amount=subscription_plan.monthly_fee,
+                    description=f"Subscription for {subscription_plan.name}",
+                    status=UserPaymentStatus.SUCCESS,
                 )
-
-            user_data_points, created = UserDataPoints.objects.get_or_create(user=customer)
-            user_data_points.topup_data_points(subscription_plan.included_data_points)        
-
-            UserPaymentHistory.objects.create(
-                user=customer,
-                amount=subscription_plan.monthly_fee,
-                description=f"Subscription for {subscription_plan.name}",
-                status=UserPaymentStatus.SUCCESS,
-            )
-            logger.info(f"User '{customer.username}' subscribed to plan '{subscription_plan.name}' at {datetime.now()}")
+                logger.info(f"User '{customer.username}' subscribed to plan '{subscription_plan.name}' at {datetime.now()}")
+            else:
+                logger.warning(f"Stripe invoice.payment_succeeded event processed but customer or plan not found at {datetime.now()}")
+        except Exception as e:
+            logger.error(f"Error processing Stripe invoice.payment_succeeded webhook: {str(e)}", exc_info=True)
 
     def handle_customer_subscription_deleted(self, event):
         logger.info(f"Subscription deleted event received at {datetime.now()}")
@@ -224,47 +235,51 @@ class StripeWebhookListener(generics.GenericAPIView):
         # sig_header = request.META.get("HTTP_STRIPE_SIGNATURE")
         endpoint_secret = settings.STRIPE_WEBHOOK_SECRET
     
-        success, event = self.validate_origin(request, endpoint_secret)
-        if not success:
-            success, event = self.validate_origin(request, settings.STRIPE_CONNECT_WEBHOOK_SECRET)
+        try:
+            success, event = self.validate_origin(request, endpoint_secret)
             if not success:
-                return ErrorResponse(message="Invalid webhook signature", status=status.HTTP_400_BAD_REQUEST)
+                success, event = self.validate_origin(request, settings.STRIPE_CONNECT_WEBHOOK_SECRET)
+                if not success:
+                    logger.warning(f"Invalid Stripe webhook signature at {datetime.now()}")
+                    return ErrorResponse(message="Invalid webhook signature", status=status.HTTP_400_BAD_REQUEST)
 
-        event_type = event.get("type")
-        logger.info(f"Received Stripe webhook event: {event_type} at {datetime.now()}")
-        print("Received Stripe webhook event: ", event_type, event)
+            event_type = event.get("type")
+            logger.info(f"Received Stripe webhook event: {event_type} at {datetime.now()}")
 
-        if event_type == "invoice.payment_succeeded":
-            self.handle_invoice_payment_succeeded(event)
+            if event_type == "invoice.payment_succeeded":
+                self.handle_invoice_payment_succeeded(event)
+                
+            if event_type == "customer.subscription.deleted":
+                self.handle_customer_subscription_deleted(event)
+                
+            if event_type == "account.updated":
+                self.handle_connect_account_updated(event)
+                
+            if event_type == "account.application.deauthorized":
+                self.handle_connect_account_deauthorized(event)
+                
+            if event_type == "transfer.created":
+                self.handle_transfer_created(event)
+                
+            if event_type == "transfer.updated":
+                self.handle_transfer_updated(event)
             
-        if event_type == "customer.subscription.deleted":
-            self.handle_customer_subscription_deleted(event)
+            # if event_type == "balance.available":
+            #     self.handle_balance_available(event)
             
-        if event_type == "account.updated":
-            self.handle_connect_account_updated(event)
             
-        if event_type == "account.application.deauthorized":
-            self.handle_connect_account_deauthorized(event)
-            
-        if event_type == "transfer.created":
-            self.handle_transfer_created(event)
-            
-        if event_type == "transfer.updated":
-            self.handle_transfer_updated(event)
-        
-        # if event_type == "balance.available":
-        #     self.handle_balance_available(event)
-        
-        
-        if event_type == "payout.paid":
-            logger.info(f"Payout completed successfully for connected account {event.get('account')}")
-            # TODO SEND EMAIL TO NOTIFY
-        elif event_type == "payout.failed":
-            logger.error(f"Payout failed for connected account {event.get('account')}: {event}")
-            # TODO SEND EMAIL TO NOTIFY OF PAYMENT FAILURE
+            if event_type == "payout.paid":
+                logger.info(f"Payout completed successfully for connected account {event.get('account')} at {datetime.now()}")
+                # TODO SEND EMAIL TO NOTIFY
+            elif event_type == "payout.failed":
+                logger.error(f"Payout failed for connected account {event.get('account')} at {datetime.now()}: {event}")
+                # TODO SEND EMAIL TO NOTIFY OF PAYMENT FAILURE
 
-        
-        return SuccessResponse(message="OK")
+            return SuccessResponse(message="OK")
+        except Exception as e:
+            event_type = event.get("type", "unknown") if 'event' in locals() else "unknown"
+            logger.error(f"Error processing Stripe webhook event '{event_type}': {str(e)}", exc_info=True)
+            return ErrorResponse(message="Error processing webhook", status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 class FetchUserTransactionHistoryView(generics.ListAPIView):
     serializer_class = TransactionSerializer
@@ -285,7 +300,7 @@ class InitiateLabelerWithdrawalView(generics.GenericAPIView):
         response = request_paystack('/balance')
         
         if response.error:
-            #TODO: contact an admin
+            logger.error(f"Error fetching Paystack balance: {response.error} at {datetime.now()}")
             return None
 
         return response.body.get("data")[0].get("balance")
@@ -297,6 +312,7 @@ class InitiateLabelerWithdrawalView(generics.GenericAPIView):
             return ErrorResponse(message=serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         
         if WithdrawalRequest.objects.filter(transaction__user=request.user, transaction__status=TransactionStatusChoices.PENDING, initiated_by=WithdrawalRequestInitiatedByChoices.USER).exists():
+            logger.warning(f"Withdrawal request attempted by user '{request.user.username}' but pending request exists at {datetime.now()}")
             return ErrorResponse(message="You already have a pending withdrawal request, please wait for it to be processed or contact support", status=status.HTTP_400_BAD_REQUEST)
                 
         user_total_earnings = get_unreleased_reviewer_earnings(request.user)
@@ -309,14 +325,17 @@ class InitiateLabelerWithdrawalView(generics.GenericAPIView):
         
         #ensure that the labeler has enough in his balance
         if user_total_earnings < amount: 
+            logger.warning(f"Insufficient funds for withdrawal by user '{request.user.username}'. Requested: {amount}, Available: {user_total_earnings} at {datetime.now()}")
             return ErrorResponse(message="You don't have enough funds to withdraw this amount", status=status.HTTP_400_BAD_REQUEST)
         
         bank = find_bank_by_code(bank_code)
         if not bank:
+            logger.warning(f"Unsupported bank code '{bank_code}' for withdrawal by user '{request.user.username}' at {datetime.now()}")
             return ErrorResponse(message="Bank not supported", status=status.HTTP_422_UNPROCESSABLE_ENTITY)
         
         client_balance = self.get_client_paystack_balance()
         if not client_balance:
+            logger.error(f"Failed to fetch Paystack client balance for withdrawal by user '{request.user.username}' at {datetime.now()}")
             return ErrorResponse(message="Error fetching client balance, please try again later", status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         
         reference = str(uuid.uuid4())
@@ -339,7 +358,7 @@ class InitiateLabelerWithdrawalView(generics.GenericAPIView):
         )
         
         if decimal.Decimal(client_balance) < ngn_amount:
-            #TODO: contact an admin and warn them about low balance
+            logger.error(f"Paystack client balance insufficient for withdrawal. Required: {ngn_amount}, Available: {client_balance} at {datetime.now()}")
             return ErrorResponse(message="Your withdrawal request cannot be processed at this moment, please try again later or contact support ", status=status.HTTP_503_SERVICE_UNAVAILABLE)
         
         recipient_data = {
@@ -354,6 +373,7 @@ class InitiateLabelerWithdrawalView(generics.GenericAPIView):
         recipient_response = TransferRecipient.create(**recipient_data)
         if not recipient_response.get("status"):  
             transaction.mark_failed()
+            logger.error(f"Paystack transfer recipient creation failed for user '{request.user.username}': {recipient_response} at {datetime.now()}")
             return ErrorResponse(message="Could not initiate transfer, please double check the account information and try again.", status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         
         recipient_code = recipient_response.get("data").get("recipient_code")
@@ -369,9 +389,10 @@ class InitiateLabelerWithdrawalView(generics.GenericAPIView):
         if not transfer_response.get('status', False):
             transaction.mark_failed()
             error_message = transfer_response.get("message", "FATAL: Unable to initialize transfer, please contact support")
-            #TODO: contact an admin and warn them about the error
+            logger.error(f"Paystack transfer initiation failed for user '{request.user.username}': {error_message} at {datetime.now()}")
             return ErrorResponse(message=error_message, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-                
+        
+        logger.info(f"Withdrawal request initiated successfully for user '{request.user.username}'. Amount: {amount} USD ({ngn_amount} NGN) at {datetime.now()}")
         return SuccessResponse(message="Withdrawal request initiated successfully, your funds will be available in your bank account in a few minutes")
 
 class PaystackWebhookListener(generics.GenericAPIView):
@@ -437,6 +458,7 @@ class PaystackWebhookListener(generics.GenericAPIView):
                     monthly_earning.release_status = MonthlyEarningsReleaseStatusChoices.RELEASED
                     monthly_earning.save(update_fields=['release_status'])
             except Exception as e:
+                logger.error(f"Error processing Paystack transfer success for monthly earning {monthly_earning.id}: {str(e)}", exc_info=True)
                 withdrawal_request.transaction.mark_failed()
                 return withdrawal_request
             
@@ -472,22 +494,28 @@ class PaystackWebhookListener(generics.GenericAPIView):
         
                 
         if not is_valid_origin:
+            logger.warning(f"Invalid Paystack webhook origin at {datetime.now()}")
             return ErrorResponse(message="Invalid origin", status=status.HTTP_400_BAD_REQUEST)
         
-        payload = json.loads(request.body)
-        event_type = payload.get('event')
-        
-        print("EVENT TYPE", event_type)
-        
-        if event_type == 'transfer.success':
-            logger.info(f"Received transfer.success webhook")
-            self.handle_transfer_success(payload)
-        
-        if event_type == 'transfer.failed':
-            logger.info(f"Received transfer.failed webhook")
-            self.handle_transfer_failed(payload)
-        
-        return SuccessResponse(message="OK Response")
+        try:
+            payload = json.loads(request.body)
+            event_type = payload.get('event')
+            
+            logger.info(f"Received Paystack webhook event: {event_type} at {datetime.now()}")
+            
+            if event_type == 'transfer.success':
+                self.handle_transfer_success(payload)
+            
+            if event_type == 'transfer.failed':
+                self.handle_transfer_failed(payload)
+            
+            return SuccessResponse(message="OK Response")
+        except json.JSONDecodeError as e:
+            logger.error(f"Invalid JSON in Paystack webhook payload: {str(e)} at {datetime.now()}")
+            return ErrorResponse(message="Invalid payload", status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            logger.error(f"Error processing Paystack webhook: {str(e)}", exc_info=True)
+            return ErrorResponse(message="Error processing webhook", status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 class GetPaystackBankCodesView(generics.ListAPIView):
     

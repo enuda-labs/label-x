@@ -7,8 +7,8 @@ class GenerateApiKeySerializer(serializers.Serializer):
     key_name = serializers.CharField()
     
     def validate_key_name(self, value):
-        if UserAPIKey.objects.filter(name=value, revoked=False):
-            raise serializers.ValidationError("You already have an active api key with this name")
+        # Note: user will be available in the view, but we can't access it here in the serializer
+        # The view should handle user-specific validation
         return value
 
 

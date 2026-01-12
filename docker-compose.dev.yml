@@ -1,0 +1,75 @@
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: sh -c "python manage.py migrate --noinput && python manage.py seed_plans && python manage.py populate_plan_features && python manage.py seed_system_settings && python manage.py seed_domains && python manage.py runserver 0.0.0.0:8003"
+    volumes:
+      - .:/app
+      - /app/__pycache__  # Exclude Python cache
+    ports:
+      - "8003:8003"
+    env_file:
+      - .env
+    environment:
+      - PYTHONUNBUFFERED=1
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      # CELERY_RESULT_BACKEND is set to 'django-db' in settings.py for django-celery-results
+      - REDIS_CACHE_BACKEND=redis://redis:6379/1
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      - redis
+    stdin_open: true
+    tty: true
+    restart: unless-stopped
+
+  redis:
+    image: redis:7
+    container_name: label-x-redis
+    restart: always
+    ports:
+      - "6383:6379"  # Maps host port 6383 to container's internal Redis port 6379
+
+  celery:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - .:/app
+      - /app/__pycache__
+    command: celery -A label_x worker --loglevel=info --concurrency=1
+    depends_on:
+      - redis
+      - web
+    environment:
+      - PYTHONUNBUFFERED=1
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      # CELERY_RESULT_BACKEND is set to 'django-db' in settings.py for django-celery-results
+      - REDIS_CACHE_BACKEND=redis://redis:6379/1
+    # Load .env but environment variables above will override .env values
+    env_file:
+      - .env
+    restart: unless-stopped
+
+  celery-beat:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - .:/app
+      - /app/__pycache__
+    command: celery -A label_x beat --loglevel=info
+    depends_on:
+      - redis
+      - web
+    environment:
+      - PYTHONUNBUFFERED=1
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      # CELERY_RESULT_BACKEND is set to 'django-db' in settings.py for django-celery-results
+      - REDIS_CACHE_BACKEND=redis://redis:6379/1
+    # Note: env_file is loaded first, then environment overrides it
+    # So CELERY_BROKER_URL from environment will override .env file
+    env_file:
+      - .env
+    restart: unless-stopped
+

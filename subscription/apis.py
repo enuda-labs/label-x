@@ -9,7 +9,7 @@ from rest_framework.response import Response
 from drf_spectacular.utils import extend_schema, OpenApiExample, OpenApiResponse
 import stripe.error
 
-from account.models import CustomUser
+from account.models import User
 from common.responses import ErrorResponse, SuccessResponse, format_first_error
 from common.utils import get_request_origin
 
@@ -108,7 +108,11 @@ class SubscribeToPlanView(generics.CreateAPIView):
         serializer.is_valid(raise_exception=True)
         plan = serializer.validated_data["plan"]
         user = request.user
-        wallet = Wallet.objects.get(user=user)
+        try:
+            wallet = Wallet.objects.get(user=user)
+        except Wallet.DoesNotExist:
+            logger.error(f"Wallet not found for user '{user.username}' during subscription attempt at {datetime.now()}")
+            return Response({"error": "Wallet not found"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
         if wallet.balance < plan.monthly_fee:
             logger.warning(f"User '{user.username}' attempted subscription with insufficient balance. Required: {plan.monthly_fee}, Available: {wallet.balance} at {datetime.now()}")
@@ -175,10 +179,15 @@ class InitializeStripeSubscription(generics.GenericAPIView):
             )
             logger.info(f"User '{request.user.username}' initialized Stripe subscription for plan '{subscription_plan.name}' at {datetime.now()}")
             return SuccessResponse(data={"payment_url": session.url})
-        except Exception as e:
-            logger.error(f"Stripe subscription initialization failed for user '{request.user.username}': {str(e)} at {datetime.now()}")
+        except stripe.error.StripeError as e:
+            logger.error(f"Stripe API error during subscription initialization for user '{request.user.username}': {str(e)} at {datetime.now()}", exc_info=True)
             return ErrorResponse(
-                message=str(e), status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                message=f"Payment processing error: {str(e)}", status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+        except Exception as e:
+            logger.error(f"Unexpected error during Stripe subscription initialization for user '{request.user.username}': {str(e)} at {datetime.now()}", exc_info=True)
+            return ErrorResponse(
+                message="An error occurred while initializing subscription", status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
 
@@ -193,25 +202,33 @@ class CurrentSubscriptionView(generics.RetrieveAPIView):
         },
     )
     def get(self, request):
-        try:
-            subscription = UserSubscription.objects.filter(user=request.user).order_by('-subscribed_at').first()
-            if not subscription:
-                return ErrorResponse(message="No subscription found", status=status.HTTP_404_NOT_FOUND)
-            wallet, created = Wallet.objects.get_or_create(user=request.user)
-            logger.info(f"User '{request.user.username}' fetched current subscription status at {datetime.now()}")
-            
-            user_data_points, created = UserDataPoints.objects.get_or_create(user=request.user)
+        subscription = UserSubscription.objects.filter(user=request.user).order_by('-subscribed_at').first()
+        wallet, created = Wallet.objects.get_or_create(user=request.user)
+        user_data_points, created = UserDataPoints.objects.get_or_create(user=request.user)
+        
+        if not subscription:
+            logger.info(f"User '{request.user.username}' has no subscription - returning empty plan data at {datetime.now()}")
+            # Return 200 with null plan data instead of 404
             return Response(
                 {
-                    "plan": SubscriptionPlanSerializer(subscription.plan).data,
+                    "plan": None,
                     "wallet_balance": wallet.balance,
-                    "subscribed_at": subscription.subscribed_at,
-                    "expires_at": subscription.expires_at,
-                    "request_balance": subscription.plan.included_requests
-                    - subscription.requests_used,
+                    "subscribed_at": None,
+                    "expires_at": None,
+                    "request_balance": 0,
                     "user_data_points": UserDataPointsSerializer(user_data_points).data
                 }
             )
-        except UserSubscription.DoesNotExist:
-            logger.warning(f"No active subscription found for user '{request.user.username}' at {datetime.now()}")
-            return Response({"error": "No active subscription found"}, status=404)
+        
+        logger.info(f"User '{request.user.username}' fetched current subscription status at {datetime.now()}")
+        return Response(
+            {
+                "plan": SubscriptionPlanSerializer(subscription.plan).data,
+                "wallet_balance": wallet.balance,
+                "subscribed_at": subscription.subscribed_at,
+                "expires_at": subscription.expires_at,
+                "request_balance": subscription.plan.included_requests
+                - subscription.requests_used,
+                "user_data_points": UserDataPointsSerializer(user_data_points).data
+            }
+        )
