@@ -3,7 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    command: sh -c "python manage.py migrate --noinput && python manage.py seed_plans && python manage.py seed_system_settings && python manage.py seed_domains && python manage.py runserver 0.0.0.0:8003"
+    command: sh -c "python manage.py migrate --noinput && python manage.py seed_plans && python manage.py populate_plan_features && python manage.py seed_system_settings && python manage.py seed_domains && python manage.py runserver 0.0.0.0:8003"
     volumes:
       - .:/app
       - /app/__pycache__  # Exclude Python cache
