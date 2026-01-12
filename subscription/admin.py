@@ -7,6 +7,18 @@ class SubscriptionPlanAdmin(admin.ModelAdmin):
     list_display = ['name', 'monthly_fee', 'included_data_points', 'included_requests', 'cost_per_extra_request']
     list_filter = ['name']
     search_fields = ['name']
+    fieldsets = (
+        ('Basic Information', {
+            'fields': ('name', 'monthly_fee', 'stripe_monthly_plan_id')
+        }),
+        ('Limits', {
+            'fields': ('included_data_points', 'included_requests', 'cost_per_extra_request')
+        }),
+        ('Features', {
+            'fields': ('features',),
+            'description': 'Enter features as a JSON array. Example: ["Up to 10,000 data points", "48-hour turnaround time", "Basic API access", "Email support"]'
+        }),
+    )
 
 @admin.register(Wallet)
 class WalletAdmin(admin.ModelAdmin):
