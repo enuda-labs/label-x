@@ -21,7 +21,8 @@ class ViewApiKeyView(generics.GenericAPIView):
     permission_classes = [IsAuthenticated]
     def post(self, request, *args, **kwargs):
         user = request.user
-        api_keys = UserAPIKey.objects.filter(user=user, revoked=False)
+        # Return all keys including revoked ones so users can see their history
+        api_keys = UserAPIKey.objects.filter(user=user).order_by('-created')
         api_key_serializer = APIKeySerializer(api_keys, many=True)
         logger.info(f"User '{user.username}' viewed their API keys at {datetime.now()}")
         return SuccessResponse(data=api_key_serializer.data)
@@ -113,9 +114,17 @@ class GenerateApiKeyView(generics.GenericAPIView):
         
         
         user = request.user
+        
+        # Check if user already has an active key with the same name
+        if UserAPIKey.objects.filter(user=user, name=key_name, revoked=False).exists():
+            logger.warning(f"User '{user.username}' attempted to generate API key with existing name '{key_name}' at {datetime.now()}")
+            return ErrorResponse(message=f"You already have an active API key with the name '{key_name}'. Please choose a different name.")
+        
+        # Check if user already has an active key of this type
         if UserAPIKey.objects.filter(user=user, revoked=False, key_type=key_type).exists():
             logger.warning(f"User '{user.username}' attempted to generate new {key_type} API key while having active keys at {datetime.now()}")
-            return ErrorResponse(message=f"You already have an active {key_type} api key")
+            return ErrorResponse(message=f"You already have an active {key_type} API key. Please revoke or delete the existing key first.")
+        
         api_key, key = create_api_key_for_uer(user, key_name, key_type)
         logger.info(f"User '{user.username}' generated new API key {api_key.id} at {datetime.now()}")
 
