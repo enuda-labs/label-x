@@ -13,7 +13,7 @@ from task.models import Task, TaskCluster, TaskLabel
 from django.db.models import Sum, Count
 
 
-from .models import User, OTPVerification, Project, ProjectLog, UserBankAccount, UserStripeConnectAccount
+from .models import User, OTPVerification, Project, ProjectLog, UserBankAccount, UserStripeConnectAccount, ProjectMember, ProjectInvitation
 from reviewer.models import LabelerDomain
 from reviewer.serializers import LabelerDomainSerializer
 from payment.utils import find_bank_by_code, request_paystack, resolve_bank_details
@@ -481,6 +481,16 @@ class UserProjectSerializer(serializers.ModelSerializer):
         validated_data["created_by"] = request.user
         project = super().create(validated_data)
         project.create_log(f"Project created by {request.user.username}")
+        
+        # Automatically add project creator as ProjectMember with OWNER role
+        from account.models import ProjectMember
+        from account.choices import ProjectMemberRole
+        ProjectMember.objects.get_or_create(
+            project=project,
+            user=request.user,
+            defaults={'role': ProjectMemberRole.OWNER}
+        )
+        
         return project
 
 
@@ -566,6 +576,7 @@ class UpdateNameSerializer(serializers.Serializer):
 class ProjectSerializer(serializers.ModelSerializer):
     created_by = serializers.SerializerMethodField()
     members = serializers.SerializerMethodField()
+    team_members = serializers.SerializerMethodField()
 
     class Meta:
         model = Project
@@ -575,6 +586,7 @@ class ProjectSerializer(serializers.ModelSerializer):
             "description",
             "created_by",
             "members",
+            "team_members",
             "created_at",
             "updated_at",
             "status",
@@ -591,7 +603,70 @@ class ProjectSerializer(serializers.ModelSerializer):
         }
 
     def get_members(self, obj):
+        # Return reviewer members (legacy field)
         return [
             {"id": member.id, "username": member.username, "email": member.email}
-            for member in obj.members.all()
+            for member in obj.reviewer_members.all()
         ]
+
+    def get_team_members(self, obj):
+        # Return team members via ProjectMember
+        return ProjectMemberSerializer(obj.project_members.all(), many=True).data
+
+
+class ProjectMemberSerializer(serializers.ModelSerializer):
+    user = serializers.SerializerMethodField()
+    role = serializers.CharField(source='get_role_display', read_only=True)
+
+    class Meta:
+        model = ProjectMember
+        fields = ['id', 'user', 'role', 'joined_at']
+        read_only_fields = ['id', 'joined_at']
+
+    def get_user(self, obj):
+        return {
+            "id": obj.user.id,
+            "username": obj.user.username,
+            "email": obj.user.email,
+        }
+
+
+class ProjectInvitationSerializer(serializers.ModelSerializer):
+    invited_by = serializers.SerializerMethodField()
+    role = serializers.CharField(source='get_role_display', read_only=True)
+    # Use raw status value, not display value, for API consistency
+    status = serializers.CharField(read_only=True)
+
+    class Meta:
+        model = ProjectInvitation
+        fields = ['id', 'email', 'role', 'invited_by', 'token', 'status', 'created_at', 'expires_at']
+        read_only_fields = ['id', 'token', 'created_at', 'expires_at', 'invited_by']
+
+    def get_invited_by(self, obj):
+        return {
+            "id": obj.invited_by.id,
+            "username": obj.invited_by.username,
+            "email": obj.invited_by.email,
+        }
+
+
+class AddMemberSerializer(serializers.Serializer):
+    email = serializers.EmailField(required=False)
+    user_id = serializers.IntegerField(required=False)
+    role = serializers.ChoiceField(choices=['owner', 'admin', 'member', 'viewer'], default='member')
+
+    def validate(self, attrs):
+        if not attrs.get('email') and not attrs.get('user_id'):
+            raise serializers.ValidationError("Either email or user_id must be provided")
+        if attrs.get('email') and attrs.get('user_id'):
+            raise serializers.ValidationError("Provide either email or user_id, not both")
+        return attrs
+
+
+class InviteMemberSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+    role = serializers.ChoiceField(choices=['owner', 'admin', 'member', 'viewer'], default='member')
+
+
+class UpdateMemberRoleSerializer(serializers.Serializer):
+    role = serializers.ChoiceField(choices=['owner', 'admin', 'member', 'viewer'])

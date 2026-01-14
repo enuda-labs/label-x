@@ -17,6 +17,9 @@ services:
       # CELERY_RESULT_BACKEND is set to 'django-db' in settings.py for django-celery-results
       - REDIS_CACHE_BACKEND=redis://redis:6379/1
       - REDIS_URL=redis://redis:6379/0
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
     depends_on:
       - redis
     stdin_open: true
