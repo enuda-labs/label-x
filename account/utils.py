@@ -9,7 +9,7 @@ import jwt
 from cryptography.fernet import Fernet
 import base64
 import json
-from .models import ApiKeyTypeChoices, UserAPIKey
+from .models import ApiKeyTypeChoices, UserAPIKey, Project, ProjectMember
 from rest_framework_api_key.permissions import BaseHasAPIKey
 
 from subscription.models import UserDataPoints, SubscriptionPlan, UserSubscription
@@ -116,4 +116,113 @@ def assign_default_plan(new_user):
         renews_at = expires_at,
     )
     user_data_points, created = UserDataPoints.objects.get_or_create(user=new_user)
-    user_data_points.topup_data_points(50)        
+    user_data_points.topup_data_points(50)
+
+
+class IsProjectOwnerOrAdmin(BasePermission):
+    """Allow access to project creator or users with ADMIN role in the project"""
+    
+    def has_permission(self, request, view):
+        if not request.user or not request.user.is_authenticated:
+            return False
+        
+        # Get project_id from view kwargs or request data
+        project_id = view.kwargs.get('project_id') or request.data.get('project_id')
+        if not project_id:
+            return False
+        
+        try:
+            project = Project.objects.get(id=project_id)
+        except Project.DoesNotExist:
+            return False
+        
+        # Check if user is project creator
+        if project.created_by == request.user:
+            return True
+        
+        # Check if user has ADMIN or OWNER role
+        try:
+            member = ProjectMember.objects.get(project=project, user=request.user)
+            return member.role in ['admin', 'owner']
+        except ProjectMember.DoesNotExist:
+            return False
+
+
+class IsProjectMember(BasePermission):
+    """Allow access to any member of the project"""
+    
+    def has_permission(self, request, view):
+        if not request.user or not request.user.is_authenticated:
+            return False
+        
+        # Get project_id from view kwargs or request data
+        project_id = view.kwargs.get('project_id') or request.data.get('project_id')
+        if not project_id:
+            return False
+        
+        try:
+            project = Project.objects.get(id=project_id)
+        except Project.DoesNotExist:
+            return False
+        
+        # Check if user is project creator
+        if project.created_by == request.user:
+            return True
+        
+        # Check if user is a team member
+        return ProjectMember.objects.filter(project=project, user=request.user).exists()
+
+
+def has_project_permission(user, project, permission):
+    """
+    Check if user has specific permission in project.
+    Permissions: 'create_tasks', 'view_tasks', 'manage_members', 'manage_project'
+    """
+    if not user or not user.is_authenticated:
+        return False
+    
+    # Project creator has all permissions
+    if project.created_by == user:
+        return True
+    
+    try:
+        member = ProjectMember.objects.get(project=project, user=user)
+        role = member.role
+        
+        # Permission matrix
+        permissions = {
+            'owner': ['create_tasks', 'view_tasks', 'manage_members', 'manage_project'],
+            'admin': ['create_tasks', 'view_tasks', 'manage_members'],
+            'member': ['create_tasks', 'view_tasks'],
+            'viewer': ['view_tasks'],
+        }
+        
+        return permission in permissions.get(role, [])
+    except ProjectMember.DoesNotExist:
+        return False
+
+
+class HasProjectPermission(BasePermission):
+    """Check if user has specific permission in project"""
+    
+    required_permission = None
+    
+    def has_permission(self, request, view):
+        if not request.user or not request.user.is_authenticated:
+            return False
+        
+        # Get project_id from view kwargs or request data
+        project_id = view.kwargs.get('project_id') or request.data.get('project_id')
+        if not project_id:
+            return False
+        
+        try:
+            project = Project.objects.get(id=project_id)
+        except Project.DoesNotExist:
+            return False
+        
+        permission = getattr(view, 'required_permission', self.required_permission)
+        if not permission:
+            return False
+        
+        return has_project_permission(request.user, project, permission)        
