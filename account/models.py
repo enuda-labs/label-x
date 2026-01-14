@@ -12,9 +12,15 @@ from rest_framework_api_key.models import AbstractAPIKey
 from cloudinary.models import CloudinaryField
 import cloudinary.uploader
 
-from account.choices import BankPlatformChoices, MonthlyEarningsReleaseStatusChoices, ProjectStatusChoices
+from account.choices import (
+    BankPlatformChoices, 
+    MonthlyEarningsReleaseStatusChoices, 
+    ProjectStatusChoices,
+    ProjectMemberRole,
+    ProjectInvitationStatus,
+    StripeConnectAccountStatusChoices
+)
 from reviewer.models import LabelerDomain
-from account.choices import StripeConnectAccountStatusChoices
 
 
 class Project(models.Model):
@@ -25,6 +31,7 @@ class Project(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     status = models.CharField(max_length=20, choices=ProjectStatusChoices.choices, default=ProjectStatusChoices.PENDING)
+    team_members = models.ManyToManyField('User', through='ProjectMember', related_name='team_projects', blank=True)
 
     def get_cluster_label_completion_percentage(self):
         completion_percentage = self.clusters.aggregate(completion_percentage=Avg("completion_percentage"))["completion_percentage"]
@@ -57,7 +64,7 @@ class User(AbstractUser):
     customer_id = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
     is_reviewer = models.BooleanField(default=False, help_text="Designates whether this user can review tasks")
     last_activity = models.DateTimeField(auto_now=True, help_text="Last time the user was active")
-    project = models.ForeignKey(Project, on_delete=models.SET_NULL, related_name='members', null=True, blank=True)
+    project = models.ForeignKey(Project, on_delete=models.SET_NULL, related_name='reviewer_members', null=True, blank=True, help_text="Project assignment for reviewers (legacy field)")
     domains = models.ManyToManyField(LabelerDomain, related_name='labelers', blank=True, help_text="The domains of expertise that the labeler is allowed to label")
     is_email_verified = models.BooleanField(default=False, help_text="Indicates if the email of the user has been verified")
 
@@ -226,4 +233,64 @@ class OTPVerification(models.Model):
     def verify_otp(self, otp_code):
         totp = pyotp.TOTP(self.secret_key)
         return totp.verify(otp_code)
+
+
+class ProjectMember(models.Model):
+    """Team member relationship between User and Project with role"""
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='project_members')
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='project_memberships')
+    role = models.CharField(max_length=20, choices=ProjectMemberRole.choices, default=ProjectMemberRole.MEMBER)
+    joined_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = [['project', 'user']]
+        ordering = ['-joined_at']
+
+    def __str__(self):
+        return f"{self.user.username} - {self.project.name} ({self.role})"
+
+
+class ProjectInvitation(models.Model):
+    """Email invitation for project membership"""
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='invitations')
+    email = models.EmailField()
+    role = models.CharField(max_length=20, choices=ProjectMemberRole.choices, default=ProjectMemberRole.MEMBER)
+    invited_by = models.ForeignKey(User, on_delete=models.CASCADE, related_name='sent_invitations')
+    token = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    status = models.CharField(max_length=20, choices=ProjectInvitationStatus.choices, default=ProjectInvitationStatus.PENDING)
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField()
+
+    class Meta:
+        unique_together = [['project', 'email', 'status']]
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['token']),
+            models.Index(fields=['email', 'status']),
+        ]
+
+    def __str__(self):
+        return f"Invitation for {self.email} to {self.project.name} ({self.status})"
+
+    def is_expired(self):
+        from django.utils import timezone
+        return timezone.now() > self.expires_at
+
+    def accept(self, user):
+        """Accept invitation and create ProjectMember"""
+        if self.status != ProjectInvitationStatus.PENDING:
+            raise ValueError("Invitation is not pending")
+        if self.is_expired():
+            self.status = ProjectInvitationStatus.EXPIRED
+            self.save()
+            raise ValueError("Invitation has expired")
+        
+        # Create project member
+        ProjectMember.objects.get_or_create(
+            project=self.project,
+            user=user,
+            defaults={'role': self.role}
+        )
+        self.status = ProjectInvitationStatus.ACCEPTED
+        self.save()
         
