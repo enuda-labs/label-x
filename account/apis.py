@@ -25,7 +25,7 @@ from task.models import Task, TaskCluster
 from task.serializers import ListReviewersWithClustersSerializer, ProjectUpdateSerializer
 from task.utils import get_unreleased_reviewer_earnings
 
-from .utils import IsAdminUser, IsSuperAdmin, NotReviewer, assign_default_plan
+from .utils import IsAdminUser, IsSuperAdmin, NotReviewer, assign_default_plan, IsProjectOwnerOrAdmin, IsProjectMember, has_project_permission
 from .serializers import (
     AcceptOnlyEmailSerializer,
     AdminProjectDetailSerializer,
@@ -57,14 +57,19 @@ from .serializers import (
     UserSerializer,
     ChangePasswordSerializer,
     UpdateNameSerializer,
+    ProjectMemberSerializer,
+    ProjectInvitationSerializer,
+    AddMemberSerializer,
+    InviteMemberSerializer,
+    UpdateMemberRoleSerializer,
 )
 from .utils import (
     HasUserAPIKey,
     IsAdminUser,
     IsSuperAdmin,
 )
-from .models import User,  OTPVerification, Project, UserBankAccount, UserStripeConnectAccount
-from .choices import StripeConnectAccountStatusChoices, BankPlatformChoices
+from .models import User,  OTPVerification, Project, UserBankAccount, UserStripeConnectAccount, ProjectMember, ProjectInvitation
+from .choices import StripeConnectAccountStatusChoices, BankPlatformChoices, ProjectMemberRole, ProjectInvitationStatus
 from django.contrib.auth import logout
 # Set up logger
 logger = logging.getLogger('account.apis')
@@ -1036,6 +1041,28 @@ class RegisterView(APIView):
                 logger.info(f"Organization '{user.username}' has been assign the default free plan {datetime.now()}")
             logger.info(f"New user '{user.username}' registered successfully at {datetime.now()}")
             
+            # Handle invitation token if provided
+            invitation_token = request.data.get('invitation_token')
+            if invitation_token:
+                try:
+                    invitation = ProjectInvitation.objects.get(
+                        token=invitation_token,
+                        status=ProjectInvitationStatus.PENDING,
+                        email=user.email
+                    )
+                    if not invitation.is_expired():
+                        try:
+                            invitation.accept(user)
+                            logger.info(f"User '{user.username}' auto-accepted invitation to project '{invitation.project.name}'")
+                        except ValueError as e:
+                            logger.warning(f"Failed to accept invitation for user '{user.username}': {str(e)}")
+                    else:
+                        logger.warning(f"Invitation token expired for user '{user.email}'")
+                except ProjectInvitation.DoesNotExist:
+                    logger.warning(f"Invalid invitation token provided for user '{user.email}'")
+                except Exception as e:
+                    logger.error(f"Error processing invitation token for user '{user.email}': {str(e)}")
+            
             # Try to send verification email, but don't fail registration if it fails
             try:
                 send_account_verification_email(user)
@@ -1808,3 +1835,399 @@ class UpdateNameView(APIView):
             {"status": "error", "error": serializer.errors},
             status=status.HTTP_400_BAD_REQUEST
         )
+
+
+# Team Access Features API Views
+
+class ListProjectMembersView(APIView):
+    """List all team members of a project"""
+    permission_classes = [IsAuthenticated, IsProjectMember]
+
+    @extend_schema(
+        summary="List project team members",
+        description="Returns a list of all team members with their roles for the specified project.",
+        responses={
+            200: OpenApiResponse(
+                response=ProjectMemberSerializer,
+                description="List of project members"
+            )
+        }
+    )
+    def get(self, request, project_id):
+        try:
+            project = Project.objects.get(id=project_id)
+        except Project.DoesNotExist:
+            return ErrorResponse("Project not found", status_code=status.HTTP_404_NOT_FOUND)
+
+        members = ProjectMember.objects.filter(project=project).select_related('user')
+        serializer = ProjectMemberSerializer(members, many=True)
+        return Response({
+            "status": "success",
+            "members": serializer.data
+        }, status=status.HTTP_200_OK)
+
+
+class AddProjectMemberView(APIView):
+    """Add existing user to project as team member"""
+    permission_classes = [IsAuthenticated, IsProjectOwnerOrAdmin]
+
+    @extend_schema(
+        summary="Add member to project",
+        description="Add an existing user to the project as a team member. User must exist in the system.",
+        request=AddMemberSerializer,
+        responses={
+            201: OpenApiResponse(
+                response=ProjectMemberSerializer,
+                description="Member added successfully"
+            ),
+            404: OpenApiResponse(
+                description="User not found"
+            )
+        }
+    )
+    def post(self, request, project_id):
+        try:
+            project = Project.objects.get(id=project_id)
+        except Project.DoesNotExist:
+            return ErrorResponse(message="Project not found", status=status.HTTP_404_NOT_FOUND)
+
+        serializer = AddMemberSerializer(data=request.data)
+        if not serializer.is_valid():
+            return ErrorResponse(message=format_first_error(serializer.errors), status=status.HTTP_400_BAD_REQUEST)
+
+        # Find user by email or user_id
+        user = None
+        if serializer.validated_data.get('email'):
+            try:
+                user = User.objects.get(email=serializer.validated_data['email'])
+            except User.DoesNotExist:
+                return ErrorResponse(
+                    message=f"User with email '{serializer.validated_data['email']}' not found. This user doesn't have an account yet. Please use the 'Invite' option to send them an invitation to join the project.", 
+                    status=status.HTTP_404_NOT_FOUND
+                )
+        elif serializer.validated_data.get('user_id'):
+            try:
+                user = User.objects.get(id=serializer.validated_data['user_id'])
+            except User.DoesNotExist:
+                return ErrorResponse(message="User not found", status=status.HTTP_404_NOT_FOUND)
+
+        # Check if user is already a member
+        if ProjectMember.objects.filter(project=project, user=user).exists():
+            return ErrorResponse(message="User is already a member of this project", status=status.HTTP_400_BAD_REQUEST)
+
+        # Create project member
+        member = ProjectMember.objects.create(
+            project=project,
+            user=user,
+            role=serializer.validated_data['role']
+        )
+
+        project.create_log(f"{request.user.username} added {user.username} as {member.role}")
+
+        serializer_response = ProjectMemberSerializer(member)
+        return Response({
+            "status": "success",
+            "member": serializer_response.data
+        }, status=status.HTTP_201_CREATED)
+
+
+class RemoveProjectMemberView(APIView):
+    """Remove member from project"""
+    permission_classes = [IsAuthenticated, IsProjectOwnerOrAdmin]
+
+    @extend_schema(
+        summary="Remove member from project",
+        description="Remove a team member from the project.",
+        responses={
+            200: OpenApiResponse(
+                description="Member removed successfully"
+            ),
+            404: OpenApiResponse(
+                description="Member not found"
+            )
+        }
+    )
+    def delete(self, request, project_id, user_id):
+        try:
+            project = Project.objects.get(id=project_id)
+        except Project.DoesNotExist:
+            return ErrorResponse("Project not found", status_code=status.HTTP_404_NOT_FOUND)
+
+        try:
+            member = ProjectMember.objects.get(project=project, user_id=user_id)
+        except ProjectMember.DoesNotExist:
+            return ErrorResponse("Member not found in this project", status_code=status.HTTP_404_NOT_FOUND)
+
+        # Don't allow removing the project owner
+        if project.created_by_id == user_id:
+            return ErrorResponse("Cannot remove project owner", status_code=status.HTTP_400_BAD_REQUEST)
+
+        user = member.user
+        member.delete()
+
+        project.create_log(f"{request.user.username} removed {user.username} from the project")
+
+        return SuccessResponse("Member removed successfully")
+
+
+class UpdateProjectMemberRoleView(APIView):
+    """Update member role in project"""
+    permission_classes = [IsAuthenticated, IsProjectOwnerOrAdmin]
+
+    @extend_schema(
+        summary="Update member role",
+        description="Update the role of a team member in the project.",
+        request=UpdateMemberRoleSerializer,
+        responses={
+            200: OpenApiResponse(
+                response=ProjectMemberSerializer,
+                description="Role updated successfully"
+            )
+        }
+    )
+    def patch(self, request, project_id, user_id):
+        try:
+            project = Project.objects.get(id=project_id)
+        except Project.DoesNotExist:
+            return ErrorResponse("Project not found", status_code=status.HTTP_404_NOT_FOUND)
+
+        try:
+            member = ProjectMember.objects.get(project=project, user_id=user_id)
+        except ProjectMember.DoesNotExist:
+            return ErrorResponse("Member not found in this project", status_code=status.HTTP_404_NOT_FOUND)
+
+        serializer = UpdateMemberRoleSerializer(data=request.data)
+        if not serializer.is_valid():
+            return ErrorResponse(format_first_error(serializer.errors), status_code=status.HTTP_400_BAD_REQUEST)
+
+        # Don't allow changing project owner role
+        if project.created_by_id == user_id:
+            return ErrorResponse("Cannot change project owner role", status_code=status.HTTP_400_BAD_REQUEST)
+
+        old_role = member.role
+        member.role = serializer.validated_data['role']
+        member.save()
+
+        project.create_log(f"{request.user.username} changed {member.user.username}'s role from {old_role} to {member.role}")
+
+        serializer_response = ProjectMemberSerializer(member)
+        return Response({
+            "status": "success",
+            "member": serializer_response.data
+        }, status=status.HTTP_200_OK)
+
+
+class InviteProjectMemberView(APIView):
+    """Send email invitation to join project"""
+    permission_classes = [IsAuthenticated, IsProjectOwnerOrAdmin]
+
+    @extend_schema(
+        summary="Invite member to project",
+        description="Send an email invitation to join the project. Works for both existing and new users.",
+        request=InviteMemberSerializer,
+        responses={
+            201: OpenApiResponse(
+                response=ProjectInvitationSerializer,
+                description="Invitation sent successfully"
+            )
+        }
+    )
+    def post(self, request, project_id):
+        from django.utils import timezone
+        from datetime import timedelta
+
+        try:
+            project = Project.objects.get(id=project_id)
+        except Project.DoesNotExist:
+            return ErrorResponse("Project not found", status_code=status.HTTP_404_NOT_FOUND)
+
+        serializer = InviteMemberSerializer(data=request.data)
+        if not serializer.is_valid():
+            return ErrorResponse(format_first_error(serializer.errors), status_code=status.HTTP_400_BAD_REQUEST)
+
+        email = serializer.validated_data['email']
+        role = serializer.validated_data['role']
+
+        # Check if user is already a member
+        try:
+            user = User.objects.get(email=email)
+            if ProjectMember.objects.filter(project=project, user=user).exists():
+                return ErrorResponse("User is already a member of this project", status_code=status.HTTP_400_BAD_REQUEST)
+        except User.DoesNotExist:
+            pass  # New user, continue with invitation
+
+        # Check for pending invitation
+        pending_invitation = ProjectInvitation.objects.filter(
+            project=project,
+            email=email,
+            status=ProjectInvitationStatus.PENDING
+        ).first()
+
+        if pending_invitation and not pending_invitation.is_expired():
+            return ErrorResponse("Invitation already sent to this email", status_code=status.HTTP_400_BAD_REQUEST)
+
+        # Create or update invitation
+        expires_at = timezone.now() + timedelta(days=7)
+        invitation, created = ProjectInvitation.objects.update_or_create(
+            project=project,
+            email=email,
+            status=ProjectInvitationStatus.PENDING,
+            defaults={
+                'role': role,
+                'invited_by': request.user,
+                'expires_at': expires_at,
+            }
+        )
+
+        # Send invitation email
+        from account.services import send_project_invitation_email
+        email_sent = False
+        try:
+            is_existing_user = User.objects.filter(email=email).exists()
+            email_sent = send_project_invitation_email(email, project, role, invitation.token, is_existing_user)
+        except Exception as e:
+            logger.error(f"Failed to send invitation email: {e}", exc_info=True)
+            email_sent = False
+
+        project.create_log(f"{request.user.username} invited {email} to the project as {role}")
+
+        serializer_response = ProjectInvitationSerializer(invitation)
+        response_data = {
+            "status": "success",
+            "invitation": serializer_response.data,
+            "email_sent": email_sent
+        }
+        
+        # If email failed, return warning in response
+        if not email_sent:
+            response_data["warning"] = "Invitation created but email failed to send. Please check email configuration."
+            logger.warning(f"Invitation created for {email} but email delivery failed")
+
+        return Response(response_data, status=status.HTTP_201_CREATED)
+
+
+class ListProjectInvitationsView(APIView):
+    """List pending invitations for a project"""
+    permission_classes = [IsAuthenticated, IsProjectOwnerOrAdmin]
+
+    @extend_schema(
+        summary="List project invitations",
+        description="Returns a list of all pending invitations for the specified project.",
+        responses={
+            200: OpenApiResponse(
+                response=ProjectInvitationSerializer,
+                description="List of invitations"
+            )
+        }
+    )
+    def get(self, request, project_id):
+        try:
+            project = Project.objects.get(id=project_id)
+        except Project.DoesNotExist:
+            return ErrorResponse("Project not found", status_code=status.HTTP_404_NOT_FOUND)
+
+        invitations = ProjectInvitation.objects.filter(
+            project=project,
+            status=ProjectInvitationStatus.PENDING
+        ).select_related('invited_by')
+
+        # Mark expired invitations
+        from django.utils import timezone
+        for invitation in invitations:
+            if invitation.is_expired():
+                invitation.status = ProjectInvitationStatus.EXPIRED
+                invitation.save()
+
+        # Re-fetch to get updated statuses
+        invitations = ProjectInvitation.objects.filter(project=project).select_related('invited_by')
+        serializer = ProjectInvitationSerializer(invitations, many=True)
+        return Response({
+            "status": "success",
+            "invitations": serializer.data
+        }, status=status.HTTP_200_OK)
+
+
+class CancelProjectInvitationView(APIView):
+    """Cancel a pending invitation"""
+    permission_classes = [IsAuthenticated, IsProjectOwnerOrAdmin]
+
+    @extend_schema(
+        summary="Cancel invitation",
+        description="Cancel a pending project invitation.",
+        responses={
+            200: OpenApiResponse(
+                description="Invitation cancelled successfully"
+            )
+        }
+    )
+    def delete(self, request, project_id, invitation_id):
+        try:
+            project = Project.objects.get(id=project_id)
+        except Project.DoesNotExist:
+            return ErrorResponse("Project not found", status_code=status.HTTP_404_NOT_FOUND)
+
+        try:
+            invitation = ProjectInvitation.objects.get(id=invitation_id, project=project)
+        except ProjectInvitation.DoesNotExist:
+            return ErrorResponse("Invitation not found", status_code=status.HTTP_404_NOT_FOUND)
+
+        if invitation.status != ProjectInvitationStatus.PENDING:
+            return ErrorResponse("Only pending invitations can be cancelled", status_code=status.HTTP_400_BAD_REQUEST)
+
+        invitation.delete()
+        project.create_log(f"{request.user.username} cancelled invitation for {invitation.email}")
+
+        return SuccessResponse("Invitation cancelled successfully")
+
+
+class AcceptProjectInvitationView(APIView):
+    """Accept project invitation via token"""
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        summary="Accept project invitation",
+        description="Accept a project invitation using the invitation token. Works for both existing and new users.",
+        responses={
+            200: OpenApiResponse(
+                response=ProjectMemberSerializer,
+                description="Invitation accepted successfully"
+            ),
+            404: OpenApiResponse(
+                description="Invitation not found or expired"
+            )
+        }
+    )
+    def post(self, request, token):
+        try:
+            invitation = ProjectInvitation.objects.get(token=token, status=ProjectInvitationStatus.PENDING)
+        except ProjectInvitation.DoesNotExist:
+            return ErrorResponse("Invitation not found or already used", status_code=status.HTTP_404_NOT_FOUND)
+
+        if invitation.is_expired():
+            invitation.status = ProjectInvitationStatus.EXPIRED
+            invitation.save()
+            return ErrorResponse("Invitation has expired", status_code=status.HTTP_400_BAD_REQUEST)
+
+        # Verify email matches (for new users who signed up)
+        if request.user.email != invitation.email:
+            return ErrorResponse("Email does not match invitation", status_code=status.HTTP_400_BAD_REQUEST)
+
+        # Accept invitation
+        try:
+            invitation.accept(request.user)
+        except ValueError as e:
+            return ErrorResponse(str(e), status_code=status.HTTP_400_BAD_REQUEST)
+
+        # Get the created member
+        member = ProjectMember.objects.get(project=invitation.project, user=request.user)
+        serializer = ProjectMemberSerializer(member)
+
+        return Response({
+            "status": "success",
+            "message": "Invitation accepted successfully",
+            "member": serializer.data,
+            "project": {
+                "id": invitation.project.id,
+                "name": invitation.project.name,
+            }
+        }, status=status.HTTP_200_OK)
