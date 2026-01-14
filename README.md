@@ -186,6 +186,36 @@ ports:
 - Migrations run automatically on container startup
 - To reset the database, delete `db.sqlite3` and restart containers
 
+---
+
+## 👥 Team Member Management
+
+Projects support team collaboration with role-based access control.
+
+### Access Levels
+
+- **Owner**: Full access (create tasks, view tasks, manage members, manage project settings)
+- **Admin**: Can create tasks, view tasks, and manage team members
+- **Member**: Can create and view tasks
+- **Viewer**: Read-only access (view tasks only)
+
+### Features
+
+- Add existing users to projects
+- Invite new users via email (creates account if needed)
+- Update member roles
+- Remove team members
+- Project creator is automatically added as Owner
+
+### API Endpoints
+
+- `GET /api/v1/account/projects/<project_id>/members/` - List project members
+- `POST /api/v1/account/projects/<project_id>/members/add/` - Add existing user
+- `POST /api/v1/account/projects/<project_id>/invitations/send/` - Send invitation
+- `PATCH /api/v1/account/projects/<project_id>/members/<user_id>/role/` - Update role
+- `DELETE /api/v1/account/projects/<project_id>/members/<user_id>/` - Remove member
+- `POST /api/v1/account/projects/invitations/<token>/accept/` - Accept invitation
+
 
 
 
