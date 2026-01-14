@@ -23,3 +23,17 @@ class StripeConnectAccountStatusChoices(models.TextChoices):
     INITIATED = 'initiated', 'Initiated'#user has started interacting with the connect onboarding link
     COMPLETED = 'completed', 'Completed' # indicates that the user has filled out the onboarding form
     DISABLED = 'disabled', 'Disabled' # indicates that the stripe connect account has been disabled
+
+
+class ProjectMemberRole(models.TextChoices):
+    OWNER = 'owner', 'Owner'
+    ADMIN = 'admin', 'Admin'
+    MEMBER = 'member', 'Member'
+    VIEWER = 'viewer', 'Viewer'
+
+
+class ProjectInvitationStatus(models.TextChoices):
+    PENDING = 'pending', 'Pending'
+    ACCEPTED = 'accepted', 'Accepted'
+    REJECTED = 'rejected', 'Rejected'
+    EXPIRED = 'expired', 'Expired'
