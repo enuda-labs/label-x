@@ -123,6 +123,50 @@ def get_user_by_email(email) -> User:
         return user
     except User.DoesNotExist:
         return None
+
+
+def send_project_invitation_email(email, project, role, token, is_existing_user):
+    """Send project invitation email to user
     
-    # otp = generate_and_save_otp(email)
+    Returns:
+        bool: True if email sent successfully, False otherwise
+    """
+    from django.conf import settings
+    from account.models import ProjectInvitation
+    
+    email_service = EmailService(email)
+    
+    # Get the invitation to access expires_at
+    try:
+        invitation = ProjectInvitation.objects.get(token=token, project=project)
+        expires_at = invitation.expires_at
+    except ProjectInvitation.DoesNotExist:
+        expires_at = None
+    
+    # Get the acceptance URL
+    frontend_url = getattr(settings, 'FRONTEND_URL', 'http://localhost:3000')
+    if is_existing_user:
+        # For existing users, direct acceptance link
+        acceptance_url = f"{frontend_url}/client/projects/invitations/{token}/accept"
+        template_path = "emails/project_invitation_existing.html"
+    else:
+        # For new users, signup link with invitation token
+        acceptance_url = f"{frontend_url}/auth/signup?invitation_token={token}"
+        template_path = "emails/project_invitation_new.html"
+    
+    # Get inviter name
+    inviter_name = project.created_by.username if project.created_by else "Team"
+    
+    return email_service.send_template_email(
+        subject=f"You've been invited to join {project.name}",
+        template_path=template_path,
+        context={
+            "project_name": project.name,
+            "project_description": project.description or "",
+            "inviter_name": inviter_name,
+            "role": role.title(),
+            "acceptance_url": acceptance_url,
+            "expires_at": expires_at,
+        }
+    )
     
