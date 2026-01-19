@@ -6,17 +6,8 @@
     <title>Project Invitation - Join LabelX</title>
     <style>
         body {
-            font-family: Arial, sans-serif;
-            line-height: 1.6;
-            color: #333;
-            max-width: 600px;
-            margin: 0 auto;
-            padding: 20px;
-        }
-        .container {
-            background-color: #f9f9f9;
-            padding: 30px;
-            border-radius: 8px;
+            margin: 0;
+            padding: 0;
         }
         .header {
             background-color: #ff6900;
@@ -51,41 +42,43 @@
     </style>
 </head>
 <body>
-    <div class="container">
-        <div class="header">
-            <h1>You're Invited to Join LabelX!</h1>
-        </div>
-        
-        <p>Hello,</p>
-        
-        <p><strong>{{ inviter_name }}</strong> has invited you to join the project <strong>{{ project_name }}</strong> as a <strong>{{ role }}</strong>.</p>
-        
-        {% if project_description %}
-        <p><strong>Project Description:</strong> {{ project_description }}</p>
-        {% endif %}
-        
-        <div class="welcome-box">
-            <p><strong>Welcome to LabelX!</strong></p>
-            <p>You don't have an account yet, but that's okay! Click the button below to create your account and automatically join this project.</p>
-        </div>
-        
-        <p>Click the button below to sign up and join the project:</p>
-        
-        <div style="text-align: center;">
-            <a href="{{ acceptance_url }}" class="button">Sign Up & Join Project</a>
-        </div>
-        
-        {% if expires_at %}
-        <p style="font-size: 12px; color: #666;">
-            <strong>Note:</strong> This invitation expires on {{ expires_at|date:"F d, Y" }}.
-        </p>
-        {% endif %}
-        
-        <p>If the button doesn't work, copy and paste this link into your browser:</p>
-        <p style="word-break: break-all; color: #666;">{{ acceptance_url }}</p>
-        
-        <div class="footer">
-            <p>This is an automated email from LabelX. Please do not reply to this email.</p>
+    <div style="background-color:#f5f5f5; font-family:Arial,sans-serif; margin-bottom:0; margin-left:auto; margin-right:auto; margin-top:0; max-width:900px; padding:20px">
+        <div style="background-color:#ffffff; border-radius:8px; box-shadow:0 2px 4px rgba(0,0,0,0.1); padding:30px">
+            <div class="header">
+                <h1>You're Invited to Join LabelX!</h1>
+            </div>
+            
+            <p>Hello,</p>
+            
+            <p><strong>{{ inviter_name }}</strong> has invited you to join the project <strong>{{ project_name }}</strong> as a <strong>{{ role }}</strong>.</p>
+            
+            {% if project_description %}
+            <p><strong>Project Description:</strong> {{ project_description }}</p>
+            {% endif %}
+            
+            <div class="welcome-box">
+                <p><strong>Welcome to LabelX!</strong></p>
+                <p>You don't have an account yet, but that's okay! Click the button below to create your account and automatically join this project.</p>
+            </div>
+            
+            <p>Click the button below to sign up and join the project:</p>
+            
+            <div style="text-align: center;">
+                <a href="{{ acceptance_url }}" class="button">Sign Up & Join Project</a>
+            </div>
+            
+            {% if expires_at %}
+            <p style="font-size: 12px; color: #666;">
+                <strong>Note:</strong> This invitation expires on {{ expires_at|date:"F d, Y" }}.
+            </p>
+            {% endif %}
+            
+            <p>If the button doesn't work, copy and paste this link into your browser:</p>
+            <p style="word-break: break-all; color: #666;">{{ acceptance_url }}</p>
+            
+            <div class="footer">
+                <p>This is an automated email from LabelX. Please do not reply to this email.</p>
+            </div>
         </div>
     </div>
 </body>
