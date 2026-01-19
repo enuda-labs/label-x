@@ -502,7 +502,10 @@ class ProjectDetailView(generics.RetrieveAPIView):
         if self.request.user.is_staff:
             return Project.objects.all()
         else:
-            return Project.objects.filter(created_by=self.request.user)
+            # Users can view projects they created OR projects they are a member of
+            return Project.objects.filter(
+                Q(created_by=self.request.user) | Q(project_members__user=self.request.user)
+            ).distinct()
     
     @cache_response_decorator('project_detail')
     def retrieve(self, request, *args, **kwargs):
@@ -1078,9 +1081,10 @@ class RegisterView(APIView):
         # Custom error messages for validation errors
         error_message = ""
         if "username" in serializer.errors:
-            error_message = "Username already exists"
+            # Use the detailed error message from serializer if available
+            error_message = serializer.errors["username"][0] if serializer.errors["username"] else "Username already exists. Please choose a different username."
         elif "email" in serializer.errors:
-            error_message = "Email already exists"
+            error_message = serializer.errors["email"][0] if serializer.errors["email"] else "Email already exists. Please use a different email address."
         elif "password" in serializer.errors:
             error_message = serializer.errors["password"][0]
         elif "domains" in serializer.errors:
@@ -1343,7 +1347,7 @@ class ListProjectsView(APIView):
         Returns a list of projects based on the user's role:
         - Admin/Staff: Can see all projects
         - Reviewer: Can only see projects they are assigned to
-        - Organization: Can only see their own projects
+        - Organization: Can see projects they created or projects they are a member of
         
         Each project includes task completion statistics:
         - total_tasks: Total number of tasks in the project
@@ -1403,8 +1407,10 @@ class ListProjectsView(APIView):
             # Reviewer can only see projects they are assigned to
             projects = Project.objects.prefetch_related("clusters").filter(clusters__assigned_reviewers=user).distinct()
         else:
-            # Organization can only see their own projects
-            projects = Project.objects.prefetch_related("clusters").filter(created_by=user)
+            # Organization can see projects they created OR projects they are a member of
+            projects = Project.objects.prefetch_related("clusters").filter(
+                Q(created_by=user) | Q(project_members__user=user)
+            ).distinct()
                 
         # Get task statistics for each project
         project_data = []
