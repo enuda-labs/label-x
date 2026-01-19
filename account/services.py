@@ -131,7 +131,6 @@ def send_project_invitation_email(email, project, role, token, is_existing_user)
     Returns:
         bool: True if email sent successfully, False otherwise
     """
-    from django.conf import settings
     from account.models import ProjectInvitation
     
     email_service = EmailService(email)
@@ -144,14 +143,14 @@ def send_project_invitation_email(email, project, role, token, is_existing_user)
         expires_at = None
     
     # Get the acceptance URL
-    frontend_url = getattr(settings, 'FRONTEND_URL', 'http://localhost:3000')
+    frontend_url = settings.FRONTEND_URL
     if is_existing_user:
         # For existing users, direct acceptance link
         acceptance_url = f"{frontend_url}/client/projects/invitations/{token}/accept"
         template_path = "emails/project_invitation_existing.html"
     else:
-        # For new users, signup link with invitation token
-        acceptance_url = f"{frontend_url}/auth/signup?invitation_token={token}"
+        # For new users, signup link with invitation token and role=individual (client)
+        acceptance_url = f"{frontend_url}/auth/signup?invitation_token={token}&role=individual"
         template_path = "emails/project_invitation_new.html"
     
     # Get inviter name

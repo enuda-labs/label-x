@@ -52,6 +52,7 @@ PAYSTACK_PUBLIC_KEY=paystack_example_public
 EXCHANGE_RATE_API_KEY=exchange_rate_example_key
 RESEND_API_KEY=re_example_api_key
 RESEND_FROM_EMAIL=example@email.com
+FRONTEND_URL=http://localhost:3000
 ```
 
 **Note:** 
