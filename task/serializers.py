@@ -369,8 +369,8 @@ class TaskLabelSerializer(serializers.ModelSerializer):
 class TaskAnnotationSerializer(serializers.Serializer):
     task_id = serializers.IntegerField()
     labels = serializers.ListField(child=serializers.CharField())
-    notes = serializers.CharField(required=False)
-    subtitles_url = serializers.URLField(required=False)
+    notes = serializers.CharField(required=False, allow_blank=True)
+    subtitles_url = serializers.URLField(required=False, allow_blank=True)
 
 class TaskClusterDetailSerializer(serializers.ModelSerializer):
     """

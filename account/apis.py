@@ -208,20 +208,29 @@ class InitializeUserStripeAccountView(generics.GenericAPIView):
                 )
                 user_stripe_connect_account = UserStripeConnectAccount.objects.create(user=request.user, account_id=account.id)
             except Exception as e:
-                return ErrorResponse(message="Error initializing stripe account", status=status.HTTP_400_BAD_REQUEST)
+                logger.error(f"Error initializing Stripe account for user '{request.user.username}': {str(e)}", exc_info=True)
+                # Don't expose detailed error messages to users, only log them
+                error_message = "Unable to connect to payment service. Please try again later."
+                return ErrorResponse(message=error_message, status=status.HTTP_400_BAD_REQUEST)
         
         print('the account is', user_stripe_connect_account)
         print('the account id is', user_stripe_connect_account.account_id)
         
         origin = get_request_origin(request)
         
-        link = stripe.AccountLink.create(
-            account=user_stripe_connect_account.account_id,
-            refresh_url=f"{origin}/label/overview",
-            return_url=f"{origin}/label/overview",
-            type="account_onboarding"
-        )
-        return SuccessResponse(message="Stripe account initialized successfully", data={"link": link.url})
+        try:
+            link = stripe.AccountLink.create(
+                account=user_stripe_connect_account.account_id,
+                refresh_url=f"{origin}/label/overview",
+                return_url=f"{origin}/label/overview",
+                type="account_onboarding"
+            )
+            return SuccessResponse(message="Stripe account initialized successfully", data={"link": link.url})
+        except Exception as e:
+            logger.error(f"Error creating Stripe AccountLink for user '{request.user.username}': {str(e)}", exc_info=True)
+            # Don't expose detailed error messages to users, only log them
+            error_message = "Unable to connect to payment service. Please try again later."
+            return ErrorResponse(message=error_message, status=status.HTTP_400_BAD_REQUEST)
     
 
 
