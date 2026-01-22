@@ -433,8 +433,8 @@ CLOUDINARY_STORAGE = {
 DEFAULT_FILE_STORAGE = 'cloudinary_storage.storage.MediaCloudinaryStorage'
 
 if not DEBUG:    
-    CSRF_TRUSTED_ORIGINS = [
-        "https://label-x-dock.onrender.com"]
+    CSRF_TRUSTED_ORIGINS = config("CSRF_TRUSTED_ORIGINS_VALUE", default="https://label-x-dock.onrender.com", cast=Csv())
+    
     
 # Use REDIS_CACHE_BACKEND if set, otherwise fallback to REDIS_URL or default
 REDIS_CACHE_BACKEND = config("REDIS_CACHE_BACKEND", default=config("REDIS_URL", default="redis://localhost:6379/1"))
@@ -486,6 +486,9 @@ ANYMAIL = {
 EMAIL_BACKEND = "anymail.backends.resend.EmailBackend"
 DEFAULT_FROM_EMAIL = config("DEFAULT_FROM_EMAIL", default="noreply@labelx.com")
 SERVER_EMAIL = DEFAULT_FROM_EMAIL
+
+# Frontend URL for generating links in emails (e.g., invitation links)
+FRONTEND_URL = config("FRONTEND_URL", default="http://localhost:3000")
 
 
 AUTHENTICATION_BACKENDS = [

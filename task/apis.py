@@ -11,7 +11,7 @@ from datetime import datetime
 from rest_framework.views import APIView
 from rest_framework_api_key.permissions import HasAPIKey
 from account.choices import ProjectStatusChoices
-from account.models import Project, User
+from account.models import Project, User, ProjectMember
 from common.caching import cache_response_decorator
 from common.responses import ErrorResponse, SuccessResponse, format_first_error
 from common.utils import is_valid_url
@@ -47,21 +47,43 @@ class ExportClusterToCsvView(generics.GenericAPIView):
         cluster_id = kwargs.get('cluster_id')
         
         try:
-            cluster = TaskCluster.objects.get(id=cluster_id)
+            cluster = TaskCluster.objects.select_related('project').get(id=cluster_id)
         except TaskCluster.DoesNotExist:
             logger.warning(f"Cluster export attempted for non-existent cluster {cluster_id} by user '{request.user.username}' at {datetime.now()}")
             return ErrorResponse(message="Cluster not found", status=status.HTTP_404_NOT_FOUND)
         
-        if cluster.created_by != request.user:
+        # Check if user has permission to export:
+        # 1. User created the cluster
+        # 2. User is the project owner
+        # 3. User is an admin or owner member of the project
+        has_permission = False
+        
+        if cluster.created_by == request.user:
+            has_permission = True
+        elif cluster.project.created_by == request.user:
+            has_permission = True
+        else:
+            # Check if user is an admin or owner member
+            try:
+                member = ProjectMember.objects.get(project=cluster.project, user=request.user)
+                if member.role in ['admin', 'owner']:
+                    has_permission = True
+            except ProjectMember.DoesNotExist:
+                pass
+        
+        if not has_permission:
             logger.warning(f"Unauthorized cluster export attempt for cluster {cluster_id} by user '{request.user.username}' at {datetime.now()}")
             return ErrorResponse(message="You are not authorized to export this data", status=status.HTTP_403_FORBIDDEN)
         
         labels = TaskLabel.objects.filter(task__cluster=cluster)
         
-        response = HttpResponse(content_type='text/csv')
+        response = HttpResponse(content_type='text/csv; charset=utf-8')
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"{cluster.project.name}_{cluster.id}_{timestamp}.csv"
         response['Content-Disposition'] = f'attachment; filename="{filename}"'
+        
+        # Add UTF-8 BOM for Excel compatibility
+        response.write('\ufeff')
         
         writer = csv.writer(response)
         headers = ['Task Data', 'Label', 'notes', 'Labeller', 'Created At', 'Updated At']
@@ -1090,7 +1112,10 @@ class TaskCompletionStatsView(generics.GenericAPIView):
             user_clusters = TaskCluster.objects.filter(created_by=request.user)
             
             # user_tasks = Task.objects.filter(user=request.user)
-            user_projects = Project.objects.filter(created_by=request.user)
+            # Include projects the user created OR projects where the user is a member
+            user_projects = Project.objects.filter(
+                Q(created_by=request.user) | Q(project_members__user=request.user)
+            ).distinct()
             
             # Get total tasks count for the logged-in user
             total_tasks = user_clusters.count()

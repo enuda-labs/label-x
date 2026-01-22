@@ -395,8 +395,11 @@ class RegisterSerializer(serializers.ModelSerializer):
         return value
 
     def validate_username(self, value):
-        if User.objects.filter(username=value).exists():
-            raise serializers.ValidationError("Username already exists")
+        # Check for case-insensitive username conflicts
+        if User.objects.filter(username__iexact=value).exists():
+            raise serializers.ValidationError(
+                f"Username '{value}' is already taken. Please choose a different username."
+            )
         return value
 
     def validate_password(self, value):
@@ -616,12 +619,11 @@ class ProjectSerializer(serializers.ModelSerializer):
 
 class ProjectMemberSerializer(serializers.ModelSerializer):
     user = serializers.SerializerMethodField()
-    role = serializers.CharField(source='get_role_display', read_only=True)
 
     class Meta:
         model = ProjectMember
         fields = ['id', 'user', 'role', 'joined_at']
-        read_only_fields = ['id', 'joined_at']
+        read_only_fields = ['id', 'role', 'joined_at']
 
     def get_user(self, obj):
         return {
