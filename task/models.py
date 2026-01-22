@@ -58,6 +58,7 @@ class TaskCluster(models.Model):
     status = models.CharField(max_length=50, choices=TaskClusterStatusChoices.choices, default=TaskClusterStatusChoices.PENDING)
     completion_percentage = models.FloatField(default=0, help_text="The percentage of the tasks in this cluster that has been labelled by the reviewers")
     labeler_domain = models.ForeignKey(LabelerDomain, on_delete=models.CASCADE, related_name='clusters', help_text="The domain of expertise that the labeler is allowed to label", null=True, blank=True)
+    language = models.CharField(max_length=50, default='English', help_text="Language for subtitle annotation and transcription")
     
     def update_completion_percentage(self):
         all_cluster_labels = TaskLabel.objects.filter(task__cluster=self).count() #get the total number of labels that has been made on this cluster
