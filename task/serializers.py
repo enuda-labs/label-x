@@ -285,6 +285,59 @@ class TaskClusterListSerializer(serializers.ModelSerializer):
         model = TaskCluster
 
 
+class TaskClusterUpdateSerializer(serializers.ModelSerializer):
+    """
+    Serializer for updating task clusters.
+    
+    Allows updating cluster metadata without modifying tasks or core configuration.
+    """
+    labelling_choices = MultiChoiceOptionSerializer(many=True, required=False)
+    labeler_domain = serializers.PrimaryKeyRelatedField(
+        queryset=LabelerDomain.objects.all(),
+        required=False,
+        allow_null=True
+    )
+
+    class Meta:
+        model = TaskCluster
+        fields = [
+            'name',
+            'description',
+            'labeller_instructions',
+            'deadline',
+            'labeller_per_item_count',
+            'language',
+            'labeler_domain',
+            'labelling_choices',
+        ]
+        read_only_fields = []
+
+    def update(self, instance, validated_data):
+        """
+        Update cluster instance with validated data.
+        Handles updating labelling choices separately.
+        """
+        labelling_choices = validated_data.pop('labelling_choices', None)
+        
+        # Update cluster fields
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.save()
+        
+        # Update labelling choices if provided
+        if labelling_choices is not None:
+            # Delete existing choices
+            instance.choices.all().delete()
+            # Create new choices
+            for choice_data in labelling_choices:
+                MultiChoiceOption.objects.create(
+                    cluster=instance,
+                    option_text=choice_data.get('option_text')
+                )
+        
+        return instance
+
+
 class ListReviewersWithClustersSerializer(serializers.ModelSerializer):
     assigned_clusters = TaskClusterListSerializer(many=True, read_only=True)
     completed_clusters = serializers.SerializerMethodField() #the number of clusters this reviewer has completed
