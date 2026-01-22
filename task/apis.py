@@ -19,7 +19,7 @@ from subscription.models import UserDataPoints
 from task.choices import AnnotationMethodChoices, ManualReviewSessionStatusChoices, TaskClusterStatusChoices, TaskInputTypeChoices, TaskTypeChoices
 from task.utils import assign_reviewers_to_cluster, calculate_labelling_required_data_points, calculate_required_data_points, credit_labeller_monthly_payment, dispatch_task_message, push_realtime_update
 from .models import ManualReviewSession, MultiChoiceOption, Task, TaskCluster, UserReviewChatHistory, TaskLabel
-from .serializers import AcceptClusterIdSerializer, AssignedTaskSerializer, FullTaskSerializer, GetAndValidateReviewersSerializer, ListReviewersWithClustersSerializer, MultiChoiceOptionSerializer, RequestAdditionalLabellersSerializer, TaskAnnotationSerializer, TaskClusterCreateSerializer, TaskClusterDetailSerializer, TaskClusterListSerializer, TaskIdSerializer, TaskSerializer, TaskReviewSerializer, AssignTaskSerializer
+from .serializers import AcceptClusterIdSerializer, AssignedTaskSerializer, FullTaskSerializer, GetAndValidateReviewersSerializer, ListReviewersWithClustersSerializer, MultiChoiceOptionSerializer, RequestAdditionalLabellersSerializer, TaskAnnotationSerializer, TaskClusterCreateSerializer, TaskClusterDetailSerializer, TaskClusterListSerializer, TaskClusterUpdateSerializer, TaskIdSerializer, TaskSerializer, TaskReviewSerializer, AssignTaskSerializer
 from .tasks import process_task, provide_feedback_to_ai_model
 
 # import custom permissions
@@ -433,6 +433,46 @@ class GetClusterDetailView(generics.RetrieveAPIView):
     )
     def get(self, request, *args, **kwargs):
         return super().get(request, *args, **kwargs)
+
+
+class UpdateClusterView(generics.UpdateAPIView):
+    """
+    API view for updating task cluster details.
+    
+    Allows clients to update cluster metadata such as name, description,
+    instructions, deadline, language, and labelling choices.
+    """
+    serializer_class = TaskClusterUpdateSerializer
+    lookup_field = 'id'
+    queryset = TaskCluster.objects.all()
+    permission_classes = [IsAuthenticated]
+    
+    @extend_schema(
+        summary="Update a task cluster",
+        description="Update task cluster details. Only the cluster creator or project owner can update."
+    )
+    def put(self, request, *args, **kwargs):
+        cluster = self.get_object()
+        
+        # Check if user is the creator or project owner
+        if cluster.created_by != request.user and cluster.project.created_by != request.user:
+            return ErrorResponse(message="You do not have permission to update this cluster")
+        
+        serializer = self.get_serializer(cluster, data=request.data, partial=True)
+        if not serializer.is_valid():
+            return ErrorResponse(message=format_first_error(serializer.errors, False))
+        
+        updated_cluster = serializer.save()
+        
+        logger.info(f"User '{request.user.username}' updated cluster {cluster.id} at {datetime.now()}")
+        return SuccessResponse(
+            message="Cluster updated successfully",
+            data=TaskClusterDetailSerializer(updated_cluster).data
+        )
+    
+    def patch(self, request, *args, **kwargs):
+        """Support PATCH for partial updates"""
+        return self.put(request, *args, **kwargs)
 
 class CreatedClusterListView(generics.ListAPIView):
     serializer_class = TaskClusterListSerializer
